@@ -1,0 +1,604 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import './Resources.css';
+
+interface Resource {
+  id: number;
+  nom: string;
+  prenom: string;
+  type: string; // Valeur du dictionnaire (typeOfLabel)
+  statut?: string; // Valeur du dictionnaire (stateLabel)
+}
+
+interface ResourcesProps {
+  onBack: () => void;
+}
+
+// Fonction pour mapper les données BoondManager vers notre format
+const mapBoondResource = (boondResource: any, index: number): Resource => {
+  // Structure BoondManager : { id, type, attributes: { firstName, lastName, typeOf } }
+  // Extraire depuis attributes si présent, sinon depuis la racine
+  const firstName = boondResource.attributes?.firstName || boondResource.firstName || boondResource.FirstName || '';
+  const lastName = boondResource.attributes?.lastName || boondResource.lastName || boondResource.LastName || '';
+  const typeOfCode = boondResource.attributes?.typeOf || boondResource.typeOf || boondResource.TypeOf || boondResource.type || boondResource.Type || '';
+  // Utiliser le label du dictionnaire si disponible, sinon le code
+  const typeOfLabel = boondResource.typeOfLabel || typeOfCode;
+  
+  // Utiliser directement le label du dictionnaire pour le type
+  // Si le label n'est pas disponible, utiliser le code ou une valeur par défaut
+  const type = typeOfLabel && typeOfLabel !== '' ? typeOfLabel : (typeOfCode || 'N/A');
+  
+  // Récupérer le statut depuis stateLabel
+  const statut = boondResource.stateLabel || boondResource.state || null;
+
+  return {
+    id: boondResource.id || boondResource.ID || boondResource.Id || index,
+    nom: lastName,
+    prenom: firstName,
+    type: type, // Utilise directement le label du dictionnaire
+    statut: statut // Statut de la ressource
+  };
+};
+
+type SortField = 'nom' | 'prenom' | 'type' | 'statut' | null;
+type SortDirection = 'asc' | 'desc';
+
+const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [sortField, setSortField] = useState<SortField>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  
+  // Charger les filtres depuis localStorage au démarrage
+  const loadFiltersFromStorage = () => {
+    try {
+      const savedTypeFilter = localStorage.getItem('resources_typeFilter');
+      const savedStatutFilter = localStorage.getItem('resources_statutFilter');
+      const savedFiltersExpanded = localStorage.getItem('resources_filtersExpanded');
+      const savedTypeSectionExpanded = localStorage.getItem('resources_typeSectionExpanded');
+      const savedStatutSectionExpanded = localStorage.getItem('resources_statutSectionExpanded');
+      
+      return {
+        typeFilter: savedTypeFilter ? JSON.parse(savedTypeFilter) : [],
+        statutFilter: savedStatutFilter ? JSON.parse(savedStatutFilter) : [],
+        filtersExpanded: savedFiltersExpanded ? JSON.parse(savedFiltersExpanded) : true,
+        typeSectionExpanded: savedTypeSectionExpanded ? JSON.parse(savedTypeSectionExpanded) : true,
+        statutSectionExpanded: savedStatutSectionExpanded ? JSON.parse(savedStatutSectionExpanded) : true
+      };
+    } catch (error) {
+      console.error('Erreur lors du chargement des filtres depuis localStorage:', error);
+      return {
+        typeFilter: [],
+        statutFilter: [],
+        filtersExpanded: true,
+        typeSectionExpanded: true,
+        statutSectionExpanded: true
+      };
+    }
+  };
+
+  const savedFilters = loadFiltersFromStorage();
+  const [typeFilter, setTypeFilter] = useState<string[]>(savedFilters.typeFilter);
+  const [statutFilter, setStatutFilter] = useState<string[]>(savedFilters.statutFilter);
+  const [filtersExpanded, setFiltersExpanded] = useState<boolean>(savedFilters.filtersExpanded);
+  const [typeDropdownOpen, setTypeDropdownOpen] = useState<boolean>(false);
+  const [statutDropdownOpen, setStatutDropdownOpen] = useState<boolean>(false);
+  const itemsPerPage = 10;
+
+  // Sauvegarder les filtres dans localStorage à chaque changement
+  useEffect(() => {
+    try {
+      localStorage.setItem('resources_typeFilter', JSON.stringify(typeFilter));
+    } catch (error) {
+      console.error('Erreur lors de la sauvegarde du filtre type:', error);
+    }
+  }, [typeFilter]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('resources_statutFilter', JSON.stringify(statutFilter));
+    } catch (error) {
+      console.error('Erreur lors de la sauvegarde du filtre statut:', error);
+    }
+  }, [statutFilter]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('resources_filtersExpanded', JSON.stringify(filtersExpanded));
+    } catch (error) {
+      console.error('Erreur lors de la sauvegarde de l\'état filtersExpanded:', error);
+    }
+  }, [filtersExpanded]);
+
+  // Fermer les dropdowns quand on clique ailleurs
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.filter-dropdown-container')) {
+        setTypeDropdownOpen(false);
+        setStatutDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    fetchResources();
+  }, []);
+
+  const fetchResources = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch('/api/boondmanager/resources');
+      
+      // Vérifier le Content-Type avant de parser le JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('❌ Réponse non-JSON reçue:', text.substring(0, 500));
+        throw new Error(`Réponse invalide de l'API (${response.status}): ${text.substring(0, 200)}`);
+      }
+      
+      const data = await response.json();
+      
+      console.log('📥 Réponse API reçue:', data);
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Erreur lors de la récupération des ressources');
+      }
+
+      // Adapter selon la structure de la réponse BoondManager
+      let resourcesData = [];
+      if (data.data && Array.isArray(data.data)) {
+        resourcesData = data.data;
+      } else if (Array.isArray(data)) {
+        resourcesData = data;
+      } else if (data.resources && Array.isArray(data.resources)) {
+        resourcesData = data.resources;
+      } else if (data.persons && Array.isArray(data.persons)) {
+        resourcesData = data.persons;
+      }
+
+      console.log('📊 Nombre de ressources extraites:', resourcesData.length);
+      console.log('📋 Exemple de ressource:', resourcesData[0]);
+
+      if (resourcesData.length === 0) {
+        console.warn('⚠️  Aucune ressource trouvée dans la réponse');
+        setError('Aucune ressource trouvée. Vérifiez la connexion à l\'API BoondManager.');
+        setResources([]);
+        return;
+      }
+
+      // Confirmer le nombre total de ressources récupérées
+      console.log(`\n✅ Nombre total de ressources récupérées: ${resourcesData.length}\n`);
+
+      // Mapper les données vers notre format
+      const mappedResources = resourcesData.map((resource: any, index: number) => {
+        const mapped = mapBoondResource(resource, index);
+        return mapped;
+      });
+
+      console.log(`\n✅ ${mappedResources.length} ressources mappées avec succès\n`);
+      setResources(mappedResources);
+    } catch (err) {
+      let errorMessage = 'Une erreur est survenue';
+      
+      if (err instanceof Error) {
+        errorMessage = err.message;
+        // Si c'est une erreur de parsing JSON, donner plus de détails
+        if (err.message.includes('JSON') || err.message.includes('parse')) {
+          errorMessage = `Erreur de parsing JSON: ${err.message}. Vérifiez que l'API retourne bien du JSON valide.`;
+        }
+      } else if (typeof err === 'string') {
+        errorMessage = err;
+      }
+      
+      setError(errorMessage);
+      console.error('❌ Error fetching resources:', err);
+      console.error('❌ Error details:', {
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined
+      });
+      setResources([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Obtenir la liste unique des types pour le filtre
+  const uniqueTypes = Array.from(new Set(resources.map(r => r.type).filter(t => t && t !== 'N/A'))).sort();
+  
+  // Obtenir la liste unique des statuts pour le filtre
+  const uniqueStatuts = Array.from(new Set(resources.map(r => r.statut).filter((s): s is string => s !== undefined && s !== null && s !== 'N/A'))).sort();
+
+  // Filtrer et trier les ressources
+  const filteredAndSortedResources = useMemo(() => {
+    let filtered = resources;
+
+    // Appliquer le filtre par type (multi-sélection)
+    if (typeFilter.length > 0) {
+      filtered = filtered.filter(r => typeFilter.includes(r.type));
+    }
+
+    // Appliquer le filtre par statut (multi-sélection)
+    if (statutFilter.length > 0) {
+      filtered = filtered.filter(r => {
+        const resourceStatut = r.statut || '';
+        return statutFilter.includes(resourceStatut);
+      });
+    }
+
+    // Appliquer le tri
+    if (sortField) {
+      filtered = [...filtered].sort((a, b) => {
+        let aValue = a[sortField] || '';
+        let bValue = b[sortField] || '';
+        
+        // Gérer les valeurs null/undefined pour le statut
+        if (sortField === 'statut') {
+          aValue = aValue || 'N/A';
+          bValue = bValue || 'N/A';
+        }
+        
+        // Convertir en chaîne pour la comparaison
+        aValue = String(aValue).toLowerCase();
+        bValue = String(bValue).toLowerCase();
+        
+        if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return filtered;
+  }, [resources, typeFilter, statutFilter, sortField, sortDirection]);
+
+  // Calcul de la pagination
+  const totalPages = Math.ceil(filteredAndSortedResources.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentResources = filteredAndSortedResources.slice(startIndex, endIndex);
+
+  // Réinitialiser la page quand le filtre change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [typeFilter, statutFilter, sortField, sortDirection]);
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      // Inverser la direction si on clique sur le même champ
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Nouveau champ, trier par ordre croissant
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxVisiblePages = 5;
+    let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+    let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+    
+    if (endPage - startPage < maxVisiblePages - 1) {
+      startPage = Math.max(1, endPage - maxVisiblePages + 1);
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+      pages.push(i);
+    }
+    return pages;
+  };
+
+  if (loading) {
+    return (
+      <div className="resources-page">
+        <div className="resources-header">
+          <button className="back-button" onClick={onBack}>
+            ← Retour
+          </button>
+          <h2>Liste des Ressources</h2>
+        </div>
+        <div className="resources-container">
+          <div className="loading-state">
+            <div className="loading-spinner"></div>
+            <p>Chargement des ressources...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="resources-page">
+        <div className="resources-header">
+          <button className="back-button" onClick={onBack}>
+            ← Retour
+          </button>
+          <h2>Liste des Ressources</h2>
+        </div>
+        <div className="resources-container">
+          <div className="error-state">
+            <p className="error-message">❌ {error}</p>
+            <button className="retry-button" onClick={fetchResources}>
+              Réessayer
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="resources-page">
+      <div className="resources-header">
+        <button className="back-button" onClick={onBack}>
+          ← Retour
+        </button>
+        <h2>Liste des Ressources</h2>
+      </div>
+      <div className="resources-container">
+        {resources.length === 0 ? (
+          <div className="empty-state">
+            <p className="empty-message">Aucune ressource trouvée</p>
+            <p className="empty-details">Vérifiez la connexion à l'API BoondManager ou consultez les logs du serveur.</p>
+          </div>
+        ) : (
+          <>
+            {/* Contrôles de filtre et tri */}
+            <div className="resources-controls">
+              <div className="filters-container">
+                {/* Filtre Type */}
+                <div className="filter-dropdown-container">
+                  <button
+                    className="filter-button"
+                    onClick={() => {
+                      setTypeDropdownOpen(!typeDropdownOpen);
+                      setStatutDropdownOpen(false);
+                    }}
+                  >
+                    Type
+                    {typeFilter.length > 0 && (
+                      <span className="filter-badge">{typeFilter.length}</span>
+                    )}
+                    <span className="dropdown-arrow">{typeDropdownOpen ? '▲' : '▼'}</span>
+                  </button>
+                  {typeDropdownOpen && (
+                    <div className="filter-dropdown">
+                      <div className="filter-dropdown-content">
+                        {uniqueTypes.map((type) => (
+                          <label key={type} className="filter-checkbox-label">
+                            <input
+                              type="checkbox"
+                              checked={typeFilter.includes(type)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setTypeFilter([...typeFilter, type]);
+                                } else {
+                                  setTypeFilter(typeFilter.filter(t => t !== type));
+                                }
+                              }}
+                              className="filter-checkbox"
+                            />
+                            <span>{type}</span>
+                          </label>
+                        ))}
+                      </div>
+                      {typeFilter.length > 0 && (
+                        <div className="filter-dropdown-footer">
+                          <button
+                            className="clear-filter-button-small"
+                            onClick={() => setTypeFilter([])}
+                          >
+                            Effacer
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Filtre Statut */}
+                <div className="filter-dropdown-container">
+                  <button
+                    className="filter-button"
+                    onClick={() => {
+                      setStatutDropdownOpen(!statutDropdownOpen);
+                      setTypeDropdownOpen(false);
+                    }}
+                  >
+                    Statut
+                    {statutFilter.length > 0 && (
+                      <span className="filter-badge">{statutFilter.length}</span>
+                    )}
+                    <span className="dropdown-arrow">{statutDropdownOpen ? '▲' : '▼'}</span>
+                  </button>
+                  {statutDropdownOpen && (
+                    <div className="filter-dropdown">
+                      <div className="filter-dropdown-content">
+                        {uniqueStatuts.map((statut) => {
+                          const statutValue: string = statut || '';
+                          return (
+                            <label key={statutValue} className="filter-checkbox-label">
+                              <input
+                                type="checkbox"
+                                checked={statutFilter.includes(statutValue)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setStatutFilter([...statutFilter, statutValue]);
+                                  } else {
+                                    setStatutFilter(statutFilter.filter(s => s !== statutValue));
+                                  }
+                                }}
+                                className="filter-checkbox"
+                              />
+                              <span>{statutValue}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      {statutFilter.length > 0 && (
+                        <div className="filter-dropdown-footer">
+                          <button
+                            className="clear-filter-button-small"
+                            onClick={() => setStatutFilter([])}
+                          >
+                            Effacer
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="table-wrapper">
+              <table className="resources-table">
+                <thead>
+                  <tr>
+                    <th 
+                      className="sortable"
+                      onClick={() => handleSort('nom')}
+                    >
+                      Nom
+                      {sortField === 'nom' && (
+                        <span className="sort-indicator">
+                          {sortDirection === 'asc' ? ' ↑' : ' ↓'}
+                        </span>
+                      )}
+                    </th>
+                    <th 
+                      className="sortable"
+                      onClick={() => handleSort('prenom')}
+                    >
+                      Prénom
+                      {sortField === 'prenom' && (
+                        <span className="sort-indicator">
+                          {sortDirection === 'asc' ? ' ↑' : ' ↓'}
+                        </span>
+                      )}
+                    </th>
+                    <th 
+                      className="sortable"
+                      onClick={() => handleSort('type')}
+                    >
+                      Type
+                      {sortField === 'type' && (
+                        <span className="sort-indicator">
+                          {sortDirection === 'asc' ? ' ↑' : ' ↓'}
+                        </span>
+                      )}
+                    </th>
+                    <th 
+                      className="sortable"
+                      onClick={() => handleSort('statut')}
+                    >
+                      Statut
+                      {sortField === 'statut' && (
+                        <span className="sort-indicator">
+                          {sortDirection === 'asc' ? ' ↑' : ' ↓'}
+                        </span>
+                      )}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentResources.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="no-results">
+                        Aucune ressource ne correspond aux filtres sélectionnés
+                      </td>
+                    </tr>
+                  ) : (
+                    currentResources.map((resource) => (
+                      <tr key={resource.id}>
+                        <td>{resource.nom || 'N/A'}</td>
+                        <td>{resource.prenom || 'N/A'}</td>
+                        <td>
+                          <span className={`type-badge ${resource.type}`}>
+                            {resource.type}
+                          </span>
+                        </td>
+                        <td>
+                          {resource.statut ? (
+                            <span className={`type-badge ${resource.statut}`}>
+                              {resource.statut}
+                            </span>
+                          ) : (
+                            <span className="type-badge">N/A</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {/* Pagination */}
+        <div className="pagination-container">
+          <div className="pagination-info">
+            <span>
+              Affichage de {filteredAndSortedResources.length > 0 ? startIndex + 1 : 0} à {Math.min(endIndex, filteredAndSortedResources.length)} sur {filteredAndSortedResources.length} ressource{filteredAndSortedResources.length > 1 ? 's' : ''}
+              {(typeFilter.length > 0 || statutFilter.length > 0) && ` (filtrées sur ${resources.length} total)`}
+            </span>
+          </div>
+          
+          <div className="pagination">
+            <button
+              className="pagination-button"
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1}
+            >
+              ‹ Précédent
+            </button>
+            
+            <div className="pagination-numbers">
+              {getPageNumbers().map((page) => (
+                <button
+                  key={page}
+                  className={`pagination-number ${currentPage === page ? 'active' : ''}`}
+                  onClick={() => handlePageChange(page)}
+                >
+                  {page}
+                </button>
+              ))}
+            </div>
+            
+            <button
+              className="pagination-button"
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage === totalPages}
+            >
+              Suivant ›
+            </button>
+          </div>
+        </div>
+
+        <div className="resources-summary">
+          <p>Total : <strong>{filteredAndSortedResources.length}</strong> ressource{filteredAndSortedResources.length > 1 ? 's' : ''}
+          {(typeFilter.length > 0 || statutFilter.length > 0) && ` (${resources.length} au total)`}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Resources;

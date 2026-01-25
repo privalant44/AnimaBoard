@@ -1,0 +1,33 @@
+.navigation {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem 2rem;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border-bottom: 2px solid rgba(166, 201, 200, 0.3);
+}
+
+.nav-button {
+  padding: 0.75rem 1.5rem;
+  background: transparent;
+  border: 2px solid #A6C9C8;
+  border-radius: 8px;
+  color: #2C5F5D;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.nav-button:hover {
+  background: #A6C9C8;
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.nav-button.active {
+  background: #A6C9C8;
+  color: white;
+  border-color: #7BA8A6;
+}

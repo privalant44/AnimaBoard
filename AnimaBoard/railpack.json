@@ -1,21 +1,19 @@
 {
-  "build": {
-    "steps": [
-      {
-        "name": "install-root",
-        "run": "npm install"
-      },
-      {
-        "name": "install-client",
-        "run": "cd client && npm install"
-      },
-      {
-        "name": "build-client",
-        "run": "cd client && npm run build"
-      }
-    ]
+  "$schema": "https://schema.railpack.com",
+  "steps": {
+    "install": {
+      "commands": ["npm install"]
+    },
+    "install-client": {
+      "inputs": [{"step": "install"}],
+      "commands": ["cd client && npm install"]
+    },
+    "build": {
+      "inputs": [{"step": "install-client"}],
+      "commands": ["cd client && npm run build"]
+    }
   },
-  "start": {
-    "command": "node server/index.js"
+  "deploy": {
+    "startCommand": "node server/index.js"
   }
 }

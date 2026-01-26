@@ -7,6 +7,9 @@ interface Resource {
   prenom: string;
   type: string; // Valeur du dictionnaire (typeOfLabel)
   statut?: string; // Valeur du dictionnaire (stateLabel)
+  tempsTravail?: string; // Temps de travail pour contrats temps partiel
+  statutFeu?: 'vert' | 'orange' | 'rouge' | ''; // Statut feu (vert/orange/rouge)
+  commentaires?: string; // Commentaires liés au statut
 }
 
 interface ResourcesProps {
@@ -49,6 +52,15 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  
+  // État pour les métadonnées des ressources (temps, statut feu, commentaires)
+  const [resourcesMetadata, setResourcesMetadata] = useState<{
+    [resourceId: number]: {
+      tempsTravail?: string;
+      statutFeu?: 'vert' | 'orange' | 'rouge' | '';
+      commentaires?: string;
+    };
+  }>({});
   
   // Charger les filtres depuis localStorage au démarrage
   const loadFiltersFromStorage = () => {
@@ -127,8 +139,61 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
     };
   }, []);
 
+  // Charger les métadonnées des ressources
+  const loadResourcesMetadata = async () => {
+    try {
+      const response = await fetch('/api/data/resources-metadata');
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && result.data) {
+          // Convertir les clés string en number pour correspondre aux IDs
+          const metadata: { [key: number]: any } = {};
+          Object.keys(result.data).forEach(key => {
+            metadata[Number(key)] = result.data[key];
+          });
+          setResourcesMetadata(metadata);
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️  Impossible de charger les métadonnées des ressources:', error);
+    }
+  };
+
+  // Sauvegarder les métadonnées des ressources
+  const saveResourcesMetadata = async (metadata: typeof resourcesMetadata) => {
+    try {
+      const response = await fetch('/api/data/resources-metadata', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(metadata)
+      });
+      if (!response.ok) {
+        throw new Error('Erreur lors de la sauvegarde');
+      }
+    } catch (error) {
+      console.error('❌ Erreur lors de la sauvegarde des métadonnées:', error);
+    }
+  };
+
+  // Mettre à jour les métadonnées d'une ressource
+  const updateResourceMetadata = (resourceId: number, field: 'tempsTravail' | 'statutFeu' | 'commentaires', value: string) => {
+    const updated = {
+      ...resourcesMetadata,
+      [resourceId]: {
+        ...resourcesMetadata[resourceId],
+        [field]: value
+      }
+    };
+    setResourcesMetadata(updated);
+    // Sauvegarder automatiquement
+    saveResourcesMetadata(updated);
+  };
+
   useEffect(() => {
     fetchResources();
+    loadResourcesMetadata();
   }, []);
 
   const fetchResources = async () => {
@@ -514,36 +579,73 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
                         </span>
                       )}
                     </th>
+                    <th>Tps</th>
+                    <th>St</th>
+                    <th>Commentaires</th>
                   </tr>
                 </thead>
                 <tbody>
                   {currentResources.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="no-results">
+                      <td colSpan={7} className="no-results">
                         Aucune ressource ne correspond aux filtres sélectionnés
                       </td>
                     </tr>
                   ) : (
-                    currentResources.map((resource) => (
-                      <tr key={resource.id}>
-                        <td>{resource.nom || 'N/A'}</td>
-                        <td>{resource.prenom || 'N/A'}</td>
-                        <td>
-                          <span className={`type-badge ${resource.type}`}>
-                            {resource.type}
-                          </span>
-                        </td>
-                        <td>
-                          {resource.statut ? (
-                            <span className={`type-badge ${resource.statut}`}>
-                              {resource.statut}
+                    currentResources.map((resource) => {
+                      const metadata = resourcesMetadata[resource.id] || {};
+                      return (
+                        <tr key={resource.id}>
+                          <td>{resource.nom || 'N/A'}</td>
+                          <td>{resource.prenom || 'N/A'}</td>
+                          <td>
+                            <span className={`type-badge ${resource.type}`}>
+                              {resource.type}
                             </span>
-                          ) : (
-                            <span className="type-badge">N/A</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))
+                          </td>
+                          <td>
+                            {resource.statut ? (
+                              <span className={`type-badge ${resource.statut}`}>
+                                {resource.statut}
+                              </span>
+                            ) : (
+                              <span className="type-badge">N/A</span>
+                            )}
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              className="resource-input-temps"
+                              value={metadata.tempsTravail !== undefined && metadata.tempsTravail !== null ? metadata.tempsTravail : '100%'}
+                              onChange={(e) => updateResourceMetadata(resource.id, 'tempsTravail', e.target.value)}
+                              placeholder="100%"
+                            />
+                          </td>
+                          <td>
+                            <select
+                              className={`resource-select-statut ${metadata.statutFeu || ''}`}
+                              value={metadata.statutFeu || ''}
+                              onChange={(e) => updateResourceMetadata(resource.id, 'statutFeu', e.target.value as 'vert' | 'orange' | 'rouge' | '')}
+                            >
+                              <option value="">-</option>
+                              <option value="vert">🟢</option>
+                              <option value="orange">🟠</option>
+                              <option value="rouge">🔴</option>
+                            </select>
+                          </td>
+                          <td>
+                            <textarea
+                              className="resource-textarea-commentaires"
+                              value={metadata.commentaires || ''}
+                              onChange={(e) => updateResourceMetadata(resource.id, 'commentaires', e.target.value)}
+                              placeholder="Commentaires..."
+                              maxLength={6000}
+                              rows={3}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>

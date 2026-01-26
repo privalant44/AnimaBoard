@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
@@ -8,6 +9,12 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Servir les fichiers statiques du client en production
+if (process.env.NODE_ENV === 'production') {
+  const clientBuildPath = path.join(__dirname, '..', 'client', 'build');
+  app.use(express.static(clientBuildPath));
+}
 
 // Routes avec gestion d'erreur
 try {
@@ -33,6 +40,13 @@ try {
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Anima Board API is running' });
 });
+
+// Servir l'application React pour toutes les routes non-API en production
+if (process.env.NODE_ENV === 'production') {
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'client', 'build', 'index.html'));
+  });
+}
 
 // Gestion d'erreur globale
 app.use((err, req, res, next) => {

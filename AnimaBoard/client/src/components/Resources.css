@@ -228,6 +228,19 @@
   border-bottom: 2px solid #7BA8A6;
 }
 
+/* Largeurs spécifiques pour les colonnes */
+.resources-table th:nth-child(5) {
+  width: 80px; /* Colonne Tps */
+}
+
+.resources-table th:nth-child(6) {
+  width: 70px; /* Colonne St */
+}
+
+.resources-table th:nth-child(7) {
+  min-width: 400px; /* Colonne Commentaires */
+}
+
 .resources-table th.sortable {
   cursor: pointer;
   user-select: none;
@@ -288,6 +301,82 @@
   background: #e3f2fd;
   color: #1976d2;
   border: 1px solid #90caf9;
+}
+
+/* Styles pour les inputs de saisie */
+.resource-input-temps {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #A6C9C8;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  transition: border-color 0.2s;
+  max-width: 70px;
+  min-width: 60px;
+}
+
+.resource-input-temps:focus {
+  outline: none;
+  border-color: #7BA8A6;
+  box-shadow: 0 0 0 2px rgba(123, 168, 166, 0.2);
+}
+
+/* Styles pour le textarea des commentaires */
+.resource-textarea-commentaires {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #A6C9C8;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  transition: border-color 0.2s;
+  min-width: 400px;
+  max-width: 100%;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.resource-textarea-commentaires:focus {
+  outline: none;
+  border-color: #7BA8A6;
+  box-shadow: 0 0 0 2px rgba(123, 168, 166, 0.2);
+}
+
+/* Styles pour le select de statut feu */
+.resource-select-statut {
+  padding: 0.5rem;
+  border: 1px solid #A6C9C8;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: white;
+  min-width: 50px;
+  max-width: 60px;
+  text-align: center;
+}
+
+.resource-select-statut:focus {
+  outline: none;
+  border-color: #7BA8A6;
+  box-shadow: 0 0 0 2px rgba(123, 168, 166, 0.2);
+}
+
+.resource-select-statut.vert {
+  background-color: #d4edda;
+  border-color: #28a745;
+  color: #155724;
+}
+
+.resource-select-statut.orange {
+  background-color: #fff3cd;
+  border-color: #ffc107;
+  color: #856404;
+}
+
+.resource-select-statut.rouge {
+  background-color: #f8d7da;
+  border-color: #dc3545;
+  color: #721c24;
 }
 
 .pagination-container {

@@ -397,4 +397,56 @@ router.get('/timesheets_aggregate.json', async (req, res) => {
   }
 });
 
+// Gérer les métadonnées des ressources (temps, statut feu, commentaires)
+router.get('/resources-metadata', async (req, res) => {
+  try {
+    const filePath = path.join(dataDir, 'resources_metadata.json');
+    const data = await fs.readFile(filePath, 'utf8');
+    const jsonData = JSON.parse(data);
+    
+    res.json({
+      success: true,
+      data: jsonData
+    });
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      // Fichier n'existe pas encore, retourner un objet vide
+      res.json({
+        success: true,
+        data: {}
+      });
+    } else {
+      console.error('❌ Erreur lors de la lecture de resources_metadata.json:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  }
+});
+
+router.post('/resources-metadata', async (req, res) => {
+  try {
+    const filePath = path.join(dataDir, 'resources_metadata.json');
+    const metadata = req.body;
+    
+    // S'assurer que le dossier data existe
+    await fs.mkdir(dataDir, { recursive: true });
+    
+    // Sauvegarder les métadonnées
+    await fs.writeFile(filePath, JSON.stringify(metadata, null, 2), 'utf8');
+    
+    res.json({
+      success: true,
+      message: 'Métadonnées sauvegardées avec succès'
+    });
+  } catch (error) {
+    console.error('❌ Erreur lors de la sauvegarde de resources_metadata.json:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;

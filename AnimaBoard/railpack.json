@@ -1,0 +1,21 @@
+{
+  "build": {
+    "steps": [
+      {
+        "name": "install-root",
+        "run": "npm install"
+      },
+      {
+        "name": "install-client",
+        "run": "cd client && npm install"
+      },
+      {
+        "name": "build-client",
+        "run": "cd client && npm run build"
+      }
+    ]
+  },
+  "start": {
+    "command": "node server/index.js"
+  }
+}

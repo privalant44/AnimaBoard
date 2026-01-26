@@ -3,11 +3,14 @@
   "version": "1.0.0",
   "description": "Tableau de bord Anima Néo - Intégration BoondManager et Pennylane",
   "main": "server/index.js",
+  "engines": {
+    "node": "18.x"
+  },
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "nodemon server/index.js",
     "client": "cd client && npm start",
-    "build": "cd client && npm install && npm run build",
+    "build": "npm install && cd client && npm install && cd client && npm run build",
     "install-all": "npm install && cd client && npm install",
     "postinstall": "cd client && npm install",
     "start": "node server/index.js",

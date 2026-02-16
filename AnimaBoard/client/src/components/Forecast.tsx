@@ -687,24 +687,6 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
     }
   }, []);
 
-  // Obtenir les mois entre deux dates
-  const getMonthsBetweenDates = (startDate: string, endDate: string): string[] => {
-    if (!startDate || !endDate) return [];
-    
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const months: string[] = [];
-    
-    const current = new Date(start.getFullYear(), start.getMonth(), 1);
-    while (current <= end) {
-      const monthStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`;
-      months.push(monthStr);
-      current.setMonth(current.getMonth() + 1);
-    }
-    
-    return months;
-  };
-
   // Obtenir tous les mois de 2026
   const get2026Months = (): string[] => {
     const months: string[] = [];

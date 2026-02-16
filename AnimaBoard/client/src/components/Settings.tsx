@@ -297,7 +297,20 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
         })
       });
       
-      const data = await response.json();
+      const text = await response.text();
+      let data: { success?: boolean; message?: string; error?: string; errorDetail?: string } = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        setSyncResult({
+          type: 'timesheets',
+          success: false,
+          message: response.ok
+            ? 'Réponse invalide du serveur'
+            : `Erreur ${response.status}: le serveur n'a pas renvoyé de JSON (timeout ou erreur Vercel). Vérifiez les logs du déploiement.`
+        });
+        return;
+      }
       
       if (response.ok && data.success) {
         setSyncResult({

@@ -169,10 +169,12 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           message: data.message || 'Synchronisation réussie'
         });
       } else {
+        const msg = (data.error || data.message) || 'Erreur lors de la synchronisation';
+        const detail = data.errorDetail ? ` — ${data.errorDetail}` : '';
         setSyncResult({
           type: 'resources',
           success: false,
-          message: (data.error || data.message) || 'Erreur lors de la synchronisation'
+          message: msg + detail
         });
       }
     } catch (err) {
@@ -207,10 +209,12 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           message: data.message || 'Extraction réussie'
         });
       } else {
+        const msg = (data.error || data.message) || 'Erreur lors de l\'extraction';
+        const detail = data.errorDetail ? ` — ${data.errorDetail}` : '';
         setSyncResult({
           type: 'deliveries',
           success: false,
-          message: (data.error || data.message) || 'Erreur lors de l\'extraction'
+          message: msg + detail
         });
       }
     } catch (err) {
@@ -254,10 +258,12 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           message: data.message || 'Extraction des temps saisis réussie'
         });
       } else {
+        const msg = (data.error || data.message) || 'Erreur lors de l\'extraction des temps saisis';
+        const detail = data.errorDetail ? ` — ${data.errorDetail}` : '';
         setSyncResult({
           type: 'time-reports',
           success: false,
-          message: (data.error || data.message) || 'Erreur lors de l\'extraction des temps saisis'
+          message: msg + detail
         });
       }
     } catch (err) {
@@ -300,10 +306,12 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           message: data.message || 'Synchronisation des feuilles de temps réussie'
         });
       } else {
+        const msg = (data.error || data.message) || 'Erreur lors de la synchronisation des feuilles de temps';
+        const detail = data.errorDetail ? ` — ${data.errorDetail}` : '';
         setSyncResult({
           type: 'timesheets',
           success: false,
-          message: (data.error || data.message) || 'Erreur lors de la synchronisation des feuilles de temps'
+          message: msg + detail
         });
       }
     } catch (err) {

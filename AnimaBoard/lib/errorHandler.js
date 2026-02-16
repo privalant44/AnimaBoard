@@ -19,6 +19,8 @@ function formatError(error, options = {}) {
   const response = {
     success: false,
     error: message || error.message || 'Une erreur est survenue',
+    // Toujours inclure la cause réelle pour diagnostic (ex. sur Vercel)
+    ...(message && error.message && message !== error.message && { errorDetail: error.message }),
     ...(includeDetails && error.response && {
       details: {
         status: error.response.status,

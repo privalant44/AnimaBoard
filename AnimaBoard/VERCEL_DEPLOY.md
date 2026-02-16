@@ -11,8 +11,9 @@
 1. Allez sur https://vercel.com
 2. Cliquez sur "Login" et connectez-vous avec GitHub
 3. Cliquez sur "Add New Project"
-4. Importez votre dépôt `AnimaBoard`
-5. Vercel détectera automatiquement la configuration
+4. Importez votre dépôt (celui qui contient AnimaBoard)
+5. **Si l’app est dans un sous-dossier** (ex. `AnimaBoard/`) : dans **Settings → General**, définir **Root Directory** sur `AnimaBoard` (ou le chemin du dossier contenant `package.json`, `api/`, `client/`). Sans cela, les API (sync, etc.) peuvent renvoyer une erreur 500 / FUNCTION_INVOCATION_FAILED.
+6. Vercel détectera automatiquement la configuration
 
 ### 3. Configurer les variables d'environnement
 

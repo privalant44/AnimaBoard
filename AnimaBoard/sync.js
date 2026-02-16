@@ -147,6 +147,10 @@ class BoondManagerSync {
       let resourcesList = [];
       if (resourcesResponse.data && Array.isArray(resourcesResponse.data)) {
         resourcesList = resourcesResponse.data;
+      } else if (resourcesResponse._embedded?.resources && Array.isArray(resourcesResponse._embedded.resources)) {
+        resourcesList = resourcesResponse._embedded.resources;
+      } else if (resourcesResponse._embedded?.persons && Array.isArray(resourcesResponse._embedded.persons)) {
+        resourcesList = resourcesResponse._embedded.persons;
       } else if (Array.isArray(resourcesResponse)) {
         resourcesList = resourcesResponse;
       }

@@ -1,7 +1,8 @@
 const axios = require('axios');
-const fs = require('fs').promises;
 const path = require('path');
 require('dotenv').config();
+const kvStorage = require('./lib/kvStorage');
+const { KV_KEYS } = require('./lib/constants');
 
 class BoondManagerSync {
   constructor() {
@@ -67,13 +68,7 @@ class BoondManagerSync {
   }
 
   async ensureDataDir() {
-    try {
-      await fs.mkdir(this.dataDir, { recursive: true });
-      console.log(`✅ Dossier data créé/vérifié: ${this.dataDir}`);
-    } catch (error) {
-      console.error(`❌ Erreur lors de la création du dossier data:`, error);
-      throw error;
-    }
+    // Plus de dossier data : tout est stocké en KV
   }
 
   async syncProjects() {
@@ -141,10 +136,8 @@ class BoondManagerSync {
         }
       }
 
-      // Enregistrer dans data/projects.json
-      const projectsFilePath = path.join(this.dataDir, 'projects.json');
-      await fs.writeFile(projectsFilePath, JSON.stringify(projectsWithDeliveries, null, 2), 'utf8');
-      console.log(`✅ Données des projets enregistrées dans ${projectsFilePath}`);
+      await kvStorage.set(KV_KEYS.PROJECTS, projectsWithDeliveries);
+      console.log(`✅ Données des projets enregistrées (KV)`);
       console.log(`📊 Total: ${projectsWithDeliveries.length} projets avec leurs prestations\n`);
 
       return projectsWithDeliveries;
@@ -220,10 +213,8 @@ class BoondManagerSync {
         });
       }
 
-      // Enregistrer dans data/resources.json
-      const resourcesFilePath = path.join(this.dataDir, 'resources.json');
-      await fs.writeFile(resourcesFilePath, JSON.stringify(resourcesData, null, 2), 'utf8');
-      console.log(`✅ Données des ressources enregistrées dans ${resourcesFilePath}`);
+      await kvStorage.set(KV_KEYS.RESOURCES, resourcesData);
+      console.log(`✅ Données des ressources enregistrées (KV)`);
       console.log(`📊 Total: ${resourcesData.length} ressources\n`);
 
       return resourcesData;
@@ -313,10 +304,8 @@ class BoondManagerSync {
         };
       });
 
-      // Enregistrer dans data/deliveries.json
-      const deliveriesFilePath = path.join(this.dataDir, 'deliveries.json');
-      await fs.writeFile(deliveriesFilePath, JSON.stringify(deliveriesData, null, 2), 'utf8');
-      console.log(`✅ Données des prestations enregistrées dans ${deliveriesFilePath}`);
+      await kvStorage.set(KV_KEYS.DELIVERIES, { metadata: { lastSync: new Date().toISOString() }, data: deliveriesData });
+      console.log(`✅ Données des prestations enregistrées (KV)`);
       console.log(`📊 Total: ${deliveriesData.length} prestations\n`);
 
       return deliveriesData;
@@ -329,9 +318,7 @@ class BoondManagerSync {
   async sync() {
     try {
       console.log('🚀 Démarrage de la synchronisation des ressources BoondManager...\n');
-      console.log(`📁 Dossier de données: ${this.dataDir}\n`);
-
-      // Créer le dossier data s'il n'existe pas
+      console.log(`📁 Stockage: KV (Redis)\n`);
       await this.ensureDataDir();
 
       // Synchronisation des ressources uniquement
@@ -340,8 +327,7 @@ class BoondManagerSync {
       console.log('\n✅ Synchronisation terminée avec succès !\n');
       console.log(`📊 Résumé:`);
       console.log(`   - ${resources.length} ressources synchronisées`);
-      console.log(`\n📁 Fichier créé:`);
-      console.log(`   - ${path.join(this.dataDir, 'resources.json')}\n`);
+      console.log(`\n📁 Données enregistrées en KV (Redis)\n`);
 
       return { resources };
     } catch (error) {

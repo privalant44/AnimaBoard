@@ -1,23 +1,14 @@
-const fs = require('fs').promises;
 const path = require('path');
+const kvStorage = require('./lib/kvStorage');
+const { KV_KEYS } = require('./lib/constants');
 
 class ForecastReport {
-  constructor() {
-    this.dataDir = path.join(__dirname, 'data');
-    this.projectsFile = path.join(this.dataDir, 'projects.json');
-    this.resourcesFile = path.join(this.dataDir, 'resources.json');
-  }
-
   async loadData() {
     try {
-      // Charger les projets
-      const projectsData = await fs.readFile(this.projectsFile, 'utf8');
-      const projects = JSON.parse(projectsData);
-
-      // Charger les ressources
-      const resourcesData = await fs.readFile(this.resourcesFile, 'utf8');
-      const resources = JSON.parse(resourcesData);
-
+      const projects = await kvStorage.get(KV_KEYS.PROJECTS, []);
+      const resources = await kvStorage.get(KV_KEYS.RESOURCES, []);
+      if (!Array.isArray(projects)) throw new Error('Projects non disponible (lancez la sync depuis Paramètres).');
+      if (!Array.isArray(resources)) throw new Error('Ressources non disponible (lancez la sync depuis Paramètres).');
       return { projects, resources };
     } catch (error) {
       console.error('❌ Erreur lors du chargement des données:', error);
@@ -256,12 +247,8 @@ class ForecastReport {
 
   async generateJSONReport(startDate = null, endDate = null) {
     const reportData = await this.generateReport(startDate, endDate);
-    
-    // Enregistrer le rapport en JSON
-    const reportFile = path.join(this.dataDir, 'forecast-report.json');
-    await fs.writeFile(reportFile, JSON.stringify(reportData, null, 2), 'utf8');
-    console.log(`✅ Rapport JSON enregistré dans ${reportFile}\n`);
-
+    await kvStorage.set(KV_KEYS.FORECAST_REPORT, reportData);
+    console.log(`✅ Rapport forecast enregistré en KV.\n`);
     return reportData;
   }
 }

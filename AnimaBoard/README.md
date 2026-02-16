@@ -40,6 +40,8 @@ AnimaBoard/
 
 ## Installation
 
+**En local, il suffit de :** Node.js 18+, puis `npm run install-all`, puis créer un `.env` (voir ci‑dessous). Aucun Redis ni base de données à installer : le KV utilise Upstash (cloud) ou un cache mémoire si les variables KV ne sont pas configurées.
+
 1. **Installer les dépendances** :
 ```bash
 npm run install-all
@@ -62,6 +64,9 @@ npm run install-all
      ```
    
    📖 **Voir le guide détaillé** : `CONFIGURATION_API.md`
+
+3. **Stockage des données**  
+   Aucun fichier JSON n’est utilisé : en développement et en production, les données (métadonnées, forecast, prestations, timesheets, etc.) sont stockées en **KV (Redis)**. Configurer Upstash Redis (ou Vercel KV) : voir `VERCEL_KV_SETUP.md`.
 
 ## Utilisation
 
@@ -94,6 +99,23 @@ npm run build
 ```bash
 npm run server
 ```
+
+### Environnement similaire à la production (local)
+
+Pour tester localement comme en production (un seul processus, frontend servi depuis le build) :
+
+```bash
+# Une seule commande : build + serveur en mode production
+npm run serve
+```
+
+Ou en deux étapes :
+```bash
+npm run build
+npm run start:prod
+```
+
+L’application est alors disponible sur `http://localhost:3000` : le serveur Express sert le build React depuis `client/build`, comme sur Vercel. Aucun `react-scripts start` ni nodemon, donc pas de problème EPERM sous Windows.
 
 ## API Endpoints
 

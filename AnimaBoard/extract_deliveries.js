@@ -1,8 +1,8 @@
 const axios = require('axios');
-const fs = require('fs').promises;
 const path = require('path');
-
 require('dotenv').config();
+const kvStorage = require('./lib/kvStorage');
+const { KV_KEYS } = require('./lib/constants');
 
 const baseURL = process.env.BOOND_API_URL || 'https://ui.boondmanager.com/api';
 
@@ -27,16 +27,6 @@ if (!email || !password) {
 console.log(`🔑 Authentification: Basic Auth avec ${email}\n`);
 
 async function extractDeliveries() {
-  const outputPath = path.join(__dirname, 'data', 'deliveries.json');
-  
-  // Créer le dossier data s'il n'existe pas
-  const dataDir = path.join(__dirname, 'data');
-  try {
-    await fs.mkdir(dataDir, { recursive: true });
-  } catch (error) {
-    // Le dossier existe déjà, c'est OK
-  }
-  
   // Config avec les headers spécifiés
   const config = {
     auth: {
@@ -159,12 +149,10 @@ async function extractDeliveries() {
     data: allDeliveries
   };
   
-  // Sauvegarder en JSON
   try {
-    console.log(`\n💾 Sauvegarde dans ${outputPath}...`);
-    await fs.writeFile(outputPath, JSON.stringify(outputData, null, 2), 'utf8');
-    
-    console.log(`✅ Fichier sauvegardé avec succès !`);
+    console.log(`\n💾 Sauvegarde en KV (Redis)...`);
+    await kvStorage.set(KV_KEYS.DELIVERIES, outputData);
+    console.log(`✅ Données prestations sauvegardées en KV.`);
     console.log(`\n📊 Statistiques:`);
     console.log(`   - Total d'enregistrements: ${allDeliveries.length}`);
     console.log(`   - Taille du fichier JSON: ${(JSON.stringify(outputData).length / 1024).toFixed(2)} KB`);

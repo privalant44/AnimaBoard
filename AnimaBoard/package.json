@@ -4,20 +4,23 @@
   "description": "Tableau de bord Anima Néo - Intégration BoondManager et Pennylane",
   "main": "server/index.js",
   "engines": {
-    "node": "18.x"
+    "node": "24.x"
   },
   "scripts": {
-    "dev": "concurrently \"npm run server\" \"npm run client\"",
-    "server": "nodemon server/index.js",
+    "dev": "powershell -ExecutionPolicy Bypass -File ./dev.ps1",
+    "server": "node server/index.js",
     "client": "cd client && npm start",
     "build": "cd client && npm run build",
-    "install-all": "npm install && cd client && npm install",
-    "postinstall": "cd client && npm install",
     "start": "node server/index.js",
+    "start:prod": "node scripts/run-prod.js",
+    "serve": "npm run build && npm run start:prod",
+    "install-all": "npm install && cd client && npm install",
     "sync": "node sync.js",
     "report": "node report.js",
     "extract-times": "node extract_time_reports.js",
-    "sync-timesheets": "node sync_timesheets.js"
+    "sync-timesheets": "node sync_timesheets.js",
+    "migrate-to-kv": "node scripts/migrate-to-kv.js",
+    "test-kv": "node scripts/test-kv.js"
   },
   "keywords": [
     "dashboard",
@@ -28,6 +31,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@upstash/redis": "^1.36.1",
+    "@vercel/kv": "^0.2.4",
     "axios": "^1.6.2",
     "cors": "^2.8.5",
     "csv-parse": "^5.6.0",
@@ -37,6 +42,6 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
-    "nodemon": "^3.0.2"
+    "nodemon": "^2.0.22"
   }
 }

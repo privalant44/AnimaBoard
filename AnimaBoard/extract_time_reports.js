@@ -1,9 +1,9 @@
 const axios = require('axios');
-const fs = require('fs').promises;
 const path = require('path');
 const { parse } = require('csv-parse/sync');
-
 require('dotenv').config();
+const kvStorage = require('./lib/kvStorage');
+const { KV_KEYS } = require('./lib/constants');
 
 const baseURL = process.env.BOOND_API_URL || 'https://ui.boondmanager.com/api';
 
@@ -28,16 +28,6 @@ if (!email || !password) {
 console.log(`🔑 Authentification: Basic Auth avec ${email}\n`);
 
 async function extractTimeReports(beginDate = null, endDate = null) {
-  const outputPath = path.join(__dirname, 'data', 'temps_missions.json');
-  
-  // Créer le dossier data s'il n'existe pas
-  const dataDir = path.join(__dirname, 'data');
-  try {
-    await fs.mkdir(dataDir, { recursive: true });
-  } catch (error) {
-    // Le dossier existe déjà, c'est OK
-  }
-  
   // Définir les dates par défaut (année en cours)
   const currentYear = new Date().getFullYear();
   const startDate = beginDate || `${currentYear}-01-01`;
@@ -183,10 +173,10 @@ async function extractTimeReports(beginDate = null, endDate = null) {
     };
     
     // Sauvegarder en JSON
-    console.log(`💾 Sauvegarde dans ${outputPath}...`);
-    await fs.writeFile(outputPath, JSON.stringify(outputData, null, 2), 'utf8');
+    console.log(`💾 Sauvegarde temps_missions en KV...`);
+    await kvStorage.set(KV_KEYS.TEMPS_MISSIONS, outputData);
     
-    console.log(`✅ Fichier sauvegardé avec succès !`);
+    console.log(`✅ Données temps_missions sauvegardées en KV.`);
     console.log(`\n📊 Statistiques:`);
     console.log(`   - Total d'enregistrements: ${filteredRecords.length}`);
     console.log(`   - Colonnes conservées: ${columnsToKeep.join(', ')}`);

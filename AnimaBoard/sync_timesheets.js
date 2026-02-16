@@ -1,9 +1,8 @@
 const axios = require('axios');
-const fs = require('fs').promises;
-const fsSync = require('fs');
 const path = require('path');
-
 require('dotenv').config();
+const kvStorage = require('./lib/kvStorage');
+const { KV_KEYS } = require('./lib/constants');
 
 const baseURL = process.env.BOOND_API_URL || 'https://ui.boondmanager.com/api';
 
@@ -496,16 +495,6 @@ function createAggregate(timesheetsData) {
 
 // Fonction principale de synchronisation
 async function syncTimesheets(startMonth = null, endMonth = null) {
-  const outputPath = path.join(__dirname, 'data', 'timesheets_data.json');
-
-  // Créer le dossier data s'il n'existe pas
-  const dataDir = path.join(__dirname, 'data');
-  try {
-    await fs.mkdir(dataDir, { recursive: true });
-  } catch (error) {
-    // Le dossier existe déjà, c'est OK
-  }
-
   // Définir les mois par défaut (année en cours et année précédente)
   const currentYear = new Date().getFullYear();
   const previousYear = currentYear - 1;
@@ -684,46 +673,32 @@ async function syncTimesheets(startMonth = null, endMonth = null) {
         yearData.metadata.totalTimesheets = yearTimesheets;
         yearData.metadata.totalEntries = yearEntries;
         
-        const yearPath = path.join(__dirname, 'data', `timesheets_${year}.json`);
-        const yearJsonString = JSON.stringify(yearData, null, 2);
-        
-        console.log(`💾 Sauvegarde de l'année ${year} dans ${yearPath}...`);
-        fsSync.writeFileSync(yearPath, yearJsonString, 'utf8');
-        
-        const yearSize = Buffer.byteLength(yearJsonString, 'utf8') / (1024 * 1024);
-        console.log(`✅ Année ${year} sauvegardée (${yearSize.toFixed(2)} MB)`);
+        console.log(`💾 Année ${year} incluse dans les données timesheets (KV)`);
       }
-      
-      console.log(`✅ Fichiers découpés par année sauvegardés avec succès !`);
+      await kvStorage.set(KV_KEYS.TIMESHEETS_DATA, outputData);
+      console.log(`✅ Données timesheets sauvegardées en KV.`);
     } else {
-      // Sauvegarder le fichier complet
-      console.log(`💾 Sauvegarde dans ${outputPath}...`);
-      fsSync.writeFileSync(outputPath, jsonString, 'utf8');
-      console.log(`✅ Fichier sauvegardé avec succès !`);
+      console.log(`💾 Sauvegarde timesheets en KV...`);
+      await kvStorage.set(KV_KEYS.TIMESHEETS_DATA, outputData);
+      console.log(`✅ Données timesheets sauvegardées en KV.`);
     }
     
     // Étape 4 : Créer l'agrégat par ressource, mois et prestation
     console.log(`\n📋 ÉTAPE 4 : Création de l'agrégat par ressource, mois et prestation\n`);
     
     const aggregateData = createAggregate(timesheetsData);
-    const aggregatePath = path.join(__dirname, 'data', 'timesheets_aggregate.json');
-    
     const aggregateOutput = {
       metadata: {
         generatedAt: new Date().toISOString(),
-        sourceFile: 'timesheets_data.json',
-        period: {
-          startMonth: startMonthStr,
-          endMonth: endMonthStr
-        },
+        source: 'KV',
+        period: { startMonth: startMonthStr, endMonth: endMonthStr },
         totalRecords: aggregateData.length
       },
       data: aggregateData
     };
-    
-    console.log(`💾 Sauvegarde de l'agrégat dans ${aggregatePath}...`);
-    await fs.writeFile(aggregatePath, JSON.stringify(aggregateOutput, null, 2), 'utf8');
-    console.log(`✅ Agrégat sauvegardé avec succès !`);
+    console.log(`💾 Sauvegarde de l'agrégat en KV...`);
+    await kvStorage.set(KV_KEYS.TIMESHEETS_AGGREGATE, aggregateOutput);
+    console.log(`✅ Agrégat sauvegardé en KV.`);
     
     console.log(`\n📊 Statistiques:`);
     console.log(`   - Feuilles de temps traitées: ${timesheetsList.length}`);
@@ -731,15 +706,8 @@ async function syncTimesheets(startMonth = null, endMonth = null) {
     console.log(`   - Ressources uniques: ${new Set(timesheetsData.map(t => t.resourceId).filter(id => id)).size}`);
     console.log(`   - Lignes agrégées: ${aggregateData.length}`);
     
-    // Calculer la taille du fichier de manière sécurisée
-    try {
-      const fileStats = await fs.stat(outputPath);
-      console.log(`   - Taille du fichier JSON: ${(fileStats.size / 1024).toFixed(2)} KB`);
-      const aggregateStats = await fs.stat(aggregatePath);
-      console.log(`   - Taille de l'agrégat JSON: ${(aggregateStats.size / 1024).toFixed(2)} KB`);
-    } catch (error) {
-      console.log(`   - Taille du fichier JSON: calculée`);
-    }
+    // Données et agrégat stockés en KV
+    console.log(`   - Stockage: KV (Redis)`);
 
     // Afficher un aperçu
     if (timesheetsData.length > 0) {

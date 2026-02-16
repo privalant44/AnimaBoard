@@ -93,7 +93,7 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
   const savedFilters = loadFiltersFromStorage();
   const [typeFilter, setTypeFilter] = useState<string[]>(savedFilters.typeFilter);
   const [statutFilter, setStatutFilter] = useState<string[]>(savedFilters.statutFilter);
-  const [filtersExpanded, setFiltersExpanded] = useState<boolean>(savedFilters.filtersExpanded);
+  const [filtersExpanded] = useState<boolean>(savedFilters.filtersExpanded);
   const [typeDropdownOpen, setTypeDropdownOpen] = useState<boolean>(false);
   const [statutDropdownOpen, setStatutDropdownOpen] = useState<boolean>(false);
   const itemsPerPage = 10;

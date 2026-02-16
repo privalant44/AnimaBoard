@@ -11,13 +11,6 @@ interface Project {
   orderedDays?: number | null;
 }
 
-interface MonthlyTime {
-  month: string; // Format: YYYY-MM
-  actualDays: number; // Temps saisis depuis BoondManager (en jours)
-  forecastDays: number; // Temps prévisionnels saisis (en jours)
-  orderedDays?: number; // Jours commandés depuis la prestation
-}
-
 interface DeliveryTimes {
   [deliveryId: string]: {
     actual: { [month: string]: number }; // En jours
@@ -1030,10 +1023,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                           {resource.projects.map((project, index) => {
                             const deliveryId = String(project.id);
                             const isDeliveryExpanded = expandedDeliveries.has(deliveryId);
-                            const months = getMonthsBetweenDates(project.startDate, project.endDate);
                             const times = deliveryTimes[deliveryId] || { actual: {}, forecast: {} };
-                            const isToday = new Date();
-                            const todayMonth = `${isToday.getFullYear()}-${String(isToday.getMonth() + 1).padStart(2, '0')}`;
                             
                             // Charger les temps si pas encore chargés
                             if (!deliveryTimes[deliveryId] && !loadingTimes.has(project.id)) {

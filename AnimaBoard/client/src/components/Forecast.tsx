@@ -32,6 +32,31 @@ interface ForecastProps {
   onBack: () => void;
 }
 
+/** Évite "JSON.parse: unexpected character" quand l'API renvoie du HTML (erreur Vercel). */
+async function safeParseJson(res: Response): Promise<any> {
+  const text = await res.text();
+  if (!text.trim()) return {};
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    const friendly = `Réponse invalide du serveur (${res.status}): JSON attendu. Vérifiez les logs Vercel.`;
+    throw new Error(friendly);
+  }
+}
+
+function normalizeApiError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/JSON\.parse|unexpected character|SyntaxError/i.test(msg)) {
+    return 'Réponse invalide du serveur: l\'API n\'a pas renvoyé de JSON (erreur ou timeout Vercel). Vérifiez les logs du déploiement.';
+  }
+  return msg;
+}
+
+function safeParseLocalStorage<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback;
+  try { return JSON.parse(raw) as T; } catch { return fallback; }
+}
+
 // Fonction pour charger les filtres depuis localStorage
 const loadForecastFiltersFromStorage = () => {
   try {
@@ -50,8 +75,8 @@ const loadForecastFiltersFromStorage = () => {
     return {
       startDate: savedStartDate || defaultStartDate,
       endDate: savedEndDate || defaultEndDate,
-      typeFilter: savedTypeFilter ? JSON.parse(savedTypeFilter) : [],
-      statutFilter: savedStatutFilter ? JSON.parse(savedStatutFilter) : []
+      typeFilter: safeParseLocalStorage(savedTypeFilter, []),
+      statutFilter: safeParseLocalStorage(savedStatutFilter, [])
     };
   } catch (error) {
     console.error('Erreur lors du chargement des filtres depuis localStorage:', error);
@@ -112,17 +137,11 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       // Charger les prestations depuis deliveries.json
       console.log('📡 Chargement des prestations depuis deliveries.json...');
       const deliveriesResponse = await fetch('/api/data/deliveries.json');
-      
+      const deliveriesResponseData = await safeParseJson(deliveriesResponse);
       if (!deliveriesResponse.ok) {
-        let msg = 'Aucune donnée prestations. Lancez la synchronisation "Prestations" depuis Paramètres.';
-        try {
-          const errBody = await deliveriesResponse.json();
-          if (errBody?.error) msg = errBody.error;
-        } catch (_) {}
+        const msg = deliveriesResponseData?.error || 'Aucune donnée prestations. Lancez la synchronisation "Prestations" depuis Paramètres.';
         throw new Error(msg);
       }
-
-      const deliveriesResponseData = await deliveriesResponse.json();
       // La réponse de l'API est { success: true, data: { metadata: {...}, data: [...] } }
       // On doit extraire deliveriesResponseData.data.data (le tableau des prestations)
       const deliveriesData = deliveriesResponseData.data || deliveriesResponseData;
@@ -135,17 +154,11 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       // Charger les ressources depuis resources.json pour avoir les noms/prénoms
       console.log('📡 Chargement des ressources depuis resources.json...');
       const resourcesResponse = await fetch('/api/data/resources.json');
-      
+      const resourcesData = await safeParseJson(resourcesResponse);
       if (!resourcesResponse.ok) {
-        let msg = 'Ressources non disponibles. Lancez la synchronisation "Ressources" depuis Paramètres.';
-        try {
-          const errBody = await resourcesResponse.json();
-          if (errBody?.error) msg = errBody.error;
-        } catch (_) {}
+        const msg = resourcesData?.error || 'Ressources non disponibles. Lancez la synchronisation "Ressources" depuis Paramètres.';
         throw new Error(msg);
       }
-
-      const resourcesData = await resourcesResponse.json();
       const resourcesList = resourcesData.data || resourcesData || [];
       console.log(`📊 ${resourcesList.length} ressources chargées depuis resources.json`);
 
@@ -158,7 +171,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         // Utiliser l'endpoint /api/boondmanager/dictionary/resources pour récupérer le mapping typeOf
         const dictionaryResponse = await fetch('/api/boondmanager/dictionary/resources');
         if (dictionaryResponse.ok) {
-          const dictionaryData = await dictionaryResponse.json();
+          const dictionaryData = await safeParseJson(dictionaryResponse);
           // Le mapping typeOf est directement dans typeMapping
           if (dictionaryData.typeMapping) {
             Object.keys(dictionaryData.typeMapping).forEach(key => {
@@ -173,7 +186,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         // Récupérer le mapping state depuis le dictionnaire complet
         const fullDictionaryResponse = await fetch('/api/boondmanager/dictionary');
         if (fullDictionaryResponse.ok) {
-          const fullDictionaryData = await fullDictionaryResponse.json();
+          const fullDictionaryData = await safeParseJson(fullDictionaryResponse);
           // Extraire le mapping state depuis data.data.setting.state.resource
           const dict = fullDictionaryData.data?.data || fullDictionaryData.data || fullDictionaryData;
           const resourceStates = dict?.setting?.state?.resource || [];
@@ -339,7 +352,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       }
       setResources(resourcesWithProjects);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Une erreur est survenue';
+      const errorMessage = normalizeApiError(err);
       setError(errorMessage);
       console.error('❌ Error fetching forecast:', err);
       setResources([]);
@@ -353,13 +366,11 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
     try {
       console.log('📡 Chargement de l\'agrégat des timesheets...');
       const response = await fetch('/api/data/timesheets_aggregate.json');
-      
       if (!response.ok) {
         console.warn('⚠️  Fichier timesheets_aggregate.json non trouvé. Les temps saisis ne seront pas affichés.');
         return;
       }
-
-      const data = await response.json();
+      const data = await safeParseJson(response);
       const aggregateData = data.data?.data || data.data || [];
       
       console.log(`📊 ${aggregateData.length} lignes agrégées chargées`);
@@ -579,7 +590,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       const forecastTimesResponse = await fetch('/api/data/forecast-times.json');
       let forecastTimes: any = { data: {} };
       if (forecastTimesResponse.ok) {
-        const forecastData = await forecastTimesResponse.json();
+        const forecastData = await safeParseJson(forecastTimesResponse);
         forecastTimes = forecastData.data || forecastData;
       }
 
@@ -628,7 +639,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       try {
         const deliveriesResponse = await fetch('/api/data/deliveries.json');
         if (deliveriesResponse.ok) {
-          const deliveriesData = await deliveriesResponse.json();
+          const deliveriesData = await safeParseJson(deliveriesResponse);
           const deliveries = deliveriesData.data?.data || deliveriesData.data || [];
           const delivery = deliveries.find((d: any) => String(d.id) === String(deliveryId));
           if (delivery && delivery.orderedDays !== null && delivery.orderedDays !== undefined) {

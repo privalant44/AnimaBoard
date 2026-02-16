@@ -17,12 +17,29 @@
 
 ### 3. Configurer les variables d'environnement
 
-Dans les paramètres du projet Vercel, ajoutez les variables suivantes :
+**Où les ajouter :** Projet Vercel → **Settings** → **Environment Variables**.
 
-**Variables requises :**
+**Important — 3 points qui font souvent échouer :**
+
+1. **Cocher les environnements**  
+   Pour chaque variable, cochez **Production** et **Preview** (sinon les variables ne sont pas disponibles selon l’URL que vous ouvrez : production vs preview / branche).
+
+2. **Redéployer après ajout ou modification**  
+   Les variables ne sont prises en compte que pour les **nouveaux** déploiements. Après avoir ajouté ou modifié une variable : **Deployments** → ⋮ sur le dernier déploiement → **Redeploy**.
+
+3. **Noms exacts**  
+   Pas d’espace avant/après, respecter la casse : `BOOND_EMAIL`, `BOOND_PASSWORD`, etc.
+
+**Variables requises pour BoondManager :**
 - `BOOND_EMAIL` = votre email BoondManager
-- `BOOND_PASSWORD` = votre mot de passe BoondManager
-- `BOOND_API_URL` = `https://ui.boondmanager.com/api` (optionnel, valeur par défaut)
+- `BOOND_PASSWORD` = votre mot de passe en clair  
+  **ou** `BOOND_PASSWORD_ENC` + `ANIMA_SECRET_KEY` (mot de passe chiffré)
+- `BOOND_API_URL` = `https://votre-instance.boondmanager.com/api` (optionnel, défaut : `https://ui.boondmanager.com/api`)
+
+**Vérifier que les variables sont bien lues :**  
+Après déploiement, ouvrez dans le navigateur :  
+`https://votre-app.vercel.app/api/env-check`  
+La réponse indique quelles variables sont présentes (sans afficher les valeurs). Si une variable est `"set": false`, elle n’est pas injectée : revérifiez le nom, l’environnement (Production/Preview) et refaites un **Redeploy**.
 
 **Variables optionnelles :**
 - `NODE_ENV` = `production` (défini automatiquement par Vercel)

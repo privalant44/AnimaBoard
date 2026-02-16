@@ -38,7 +38,8 @@ function init() {
   if (!key) return;
 
   if (process.env.BOOND_PASSWORD_ENC && !process.env.BOOND_PASSWORD) {
-    const v = decrypt(process.env.BOOND_PASSWORD_ENC);
+    const enc = (process.env.BOOND_PASSWORD_ENC || '').trim().replace(/\s/g, '');
+    const v = decrypt(enc);
     if (v) process.env.BOOND_PASSWORD = v;
   }
 }

@@ -20,6 +20,13 @@ module.exports = async function handler(req, res) {
       return res.status(405).json({ success: false, error: 'Method Not Allowed' });
     }
     loadSecretEnv();
+    if (process.env.BOOND_EMAIL && process.env.BOOND_PASSWORD_ENC && process.env.ANIMA_SECRET_KEY && !process.env.BOOND_PASSWORD) {
+      return res.status(500).json({
+        success: false,
+        error: 'Déchiffrement du mot de passe échoué',
+        errorDetail: 'BOOND_PASSWORD_ENC et ANIMA_SECRET_KEY sont définis mais le déchiffrement n\'a pas produit de mot de passe. Vérifiez que ANIMA_SECRET_KEY est exactement la même que celle utilisée pour chiffrer (node scripts/encrypt-env.js), et que BOOND_PASSWORD_ENC ne contient pas d\'espaces ou de retours à la ligne en trop (copier-coller la valeur sans modifier).'
+      });
+    }
     const syncPath = path.join(__dirname, '..', '..', '..', 'sync.js');
     const BoondManagerSync = require(syncPath);
     const sync = new BoondManagerSync();
@@ -32,8 +39,11 @@ module.exports = async function handler(req, res) {
     });
   } catch (err) {
     console.error('sync/resources error:', err);
-    const message = err.message || 'Erreur lors de la synchronisation des ressources';
-    const detail = err.response?.data ? JSON.stringify(err.response.data).slice(0, 500) : undefined;
+    let message = err.message || 'Erreur lors de la synchronisation des ressources';
+    let detail = err.response?.data ? JSON.stringify(err.response.data).slice(0, 500) : undefined;
+    if (/BOOND_EMAIL|BOOND_PASSWORD|requis/.test(message)) {
+      detail = (detail ? detail + ' — ' : '') + 'Sur Vercel : ajoutez BOOND_EMAIL et BOOND_PASSWORD dans Settings → Environment Variables, puis redéployez.';
+    }
     return res.status(500).json({
       success: false,
       error: message,

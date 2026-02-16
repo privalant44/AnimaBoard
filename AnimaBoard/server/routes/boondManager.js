@@ -6,21 +6,19 @@ const boondManagerService = require('../services/boondManagerService');
 router.get('/test', async (req, res) => {
   try {
     console.log('🧪 Test de connexion API BoondManager demandé...');
-    // Support pour les nouvelles variables (email/password) et les anciennes (token/clef)
-    const hasCredentials = !!(process.env.BOOND_EMAIL && process.env.BOOND_PASSWORD) || 
-                           !!(process.env.BOOND_TOKEN_CLIENT && process.env.BOOND_CLEF_CLIENT);
+    const hasCredentials = !!(process.env.BOOND_EMAIL && (process.env.BOOND_PASSWORD || process.env.BOOND_PASSWORD_ENC));
     const apiUrl = process.env.BOOND_API_URL;
-    
+
     console.log('📋 Configuration:');
     console.log(`   - URL API: ${apiUrl}`);
-    console.log(`   - Email: ${process.env.BOOND_EMAIL || process.env.BOOND_TOKEN_CLIENT || 'Non configuré'}`);
-    console.log(`   - Password: ${(process.env.BOOND_PASSWORD || process.env.BOOND_CLEF_CLIENT) ? 'Configuré' : 'Non configuré'}`);
-    
+    console.log(`   - Email: ${process.env.BOOND_EMAIL || 'Non configuré'}`);
+    console.log(`   - Mot de passe: ${(process.env.BOOND_PASSWORD || process.env.BOOND_PASSWORD_ENC) ? 'Configuré' : 'Non configuré'}`);
+
     if (!hasCredentials) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
         message: 'Les identifiants API ne sont pas configurés',
-        error: 'BOOND_EMAIL et BOOND_PASSWORD (ou BOOND_TOKEN_CLIENT et BOOND_CLEF_CLIENT) manquants',
+        error: 'BOOND_EMAIL et BOOND_PASSWORD (ou BOOND_PASSWORD_ENC) requis',
         hasCredentials: false,
         apiUrl: apiUrl
       });
@@ -63,8 +61,7 @@ router.get('/test', async (req, res) => {
         statusText: error.response.statusText,
         data: error.response.data
       } : undefined,
-      hasCredentials: !!(process.env.BOOND_EMAIL && process.env.BOOND_PASSWORD) || 
-                      !!(process.env.BOOND_TOKEN_CLIENT && process.env.BOOND_CLEF_CLIENT),
+      hasCredentials: !!(process.env.BOOND_EMAIL && (process.env.BOOND_PASSWORD || process.env.BOOND_PASSWORD_ENC)),
       apiUrl: process.env.BOOND_API_URL,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
@@ -556,10 +553,21 @@ router.post('/sync/resources', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Erreur lors de la synchronisation des ressources:', error);
+    let errorMessage = error.message;
+    if (error.response) {
+      const status = error.response.status;
+      const data = error.response.data;
+      if (status === 422) {
+        const detail = data?.errors?.[0]?.detail || data?.message || JSON.stringify(data);
+        errorMessage = `BoondManager a refusé la requête (422). Détail: ${detail}\n\nÀ vérifier : 1) BOOND_API_URL = URL exacte de votre instance (ex. https://animaneo.boondmanager.com/api — pas ui.boondmanager.com si vous avez un sous-domaine). 2) Dans BoondManager : Administration > Intranet (ou Paramètres API) > activer « Authentification par identifiants » / Basic Auth. 3) Tester les mêmes identifiants dans le sandbox API BoondManager (menu Développeur / API) pour confirmer qu’ils fonctionnent.`;
+      } else if (status === 401 || status === 403) {
+        errorMessage = `Accès refusé par BoondManager (${status}). Vérifiez BOOND_EMAIL et BOOND_PASSWORD.`;
+      }
+    }
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la synchronisation des ressources',
-      error: error.message,
+      error: errorMessage,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }

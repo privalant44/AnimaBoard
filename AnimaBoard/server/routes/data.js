@@ -6,9 +6,7 @@ const express = require('express');
 const router = express.Router();
 const kvStorage = require('../../lib/kvStorage');
 const { KV_KEYS } = require('../../lib/constants');
-const BoondManagerService = require('../services/boondManagerService');
-
-const boondManagerService = new BoondManagerService();
+const boondManagerService = require('../services/boondManagerService');
 
 // Helper: réponse standard avec data
 function okData(res, data, fileLabel = null, count = null) {

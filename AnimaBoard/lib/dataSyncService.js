@@ -60,11 +60,11 @@ class DataSyncService {
    * @throws {Error} Si les credentials ne sont pas configurés
    */
   _getCredentials() {
-    const email = process.env.BOOND_EMAIL || process.env.BOOND_TOKEN_CLIENT;
-    const password = process.env.BOOND_PASSWORD || process.env.BOOND_CLEF_CLIENT;
+    const email = process.env.BOOND_EMAIL;
+    const password = process.env.BOOND_PASSWORD;
 
     if (!email || !password) {
-      throw new Error('BoondManager credentials not configured');
+      throw new Error('BoondManager: BOOND_EMAIL et BOOND_PASSWORD (ou BOOND_PASSWORD_ENC) requis');
     }
 
     return { email, password };
@@ -260,9 +260,8 @@ class DataSyncService {
     }
 
     try {
-      const currentYear = new Date().getFullYear();
-      const startMonthStr = startMonth || `${currentYear - 1}-01`;
-      const endMonthStr = endMonth || `${currentYear}-12`;
+      const startMonthStr = startMonth || '2025-01';
+      const endMonthStr = endMonth || '2026-12';
 
       const config = this._createAxiosConfig({
         headers: { 'Accept': 'application/hal+json' }

@@ -1,27 +1,19 @@
 const axios = require('axios');
 const path = require('path');
 require('dotenv').config();
+require('./lib/secretEnv');
 const kvStorage = require('./lib/kvStorage');
 const { KV_KEYS } = require('./lib/constants');
 
 const baseURL = process.env.BOOND_API_URL || 'https://ui.boondmanager.com/api';
 
-// Utiliser Basic Auth avec les identifiants depuis les variables d'environnement
 let email = process.env.BOOND_EMAIL;
 let password = process.env.BOOND_PASSWORD;
-
-// Support rétrocompatible
-if (!email && process.env.BOOND_TOKEN_CLIENT) {
-  email = process.env.BOOND_TOKEN_CLIENT;
-}
-if (!password && process.env.BOOND_CLEF_CLIENT) {
-  password = process.env.BOOND_CLEF_CLIENT;
-}
 
 console.log('🚀 Synchronisation des feuilles de temps (timesheets)\n');
 console.log('='.repeat(80));
 if (!email || !password) {
-  console.error('❌ Erreur: Les identifiants API ne sont pas configurés (BOOND_EMAIL et BOOND_PASSWORD requis)');
+  console.error('❌ Erreur: BOOND_EMAIL et BOOND_PASSWORD (ou BOOND_PASSWORD_ENC) requis');
   process.exit(1);
 }
 console.log(`🔑 Authentification: Basic Auth avec ${email}\n`);
@@ -495,11 +487,9 @@ function createAggregate(timesheetsData) {
 
 // Fonction principale de synchronisation
 async function syncTimesheets(startMonth = null, endMonth = null) {
-  // Définir les mois par défaut (année en cours et année précédente)
-  const currentYear = new Date().getFullYear();
-  const previousYear = currentYear - 1;
-  const startMonthStr = startMonth || `${previousYear}-01`;
-  const endMonthStr = endMonth || `${currentYear}-12`;
+  // Période par défaut : 2025 et 2026 (toutes les feuilles de temps sur ces deux années)
+  const startMonthStr = startMonth || '2025-01';
+  const endMonthStr = endMonth || '2026-12';
 
   console.log(`📅 Synchronisation des feuilles de temps`);
   console.log(`   Période: ${startMonthStr} à ${endMonthStr}\n`);

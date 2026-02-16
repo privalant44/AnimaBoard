@@ -114,7 +114,12 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       const deliveriesResponse = await fetch('/api/data/deliveries.json');
       
       if (!deliveriesResponse.ok) {
-        throw new Error('Fichier deliveries.json non trouvé. Exécutez extract_deliveries.js pour créer ce fichier.');
+        let msg = 'Aucune donnée prestations. Lancez la synchronisation "Prestations" depuis Paramètres.';
+        try {
+          const errBody = await deliveriesResponse.json();
+          if (errBody?.error) msg = errBody.error;
+        } catch (_) {}
+        throw new Error(msg);
       }
 
       const deliveriesResponseData = await deliveriesResponse.json();
@@ -132,7 +137,12 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       const resourcesResponse = await fetch('/api/data/resources.json');
       
       if (!resourcesResponse.ok) {
-        throw new Error('Fichier resources.json non trouvé. Exécutez sync.js pour créer ce fichier.');
+        let msg = 'Ressources non disponibles. Lancez la synchronisation "Ressources" depuis Paramètres.';
+        try {
+          const errBody = await resourcesResponse.json();
+          if (errBody?.error) msg = errBody.error;
+        } catch (_) {}
+        throw new Error(msg);
       }
 
       const resourcesData = await resourcesResponse.json();

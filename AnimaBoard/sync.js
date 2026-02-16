@@ -1,6 +1,7 @@
 const axios = require('axios');
 const path = require('path');
 require('dotenv').config();
+require('./lib/secretEnv');
 const kvStorage = require('./lib/kvStorage');
 const { KV_KEYS } = require('./lib/constants');
 
@@ -9,56 +10,44 @@ class BoondManagerSync {
     this.baseURL = process.env.BOOND_API_URL || 'https://ui.boondmanager.com/api';
     this.email = process.env.BOOND_EMAIL;
     this.password = process.env.BOOND_PASSWORD;
-    
-    // Support rétrocompatible
-    if (!this.email && process.env.BOOND_TOKEN_CLIENT) {
-      this.email = process.env.BOOND_TOKEN_CLIENT;
-    }
-    if (!this.password && process.env.BOOND_CLEF_CLIENT) {
-      this.password = process.env.BOOND_CLEF_CLIENT;
-    }
-    
     this.dataDir = path.join(__dirname, 'data');
   }
 
-  async makeRequest(endpoint, method = 'GET', data = null, useJwtAuth = false) {
+  async makeRequest(endpoint, method = 'GET', data = null) {
+    if (!this.email || !this.password) {
+      throw new Error('BoondManager: BOOND_EMAIL et BOOND_PASSWORD (ou BOOND_PASSWORD_ENC) requis');
+    }
     const config = {
+      auth: { username: this.email, password: this.password },
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json'
+        'Accept': 'application/json, application/hal+json'
       },
-      timeout: 30000
+      timeout: 30000,
+      validateStatus: (status) => status < 500
     };
 
-    // Pour les deliveries/search, utiliser l'authentification JWT
-    if (useJwtAuth) {
-      // Supprimer Content-Type par défaut et utiliser les headers spécifiques
-      delete config.headers['Content-Type'];
-      config.headers['X-Jwt-Client'] = '616e696d616e656f:9fb1acb2c0deb05eab5e';
-      config.headers['Accept'] = 'application/hal+json';
-      config.headers['Content-Type'] = 'application/json';
-    } else {
-      // Pour les autres endpoints, utiliser Basic Auth
-      if (!this.email || !this.password) {
-        throw new Error('BoondManager API credentials not configured (BOOND_EMAIL and BOOND_PASSWORD required)');
+    const fullUrl = `${this.baseURL}${endpoint}`;
+    console.log(`📡 Appel API: ${fullUrl} (${method}, Basic Auth)`);
+
+    let response;
+    try {
+      if (method === 'POST') {
+        response = await axios.post(fullUrl, data || {}, config);
+      } else {
+        response = await axios.get(fullUrl, config);
       }
-      config.auth = {
-        username: this.email,
-        password: this.password
-      };
+    } catch (err) {
+      const detail = err.response?.data?.errors?.[0]?.detail || err.response?.data?.message || err.response?.data ? JSON.stringify(err.response.data) : err.message;
+      const msg = err.response?.status === 422
+        ? `BoondManager 422: ${detail}. Vérifiez BOOND_API_URL et l’activation de l’auth (Basic Auth ou JWT) dans l’admin BoondManager.`
+        : `BoondManager API: ${err.response?.status || ''} ${detail}`.trim();
+      throw new Error(msg);
     }
 
-    const fullUrl = `${this.baseURL}${endpoint}`;
-    console.log(`📡 Appel API: ${fullUrl} (${method})`);
-    if (useJwtAuth) {
-      console.log(`   Headers: X-Jwt-Client=${config.headers['X-Jwt-Client']}, Accept=${config.headers['Accept']}`);
-    }
-    
-    let response;
-    if (method === 'POST') {
-      response = await axios.post(fullUrl, data || {}, config);
-    } else {
-      response = await axios.get(fullUrl, config);
+    if (response.status >= 400) {
+      const detail = response.data?.errors?.[0]?.detail || response.data?.message || (response.data ? JSON.stringify(response.data) : '');
+      throw new Error(`BoondManager ${response.status}: ${detail}`);
     }
     return response.data;
   }

@@ -172,14 +172,14 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
         setSyncResult({
           type: 'resources',
           success: false,
-          message: data.message || 'Erreur lors de la synchronisation'
+          message: (data.error || data.message) || 'Erreur lors de la synchronisation'
         });
       }
     } catch (err) {
       setSyncResult({
         type: 'resources',
         success: false,
-        message: err instanceof Error ? err.message : 'Erreur inconnue'
+        message: err instanceof Error ? err.message : 'Erreur inconnue (vérifiez que le serveur API tourne sur le port 3000)'
       });
     } finally {
       setSyncingResources(false);
@@ -210,14 +210,14 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
         setSyncResult({
           type: 'deliveries',
           success: false,
-          message: data.message || 'Erreur lors de l\'extraction'
+          message: (data.error || data.message) || 'Erreur lors de l\'extraction'
         });
       }
     } catch (err) {
       setSyncResult({
         type: 'deliveries',
         success: false,
-        message: err instanceof Error ? err.message : 'Erreur inconnue'
+        message: err instanceof Error ? err.message : 'Erreur inconnue (serveur API sur port 3000 ?)'
       });
     } finally {
       setSyncingDeliveries(false);
@@ -257,7 +257,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
         setSyncResult({
           type: 'time-reports',
           success: false,
-          message: data.message || 'Erreur lors de l\'extraction des temps saisis'
+          message: (data.error || data.message) || 'Erreur lors de l\'extraction des temps saisis'
         });
       }
     } catch (err) {
@@ -276,10 +276,9 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     setSyncResult(null);
     
     try {
-      // Utiliser l'année en cours par défaut
-      const currentYear = new Date().getFullYear();
-      const startMonth = `${currentYear}-01`;
-      const endMonth = `${currentYear}-12`;
+      // Période 2025 et 2026 pour récupérer toutes les feuilles de temps
+      const startMonth = '2025-01';
+      const endMonth = '2026-12';
       
       const response = await fetch('/api/boondmanager/sync/timesheets', {
         method: 'POST',
@@ -304,7 +303,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
         setSyncResult({
           type: 'timesheets',
           success: false,
-          message: data.message || 'Erreur lors de la synchronisation des feuilles de temps'
+          message: (data.error || data.message) || 'Erreur lors de la synchronisation des feuilles de temps'
         });
       }
     } catch (err) {

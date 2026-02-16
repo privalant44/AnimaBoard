@@ -1,27 +1,19 @@
 const axios = require('axios');
 const path = require('path');
 require('dotenv').config();
+require('./lib/secretEnv');
 const kvStorage = require('./lib/kvStorage');
 const { KV_KEYS } = require('./lib/constants');
 
 const baseURL = process.env.BOOND_API_URL || 'https://ui.boondmanager.com/api';
 
-// Utiliser Basic Auth avec les identifiants depuis les variables d'environnement
 let email = process.env.BOOND_EMAIL;
 let password = process.env.BOOND_PASSWORD;
-
-// Support rétrocompatible
-if (!email && process.env.BOOND_TOKEN_CLIENT) {
-  email = process.env.BOOND_TOKEN_CLIENT;
-}
-if (!password && process.env.BOOND_CLEF_CLIENT) {
-  password = process.env.BOOND_CLEF_CLIENT;
-}
 
 console.log('🚀 Extraction des prestations via /api/deliveries/{id} (JSON)\n');
 console.log('='.repeat(80));
 if (!email || !password) {
-  console.error('❌ Erreur: Les identifiants API ne sont pas configurés (BOOND_EMAIL et BOOND_PASSWORD requis)');
+  console.error('❌ Erreur: BOOND_EMAIL et BOOND_PASSWORD (ou BOOND_PASSWORD_ENC) requis');
   process.exit(1);
 }
 console.log(`🔑 Authentification: Basic Auth avec ${email}\n`);

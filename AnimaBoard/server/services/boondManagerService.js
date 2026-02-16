@@ -3,81 +3,45 @@ const axios = require('axios');
 class BoondManagerService {
   constructor() {
     this.baseURL = process.env.BOOND_API_URL || 'https://ui.boondmanager.com/api';
-    // BoondManager utilise l'email et le mot de passe pour l'authentification Basic Auth
     this.email = process.env.BOOND_EMAIL;
     this.password = process.env.BOOND_PASSWORD;
-    
-    // Support rétrocompatible avec les anciennes variables
-    if (!this.email && process.env.BOOND_TOKEN_CLIENT) {
-      this.email = process.env.BOOND_TOKEN_CLIENT;
-    }
-    if (!this.password && process.env.BOOND_CLEF_CLIENT) {
-      this.password = process.env.BOOND_CLEF_CLIENT;
-    }
-    
+
     if (!this.email || !this.password) {
-      console.warn('⚠️  BoondManager API credentials not configured');
+      console.warn('⚠️  BoondManager: configurez BOOND_EMAIL et BOOND_PASSWORD (ou BOOND_PASSWORD_ENC + ANIMA_SECRET_KEY)');
     }
   }
 
   async makeRequest(endpoint, params = {}) {
-    // Vérifier que les credentials sont configurés
     if (!this.email || !this.password) {
-      throw new Error('BoondManager API credentials not configured (BOOND_EMAIL and BOOND_PASSWORD required)');
+      throw new Error('BoondManager: BOOND_EMAIL et BOOND_PASSWORD (ou mot de passe chiffré BOOND_PASSWORD_ENC) requis');
     }
 
-    try {
-      // BoondManager utilise Basic Auth avec email et mot de passe
-      const config = {
-        params,
-        auth: {
-          username: this.email,
-          password: this.password
-        },
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        // Ne pas utiliser de timeout trop court
-        timeout: 30000,
-        // Désactiver la validation SSL si nécessaire (non recommandé en production)
-        validateStatus: function (status) {
-          return status < 500; // Ne pas rejeter automatiquement les erreurs 4xx
-        }
-      };
+    const config = {
+      params,
+      auth: {
+        username: this.email,
+        password: this.password
+      },
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, application/hal+json'
+      },
+      timeout: 30000,
+      validateStatus: (status) => status < 500
+    };
 
-      const fullUrl = `${this.baseURL}${endpoint}`;
-      console.log(`📡 Calling BoondManager API: ${fullUrl}`);
-      console.log(`🔑 Using credentials: email=${this.email}, password=***`);
-      console.log(`📋 Request config:`, JSON.stringify({
-        url: fullUrl,
-        method: 'GET',
-        auth: 'Basic Auth (email/password)',
-        params: params
-      }, null, 2));
-      
-      const response = await axios.get(fullUrl, config);
-      console.log(`✅ BoondManager API response received (status: ${response.status})`);
-      console.log(`📊 Response headers:`, JSON.stringify(response.headers, null, 2));
-      console.log(`📊 Response data (full):`, JSON.stringify(response.data, null, 2));
-      return response.data;
-    } catch (error) {
-      console.error(`❌ Error calling BoondManager API ${endpoint}:`, error.message);
-      if (error.response) {
-        console.error('Response status:', error.response.status);
-        console.error('Response headers:', JSON.stringify(error.response.headers, null, 2));
-        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
-        
-        // Si erreur 422 "no account found", essayer avec l'URL sans /api
-        if (error.response.status === 422 && error.response.data?.errors?.[0]?.detail?.includes('no account found')) {
-          console.warn('⚠️  Erreur 422 - no account found. L\'URL ou l\'authentification pourrait être incorrecte.');
-          console.warn('💡 Vérifiez que l\'URL de base est correcte et que les credentials sont valides.');
-        }
-      }
-      // Ne pas utiliser de données mockées - toujours propager l'erreur
-      // pour voir la vraie réponse de l'API
-      throw error;
+    const fullUrl = `${this.baseURL}${endpoint}`;
+    console.log(`📡 Calling BoondManager API: ${fullUrl} (Basic Auth)`);
+
+    const response = await axios.get(fullUrl, config);
+
+    if (response.status >= 400) {
+      const detail = response.data?.errors?.[0]?.detail || response.data?.message || (response.data ? JSON.stringify(response.data) : '');
+      const err = new Error(`BoondManager ${response.status}: ${detail}`);
+      err.response = { status: response.status, data: response.data };
+      throw err;
     }
+    return response.data;
   }
 
   /**
@@ -113,9 +77,12 @@ class BoondManagerService {
     const typeOfMapping = await this.getTypeOfMapping();
     const stateMapping = await this.getStateMapping();
     
-    // Essayer plusieurs endpoints possibles pour trouver celui qui fonctionne
+    // Essayer plusieurs endpoints possibles (selon instance BoondManager)
     const possibleEndpoints = [
-      '/resources'
+      '/resources',
+      '/api/resources',
+      '/v2/resources',
+      '/api/v2/resources'
     ];
 
     for (const endpoint of possibleEndpoints) {

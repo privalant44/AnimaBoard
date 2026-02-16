@@ -9,8 +9,8 @@ Start-Process powershell -ArgumentList $serverArgs -WindowStyle Normal
 # Attendre un peu pour que le serveur démarre
 Start-Sleep -Seconds 3
 
-# Lancer le client en arrière-plan
-$clientArgs = "-NoExit", "-Command", "cd '$scriptPath\client'; npm start"
+# Lancer le client en arrière-plan (port 3001 pour éviter le conflit avec le serveur 3000)
+$clientArgs = "-NoExit", "-Command", "cd '$scriptPath\client'; `$env:PORT=3001; npm start"
 Start-Process powershell -ArgumentList $clientArgs -WindowStyle Normal
 
 Write-Host "Serveur et client lancés dans des fenêtres séparées." -ForegroundColor Green

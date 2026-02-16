@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
+require('../lib/secretEnv');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -40,6 +41,23 @@ try {
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Anima Board API is running' });
 });
+
+// En dev : indiquer où ouvrir le client (React tourne sur un autre port)
+if (process.env.NODE_ENV !== 'production') {
+  const clientPort = process.env.CLIENT_PORT || 3001;
+  app.get('/', (req, res) => {
+    res.send(`
+      <!DOCTYPE html>
+      <html><head><meta charset="utf-8"><title>Anima Board</title></head>
+      <body style="font-family:sans-serif;padding:2rem;">
+        <h1>Anima Board – API</h1>
+        <p>Le serveur API tourne sur le port ${PORT}.</p>
+        <p>Ouvrez l’interface : <a href="http://localhost:${clientPort}">http://localhost:${clientPort}</a></p>
+        <p><a href="/api/health">Health check</a></p>
+      </body></html>
+    `);
+  });
+}
 
 // Servir l'application React pour toutes les routes non-API en production
 if (process.env.NODE_ENV === 'production') {

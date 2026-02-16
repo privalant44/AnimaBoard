@@ -7,7 +7,8 @@
     "node": "24.x"
   },
   "scripts": {
-    "dev": "powershell -ExecutionPolicy Bypass -File ./dev.ps1",
+    "dev": "node scripts/dev.js",
+    "dev:win": "powershell -ExecutionPolicy Bypass -File ./dev.ps1",
     "server": "node server/index.js",
     "client": "cd client && npm start",
     "build": "cd client && npm run build",
@@ -20,7 +21,9 @@
     "extract-times": "node extract_time_reports.js",
     "sync-timesheets": "node sync_timesheets.js",
     "migrate-to-kv": "node scripts/migrate-to-kv.js",
-    "test-kv": "node scripts/test-kv.js"
+    "test-kv": "node scripts/test-kv.js",
+    "view-kv": "node scripts/view-kv.js",
+    "encrypt-env": "node scripts/encrypt-env.js"
   },
   "keywords": [
     "dashboard",

@@ -17,32 +17,6 @@ interface ResourcesProps {
   onBack: () => void;
 }
 
-// Fonction pour mapper les données BoondManager vers notre format
-const mapBoondResource = (boondResource: any, index: number): Resource => {
-  // Structure BoondManager : { id, type, attributes: { firstName, lastName, typeOf } }
-  // Extraire depuis attributes si présent, sinon depuis la racine
-  const firstName = boondResource.attributes?.firstName || boondResource.firstName || boondResource.FirstName || '';
-  const lastName = boondResource.attributes?.lastName || boondResource.lastName || boondResource.LastName || '';
-  const typeOfCode = boondResource.attributes?.typeOf || boondResource.typeOf || boondResource.TypeOf || boondResource.type || boondResource.Type || '';
-  // Utiliser le label du dictionnaire si disponible, sinon le code
-  const typeOfLabel = boondResource.typeOfLabel || typeOfCode;
-  
-  // Utiliser directement le label du dictionnaire pour le type
-  // Si le label n'est pas disponible, utiliser le code ou une valeur par défaut
-  const type = typeOfLabel && typeOfLabel !== '' ? typeOfLabel : (typeOfCode || 'N/A');
-  
-  // Récupérer le statut depuis stateLabel
-  const statut = boondResource.stateLabel || boondResource.state || null;
-
-  return {
-    id: boondResource.id || boondResource.ID || boondResource.Id || index,
-    nom: lastName,
-    prenom: firstName,
-    type: type, // Utilise directement le label du dictionnaire
-    statut: statut // Statut de la ressource
-  };
-};
-
 type SortField = 'nom' | 'prenom' | 'type' | 'statut' | null;
 type SortDirection = 'asc' | 'desc';
 

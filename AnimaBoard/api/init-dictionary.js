@@ -36,8 +36,15 @@ module.exports = async (req, res) => {
 
     const entries = [];
 
-    // Extraire les types de ressources (typeOf)
-    const typeOfList = dictionary.data?.typeOf || [];
+    // Extraire la structure du dictionnaire
+    const fullDict = dictionary.data?.data || dictionary.data;
+    console.log('📋 Clés dans fullDict:', Object.keys(fullDict || {}));
+    console.log('📋 Clés dans fullDict.setting:', Object.keys(fullDict?.setting || {}));
+
+    // Extraire les types de ressources (typeOf) depuis setting.typeOf.resource
+    const typeOfList = fullDict?.setting?.typeOf?.resource || [];
+    console.log(`📊 ${typeOfList.length} types trouvés dans setting.typeOf.resource`);
+    
     typeOfList.forEach((item) => {
       if (item.id !== undefined && item.value) {
         entries.push({
@@ -49,9 +56,9 @@ module.exports = async (req, res) => {
       }
     });
 
-    // Extraire les états de ressources (state)
-    const fullDict = dictionary.data?.data || dictionary.data;
+    // Extraire les états de ressources (state) depuis setting.state.resource
     const resourceStates = fullDict?.setting?.state?.resource || [];
+    console.log(`📊 ${resourceStates.length} statuts trouvés dans setting.state.resource`);
     resourceStates.forEach((item) => {
       if (item.id !== undefined && item.value) {
         entries.push({

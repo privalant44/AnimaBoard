@@ -44,10 +44,10 @@ async function getTable(key, defaultValue = null) {
         }));
       }
       case KV_KEYS.DELIVERIES: {
-        // Lire depuis la nouvelle table normalisée 'deliveries'
+        // Lire depuis la table 'deliveries' - sélection des colonnes nécessaires uniquement
         const { data: rows, error } = await supabase
           .from('deliveries')
-          .select('*')
+          .select('id, reference, title, tjm, start_date, end_date, project_id, resource_id, state, ordered_days, synced_at')
           .order('id');
         if (error) throw error;
         if (!rows || rows.length === 0) return defaultValue;
@@ -62,11 +62,8 @@ async function getTable(key, defaultValue = null) {
           endDate: r.end_date,
           projectId: r.project_id,
           resourceId: r.resource_id,
-          resourceFirstName: r.resource_first_name,
-          resourceLastName: r.resource_last_name,
           state: r.state,
-          orderedDays: r.ordered_days,
-          raw: r.raw || {}
+          orderedDays: r.ordered_days
         }));
         return { metadata: { lastSync: rows[0]?.synced_at }, data };
       }

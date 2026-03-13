@@ -32,9 +32,13 @@ module.exports = createVercelHandler(async (req, res) => {
   try {
     await kvStorage.del(keyData);
     await kvStorage.del(keyAggregate);
-    const currentYear = new Date().getFullYear();
-    const startMonth = `${currentYear - 1}-01`;
-    const endMonth = `${currentYear}-12`;
+    
+    // Limiter à 6 mois pour éviter timeout Vercel (10s sur plan gratuit)
+    const now = new Date();
+    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const startMonth = `${sixMonthsAgo.getFullYear()}-${String(sixMonthsAgo.getMonth() + 1).padStart(2, '0')}`;
+    const endMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    
     const syncTimesheets = require(path.join(__dirname, '..', 'sync_timesheets'));
     const result = await syncTimesheets(startMonth, endMonth);
     const count = result?.metadata?.totalTimesheets ?? 0;

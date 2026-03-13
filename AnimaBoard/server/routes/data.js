@@ -238,14 +238,18 @@ router.post('/resources-metadata', async (req, res) => {
   }
 });
 
-// --- Réinitialiser les feuilles de temps (année n-1 et n) : vide KV puis recharge n-1 et n
+// --- Réinitialiser les feuilles de temps (6 derniers mois pour éviter timeout)
 router.post('/timesheets-reset', async (req, res) => {
   try {
     await kvStorage.del(KV_KEYS.TIMESHEETS_DATA);
     await kvStorage.del(KV_KEYS.TIMESHEETS_AGGREGATE);
-    const currentYear = new Date().getFullYear();
-    const startMonth = `${currentYear - 1}-01`;
-    const endMonth = `${currentYear}-12`;
+    
+    // Limiter à 6 mois pour éviter timeout Vercel
+    const now = new Date();
+    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const startMonth = `${sixMonthsAgo.getFullYear()}-${String(sixMonthsAgo.getMonth() + 1).padStart(2, '0')}`;
+    const endMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    
     const syncTimesheets = require('../../sync_timesheets');
     const result = await syncTimesheets(startMonth, endMonth);
     const count = result?.metadata?.totalTimesheets ?? 0;

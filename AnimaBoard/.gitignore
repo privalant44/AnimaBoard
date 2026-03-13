@@ -7,4 +7,4 @@ client/node_modules/
 dist/
 build/
 client/build/
-data/
+/data/

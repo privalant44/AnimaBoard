@@ -30,7 +30,7 @@ router.get('/projects', async (req, res) => {
   }
 });
 
-// --- Resources (live BoondManager, fallback KV)
+// --- Resources (live BoondManager, fallback KV) - utilisé par Forecast/Report
 async function handleResources(req, res) {
   try {
     const resources = await boondManagerService.getResources();
@@ -44,6 +44,62 @@ async function handleResources(req, res) {
 }
 router.get('/resources', handleResources);
 router.get('/resources.json', handleResources);
+
+// --- Resources locales (lecture uniquement base, sans appel API) - pour la vue Ressources
+router.get('/resources-local', async (req, res) => {
+  try {
+    // Lire les ressources persistées (table resources via kvStorage -> db)
+    const stored = await kvStorage.get(KV_KEYS.RESOURCES, []);
+    const baseList = Array.isArray(stored) ? stored : (stored?.data || []);
+
+    // Lire le dictionnaire pour resources.type_of et resources.state
+    const { getSupabase } = require('../../lib/supabaseClient');
+    const supabase = getSupabase();
+    let dictType = {};
+    let dictState = {};
+
+    if (supabase) {
+      const { data: dictRows, error } = await supabase
+        .from('dictionnaire')
+        .select('table_name, column_name, code, label')
+        .eq('table_name', 'resources');
+
+      if (error) {
+        console.error('❌ Erreur lecture dictionnaire:', error.message || error);
+      } else {
+        (dictRows || []).forEach((row) => {
+          if (row.column_name === 'type_of') {
+            dictType[String(row.code)] = row.label;
+          } else if (row.column_name === 'state') {
+            dictState[String(row.code)] = row.label;
+          }
+        });
+      }
+    }
+
+    const list = baseList.map((r) => {
+      const typeCode = r.typeOf ?? r.type_of ?? null;
+      const stateCode = r.state ?? null;
+      const typeLabel = typeCode !== null && typeCode !== undefined
+        ? (dictType[String(typeCode)] || String(typeCode))
+        : 'N/A';
+      const stateLabel = stateCode !== null && stateCode !== undefined
+        ? (dictState[String(stateCode)] || String(stateCode))
+        : undefined;
+
+      return {
+        ...r,
+        typeLabel,
+        stateLabel,
+      };
+    });
+
+    return okData(res, list, 'resources', list.length);
+  } catch (error) {
+    console.error('❌ Erreur /api/data/resources-local:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // --- Deliveries (KV uniquement, rempli par sync/deliveries)
 router.get('/deliveries.json', async (req, res) => {
@@ -178,6 +234,28 @@ router.post('/resources-metadata', async (req, res) => {
     await kvStorage.set(KV_KEYS.RESOURCES_METADATA, req.body);
     return res.json({ success: true, message: 'Métadonnées sauvegardées avec succès' });
   } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// --- Réinitialiser les feuilles de temps (année n-1 et n) : vide KV puis recharge n-1 et n
+router.post('/timesheets-reset', async (req, res) => {
+  try {
+    await kvStorage.del(KV_KEYS.TIMESHEETS_DATA);
+    await kvStorage.del(KV_KEYS.TIMESHEETS_AGGREGATE);
+    const currentYear = new Date().getFullYear();
+    const startMonth = `${currentYear - 1}-01`;
+    const endMonth = `${currentYear}-12`;
+    const syncTimesheets = require('../../sync_timesheets');
+    const result = await syncTimesheets(startMonth, endMonth);
+    const count = result?.metadata?.totalTimesheets ?? 0;
+    const totalEntries = result?.metadata?.totalEntries ?? 0;
+    return res.json({
+      success: true,
+      message: `Feuilles de temps réinitialisées et rechargées (${startMonth} à ${endMonth}) : ${count} feuilles, ${totalEntries} entrées.`
+    });
+  } catch (error) {
+    console.error('❌ Erreur /api/data/timesheets-reset:', error);
     return res.status(500).json({ success: false, error: error.message });
   }
 });

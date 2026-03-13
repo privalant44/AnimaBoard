@@ -129,6 +129,10 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
     };
   }>({});
 
+  // États pour toutes les options de filtres (depuis toutes les ressources)
+  const [allTypeOptions, setAllTypeOptions] = useState<string[]>([]);
+  const [allStatutOptions, setAllStatutOptions] = useState<string[]>([]);
+
   const fetchForecast = useCallback(async () => {
     try {
       setLoading(true);
@@ -151,16 +155,29 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         : (Array.isArray(deliveriesData) ? deliveriesData : []);
       console.log(`📊 ${deliveries.length} prestations chargées depuis deliveries.json`);
 
-      // Charger les ressources depuis resources.json pour avoir les noms/prénoms
-      console.log('📡 Chargement des ressources depuis resources.json...');
-      const resourcesResponse = await fetch('/api/data/resources.json');
+      // Charger TOUTES les ressources depuis resources-local (base de données)
+      console.log('📡 Chargement des ressources depuis resources-local...');
+      const resourcesResponse = await fetch('/api/data/resources-local');
       const resourcesData = await safeParseJson(resourcesResponse);
       if (!resourcesResponse.ok) {
         const msg = resourcesData?.error || 'Ressources non disponibles. Lancez la synchronisation "Ressources" depuis Paramètres.';
         throw new Error(msg);
       }
       const resourcesList = resourcesData.data || resourcesData || [];
-      console.log(`📊 ${resourcesList.length} ressources chargées depuis resources.json`);
+      console.log(`📊 ${resourcesList.length} ressources chargées depuis resources-local`);
+
+      // Extraire tous les types et statuts pour les options de filtres
+      const typeSet = new Set<string>();
+      const statutSet = new Set<string>();
+      resourcesList.forEach((r: any) => {
+        const type = r.typeLabel || '';
+        const statut = r.stateLabel || '';
+        if (type) typeSet.add(type);
+        if (statut) statutSet.add(statut);
+      });
+      setAllTypeOptions(Array.from(typeSet).sort());
+      setAllStatutOptions(Array.from(statutSet).sort());
+      console.log(`📊 Options filtres: ${typeSet.size} types, ${statutSet.size} statuts`);
 
       // Récupérer les mappings typeOf et state depuis le dictionnaire
       console.log('📡 Récupération du dictionnaire pour mapper typeOf et state...');
@@ -222,35 +239,16 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       }
 
       // Créer un map des ressources par ID pour accès rapide
+      // Les typeLabel et stateLabel sont déjà résolus par /resources-local
       const resourcesMap: { [key: string]: { nom: string; prenom: string; type?: string; statut?: string } } = {};
       resourcesList.forEach((resource: any) => {
-        const resourceId = String(resource.id || resource.ID || resource.Id || '');
-        // Les données dans resources.json ont déjà nom et prenom directement
-        // Sinon, chercher dans attributes ou raw.attributes
-        const firstName = resource.prenom || resource.attributes?.firstName || resource.firstName || resource.raw?.attributes?.firstName || '';
-        const lastName = resource.nom || resource.attributes?.lastName || resource.lastName || resource.raw?.attributes?.lastName || '';
+        const resourceId = String(resource.id || '');
+        const firstName = resource.prenom || resource.firstName || '';
+        const lastName = resource.nom || resource.lastName || '';
         
-        // Récupérer le type et le statut depuis resources.json et mapper avec le dictionnaire
-        const typeOfCode = resource.typeOf || resource.raw?.attributes?.typeOf;
-        const stateCode = resource.state || resource.raw?.attributes?.state;
-        
-        // Mapper le type avec toutes les variantes possibles
-        let type = '';
-        if (typeOfCode !== undefined && typeOfCode !== null) {
-          const codeStr = String(typeOfCode);
-          const codeNum = Number(typeOfCode);
-          type = typeOfMapping[codeStr] || typeOfMapping[codeNum] || typeOfMapping[typeOfCode] || codeStr;
-          console.log(`🔍 Mapping typeOf: code=${typeOfCode} (str=${codeStr}, num=${codeNum}) -> "${type}"`);
-        }
-        
-        // Mapper le statut avec toutes les variantes possibles
-        let statut = '';
-        if (stateCode !== undefined && stateCode !== null) {
-          const codeStr = String(stateCode);
-          const codeNum = Number(stateCode);
-          statut = stateMapping[codeStr] || stateMapping[codeNum] || stateMapping[stateCode] || codeStr;
-          console.log(`🔍 Mapping state: code=${stateCode} (str=${codeStr}, num=${codeNum}) -> "${statut}"`);
-        }
+        // Utiliser typeLabel et stateLabel déjà résolus par le backend
+        const type = resource.typeLabel || '';
+        const statut = resource.stateLabel || '';
         
         if (resourceId) {
           resourcesMap[resourceId] = { nom: lastName, prenom: firstName, type, statut };
@@ -261,12 +259,8 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       const deliveriesByResource: { [key: string]: Project[] } = {};
 
       deliveries.forEach((delivery: any) => {
-        // Vérifier que c'est bien du type "delivery"
-        if (delivery.type !== 'delivery') {
-          return;
-        }
-
-        const resourceId = String(delivery.resource_id || '');
+        // Récupérer l'ID de la ressource (camelCase ou snake_case selon la source)
+        const resourceId = String(delivery.resourceId || delivery.resource_id || '');
         if (!resourceId) {
           return;
         }
@@ -292,13 +286,15 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         // Créer l'objet Project avec les jours commandés
         const project: Project = {
           id: delivery.id,
-          reference: delivery.id || 'N/A', // Utiliser l'ID comme référence si pas de référence dans deliveries.json
+          reference: delivery.id || 'N/A',
           title: delivery.title || 'Sans titre',
           startDate: delivery.startDate || '',
           endDate: delivery.endDate || '',
-          tjm: delivery.averageDailyPriceExcludingTax !== null && delivery.averageDailyPriceExcludingTax !== undefined
-            ? Number(delivery.averageDailyPriceExcludingTax)
-            : null,
+          tjm: delivery.tjm !== null && delivery.tjm !== undefined
+            ? Number(delivery.tjm)
+            : (delivery.averageDailyPriceExcludingTax !== null && delivery.averageDailyPriceExcludingTax !== undefined
+              ? Number(delivery.averageDailyPriceExcludingTax)
+              : null),
           orderedDays: delivery.orderedDays !== null && delivery.orderedDays !== undefined && !isNaN(Number(delivery.orderedDays))
             ? Number(delivery.orderedDays)
             : null
@@ -499,11 +495,8 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
     setCurrentPage(1);
   }, [typeFilter, statutFilter]);
 
-  // Obtenir la liste unique des types pour le filtre
-  const uniqueTypes = Array.from(new Set(resources.map(r => r.type).filter((t): t is string => t !== undefined && t !== null && t !== ''))).sort();
-  
-  // Obtenir la liste unique des statuts pour le filtre
-  const uniqueStatuts = Array.from(new Set(resources.map(r => r.statut).filter((s): s is string => s !== undefined && s !== null && s !== ''))).sort();
+  // Les options de filtres sont chargées depuis toutes les ressources de la base
+  // (allTypeOptions et allStatutOptions sont mis à jour dans fetchForecast)
 
   // Fonction pour basculer l'état plié/déplié d'une ressource
   const toggleResourceExpanded = (resourceId: number) => {
@@ -902,7 +895,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
             {typeDropdownOpen && (
               <div className="filter-dropdown">
                 <div className="filter-dropdown-content">
-                  {uniqueTypes.map((type) => (
+                  {allTypeOptions.map((type) => (
                     <label key={type} className="filter-checkbox-label">
                       <input
                         type="checkbox"
@@ -952,7 +945,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
             {statutDropdownOpen && (
               <div className="filter-dropdown">
                 <div className="filter-dropdown-content">
-                  {uniqueStatuts.map((statut) => {
+                  {allStatutOptions.map((statut) => {
                     const statutValue: string = statut || '';
                     return (
                       <label key={statutValue} className="filter-checkbox-label">
@@ -1107,6 +1100,18 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                     </button>
                                     <button className="project-button project-button-consumed" onClick={(e) => e.stopPropagation()}>
                                       Conso : {consumedDays.toFixed(1)} j
+                                    </button>
+                                    <button 
+                                      className={`project-button project-button-delta ${
+                                        orderedDays !== null && orderedDays !== undefined
+                                          ? (orderedDays - consumedDays > 0 ? 'delta-positive' : orderedDays - consumedDays < 0 ? 'delta-negative' : '')
+                                          : 'delta-na'
+                                      }`}
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      Delta : {orderedDays !== null && orderedDays !== undefined 
+                                        ? `${(orderedDays - consumedDays).toFixed(1)} j` 
+                                        : '-'}
                                     </button>
                                     <button className="project-button project-button-ca" onClick={(e) => e.stopPropagation()}>
                                       CA : {ca > 0 ? ca.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '0'} €

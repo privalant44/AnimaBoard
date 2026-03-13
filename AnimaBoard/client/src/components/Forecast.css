@@ -727,8 +727,12 @@
   grid-column: 6;
 }
 
-.project-button-ca {
+.project-button-delta {
   grid-column: 7;
+}
+
+.project-button-ca {
+  grid-column: 8;
 }
 
 .project-button {
@@ -764,6 +768,31 @@
 
 .project-button-consumed:hover {
   background: #218838;
+}
+
+.project-button-delta {
+  background: #6c757d;
+  color: white;
+}
+
+.project-button-delta:hover {
+  background: #5a6268;
+}
+
+.project-button-delta.delta-positive {
+  background: #28a745;
+}
+
+.project-button-delta.delta-positive:hover {
+  background: #218838;
+}
+
+.project-button-delta.delta-negative {
+  background: #dc3545;
+}
+
+.project-button-delta.delta-negative:hover {
+  background: #c82333;
 }
 
 .project-button-ca {

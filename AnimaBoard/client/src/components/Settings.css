@@ -390,6 +390,14 @@
   background: #556b1f;
 }
 
+.sync-timesheets-reset-button {
+  background: #b45309;
+}
+
+.sync-timesheets-reset-button:hover:not(:disabled) {
+  background: #924208;
+}
+
 .sync-result {
   display: flex;
   align-items: center;

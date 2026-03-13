@@ -58,7 +58,9 @@ async function makeRequest(endpoint, params = {}) {
 }
 
 // Fonction pour récupérer la liste des feuilles de temps
-async function getTimesheetsList(startMonth, endMonth, maxResults = 500, validationStates = 'waitingForValidation,validated') {
+// maxResults élevé pour couvrir toutes les feuilles (ex. 2025-01 à 2026-12, plusieurs personnes)
+// validationStates large pour inclure brouillon, en attente, validé, rejeté, etc.
+async function getTimesheetsList(startMonth, endMonth, maxResults = 5000, validationStates = 'draft,submitted,waitingForValidation,validated,rejected') {
   console.log(`\n📋 ÉTAPE 1 : Récupération de la liste des feuilles de temps\n`);
   console.log(`📅 Période: ${startMonth} à ${endMonth}`);
   console.log(`📊 Max résultats: ${maxResults}`);
@@ -71,21 +73,67 @@ async function getTimesheetsList(startMonth, endMonth, maxResults = 500, validat
     validationStates
   };
 
-  const response = await makeRequest('/timesreports', params);
+  let allTimesheets = [];
+  let page = 1;
+  let hasMore = true;
+  const pageSize = 100; // BoondManager limite souvent à 100 par page
 
-  // Extraire les feuilles de temps depuis _embedded.timeReports
-  let timesheets = [];
-  if (response._embedded && response._embedded.timeReports) {
-    timesheets = response._embedded.timeReports;
-  } else if (Array.isArray(response)) {
-    timesheets = response;
-  } else if (response.data && Array.isArray(response.data)) {
-    timesheets = response.data;
+  while (hasMore) {
+    const pageParams = {
+      ...params,
+      maxResults: pageSize,
+      page: page
+    };
+    
+    console.log(`   📄 Récupération page ${page}...`);
+    const response = await makeRequest('/timesreports', pageParams);
+
+    // Debug: afficher les clés de la réponse pour la première page
+    if (page === 1) {
+      console.log(`   🔍 Clés de la réponse:`, Object.keys(response || {}));
+      if (response._links) {
+        console.log(`   🔍 Liens de pagination:`, Object.keys(response._links));
+      }
+      if (response.meta) {
+        console.log(`   🔍 Métadonnées:`, JSON.stringify(response.meta, null, 2));
+      }
+    }
+
+    // Extraire les feuilles de temps depuis _embedded.timeReports
+    let timesheets = [];
+    if (response._embedded && response._embedded.timeReports) {
+      timesheets = response._embedded.timeReports;
+    } else if (response.data && Array.isArray(response.data)) {
+      timesheets = response.data;
+    } else if (Array.isArray(response)) {
+      timesheets = response;
+    }
+
+    console.log(`   ✅ Page ${page}: ${timesheets.length} feuilles`);
+    allTimesheets = allTimesheets.concat(timesheets);
+
+    // Vérifier s'il y a une page suivante
+    if (response._links && response._links.next) {
+      page++;
+      await delay(100); // Petite pause entre les pages
+    } else if (timesheets.length === pageSize) {
+      // Si on a reçu exactement pageSize résultats, il y a peut-être une suite
+      page++;
+      await delay(100);
+    } else {
+      hasMore = false;
+    }
+
+    // Sécurité: max 100 pages pour éviter boucle infinie
+    if (page > 100) {
+      console.warn(`   ⚠️ Limite de 100 pages atteinte, arrêt de la pagination.`);
+      hasMore = false;
+    }
   }
 
-  console.log(`✅ ${timesheets.length} feuilles de temps trouvées\n`);
+  console.log(`✅ Total: ${allTimesheets.length} feuilles de temps trouvées\n`);
 
-  return timesheets;
+  return allTimesheets;
 }
 
 // Fonction pour récupérer le détail d'une feuille de temps
@@ -485,11 +533,116 @@ function createAggregate(timesheetsData) {
   return aggregateArray;
 }
 
+const { getSupabase } = require('./lib/supabaseClient');
+
+// Fonction pour sauvegarder le détail des feuilles de temps (une ligne par feuille x prestation, uniquement production)
+async function saveTimesheetsDetail(timesheetsData, startMonthStr, endMonthStr) {
+  const supabase = getSupabase();
+  if (!supabase) {
+    console.warn('⚠️  Supabase non configuré, impossible de remplir timesheets_detail.');
+    return;
+  }
+
+  console.log('\n📋 ÉTAPE 3b : Sauvegarde du détail des feuilles (timesheets_detail)\n');
+  console.log(`   📊 Nombre de feuilles reçues: ${timesheetsData.length}`);
+
+  // Debug: compter les items avec/sans deliveryId
+  let itemsWithDelivery = 0;
+  let itemsWithoutDelivery = 0;
+  for (const sheet of timesheetsData) {
+    for (const item of sheet.items) {
+      if (item.deliveryId) {
+        itemsWithDelivery++;
+      } else {
+        itemsWithoutDelivery++;
+      }
+    }
+  }
+  console.log(`   📊 Items avec deliveryId: ${itemsWithDelivery}`);
+  console.log(`   📊 Items sans deliveryId: ${itemsWithoutDelivery} (ignorés)`);
+
+  // Supprimer les lignes de la période avant réinsertion
+  try {
+    const { error: delError } = await supabase
+      .from('timesheets_detail')
+      .delete()
+      .gte('month', startMonthStr)
+      .lte('month', endMonthStr);
+    if (delError) {
+      console.error('❌ Erreur lors du nettoyage de timesheets_detail:', delError.message || delError);
+    }
+  } catch (e) {
+    console.error('❌ Exception lors du nettoyage de timesheets_detail:', e.message || e);
+  }
+
+  const rows = [];
+
+  for (const sheet of timesheetsData) {
+    const resourceId = sheet.resourceId ? Number(sheet.resourceId) : null;
+    const resourceName = sheet.resourceName || null;
+    const month = sheet.month || null;
+    if (!resourceId || !month) continue;
+
+    // Agréger par prestation au sein de la feuille
+    const perDelivery = {};
+    for (const item of sheet.items) {
+      const deliveryId = item.deliveryId ? Number(item.deliveryId) : null;
+      if (!deliveryId) continue;
+
+      if (!perDelivery[deliveryId]) {
+        perDelivery[deliveryId] = { totalDays: 0, totalHours: 0 };
+      }
+      const days = item.days !== null && item.days !== undefined ? Number(item.days) || 0 : 0;
+      const hours = item.hours !== null && item.hours !== undefined ? Number(item.hours) || 0 : 0;
+      perDelivery[deliveryId].totalDays += days;
+      perDelivery[deliveryId].totalHours += hours;
+    }
+
+    Object.entries(perDelivery).forEach(([deliveryId, agg]) => {
+      rows.push({
+        timesheet_id: Number(sheet.timesheetId),
+        resource_id: resourceId,
+        resource_name: resourceName,
+        month,
+        delivery_id: Number(deliveryId),
+        total_days: agg.totalDays,
+        total_hours: agg.totalHours,
+      });
+    });
+  }
+
+  if (rows.length === 0) {
+    console.log('ℹ️  Aucun détail à sauvegarder dans timesheets_detail (aucune ligne production avec prestation trouvée).');
+    return;
+  }
+
+  // Insertion par paquets
+  const chunkSize = 500;
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    const { error } = await supabase.from('timesheets_detail').insert(chunk);
+    if (error) {
+      console.error('❌ Erreur lors de l\'insertion dans timesheets_detail:', error.message || error);
+      break;
+    }
+  }
+
+  console.log(`✅ ${rows.length} lignes détaillées sauvegardées dans timesheets_detail.`);
+}
+
 // Fonction principale de synchronisation
 async function syncTimesheets(startMonth = null, endMonth = null) {
-  // Période par défaut : 2025 et 2026 (toutes les feuilles de temps sur ces deux années)
-  const startMonthStr = startMonth || '2025-01';
-  const endMonthStr = endMonth || '2026-12';
+  // Période par défaut : 3 derniers mois (aligné avec la synchro à la connexion et le bouton Paramètres)
+  const now = new Date();
+  const endYear = now.getFullYear();
+  const endMonthNum = now.getMonth() + 1;
+  const defaultEnd = `${endYear}-${String(endMonthNum).padStart(2, '0')}`;
+  const startDate = new Date(endYear, endMonthNum - 1 - 2, 1);
+  const startYear = startDate.getFullYear();
+  const startMonthNum = startDate.getMonth() + 1;
+  const defaultStart = `${startYear}-${String(startMonthNum).padStart(2, '0')}`;
+  const startMonthStr = startMonth || defaultStart;
+  const endMonthStr = endMonth || defaultEnd;
 
   console.log(`📅 Synchronisation des feuilles de temps`);
   console.log(`   Période: ${startMonthStr} à ${endMonthStr}\n`);
@@ -673,7 +826,10 @@ async function syncTimesheets(startMonth = null, endMonth = null) {
       console.log(`✅ Données timesheets sauvegardées en KV.`);
     }
     
-    // Étape 4 : Créer l'agrégat par ressource, mois et prestation
+    // Étape 3b : Sauvegarder le détail des feuilles par prestation (table timesheets_detail)
+    await saveTimesheetsDetail(timesheetsData, startMonthStr, endMonthStr);
+
+    // Étape 4 : Créer l'agrégat par ressource, mois et prestation (en mémoire, pour statistiques)
     console.log(`\n📋 ÉTAPE 4 : Création de l'agrégat par ressource, mois et prestation\n`);
     
     const aggregateData = createAggregate(timesheetsData);
@@ -686,9 +842,9 @@ async function syncTimesheets(startMonth = null, endMonth = null) {
       },
       data: aggregateData
     };
-    console.log(`💾 Sauvegarde de l'agrégat en KV...`);
-    await kvStorage.set(KV_KEYS.TIMESHEETS_AGGREGATE, aggregateOutput);
-    console.log(`✅ Agrégat sauvegardé en KV.`);
+    console.log(`💾 Sauvegarde de l'agrégat en KV (métadonnées uniquement)...`);
+    await kvStorage.set(KV_KEYS.TIMESHEETS_AGGREGATE, { metadata: aggregateOutput.metadata });
+    console.log(`✅ Métadonnées de l'agrégat sauvegardées.`);
     
     console.log(`\n📊 Statistiques:`);
     console.log(`   - Feuilles de temps traitées: ${timesheetsList.length}`);
@@ -696,8 +852,8 @@ async function syncTimesheets(startMonth = null, endMonth = null) {
     console.log(`   - Ressources uniques: ${new Set(timesheetsData.map(t => t.resourceId).filter(id => id)).size}`);
     console.log(`   - Lignes agrégées: ${aggregateData.length}`);
     
-    // Données et agrégat stockés en KV
-    console.log(`   - Stockage: KV (Redis)`);
+    // Données détaillées stockées en base (timesheets_detail) et agrégat accessible via cette table
+    console.log(`   - Stockage: base (timesheets_detail + timesheets_data)`);
 
     // Afficher un aperçu
     if (timesheetsData.length > 0) {

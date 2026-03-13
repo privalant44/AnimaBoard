@@ -4,9 +4,12 @@
  */
 const path = require('path');
 
+// Depuis api/boondmanager/ : 2 niveaux = racine projet (AnimaBoard), pas 3 (racine repo)
+const projectRoot = path.join(__dirname, '..', '..');
+
 function loadSecretEnv() {
   try {
-    require(path.join(__dirname, '..', '..', '..', 'lib', 'secretEnv.js'));
+    require(path.join(projectRoot, 'lib', 'secretEnv.js'));
   } catch (e) {
     console.warn('secretEnv load (optional):', e.message);
   }
@@ -16,7 +19,7 @@ module.exports = async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
   try {
     loadSecretEnv();
-    const servicePath = path.join(__dirname, '..', '..', '..', 'server', 'services', 'boondManagerService.js');
+    const servicePath = path.join(projectRoot, 'server', 'services', 'boondManagerService.js');
     const boondManagerService = require(servicePath);
     const resources = await boondManagerService.getResources();
     const list = Array.isArray(resources) ? resources : (resources?.data || []);

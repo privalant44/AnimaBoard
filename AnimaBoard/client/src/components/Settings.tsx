@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import './Settings.css';
+import { apiUrl } from '../api';
 
 interface SettingsProps {
   onLogoChange: (logoUrl: string) => void;
@@ -28,7 +29,21 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
   const [syncingDeliveries, setSyncingDeliveries] = useState(false);
   const [syncingTimeReports, setSyncingTimeReports] = useState(false);
   const [syncingTimesheets, setSyncingTimesheets] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ type: 'resources' | 'deliveries' | 'time-reports' | 'timesheets' | null; success: boolean; message: string } | null>(null);
+  const [resettingTimesheets, setResettingTimesheets] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ type: 'resources' | 'deliveries' | 'time-reports' | 'timesheets' | 'timesheets-reset' | null; success: boolean; message: string } | null>(null);
+
+  /** Période des 3 derniers mois (YYYY-MM). */
+  const getLast3MonthsRange = () => {
+    const d = new Date();
+    const endYear = d.getFullYear();
+    const endMonth = d.getMonth() + 1;
+    const end = `${endYear}-${String(endMonth).padStart(2, '0')}`;
+    const startDate = new Date(endYear, endMonth - 1 - 2, 1);
+    const startYear = startDate.getFullYear();
+    const startMonth = startDate.getMonth() + 1;
+    const start = `${startYear}-${String(startMonth).padStart(2, '0')}`;
+    return { startMonth: start, endMonth: end };
+  };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -67,7 +82,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     setApiTestResult(null);
     
     try {
-      const response = await fetch('/api/boondmanager/test');
+      const response = await fetch(apiUrl('/api/boondmanager/test'));
       const data = await response.json();
       
       if (response.ok && data.success) {
@@ -109,7 +124,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     setDictionaryData(null);
     
     try {
-      const response = await fetch('/api/boondmanager/dictionary/resources');
+      const response = await fetch(apiUrl('/api/boondmanager/dictionary/resources'));
       const data = await response.json();
       
       if (response.ok && data.success) {
@@ -131,7 +146,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     
     try {
       const endpoint = fileType === 'forecast-report' ? '/api/data/forecast-report' : `/api/data/${fileType}`;
-      const response = await fetch(endpoint);
+      const response = await fetch(apiUrl(endpoint));
       const data = await response.json();
       
       setDataFiles(prev => ({ ...prev, [fileType]: data }));
@@ -153,7 +168,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     setSyncResult(null);
     
     try {
-      const response = await fetch('/api/boondmanager/sync/resources', {
+      const response = await fetch(apiUrl('/api/boondmanager/sync/resources'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -193,7 +208,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     setSyncResult(null);
     
     try {
-      const response = await fetch('/api/boondmanager/sync/deliveries', {
+      const response = await fetch(apiUrl('/api/boondmanager/sync/deliveries'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -238,7 +253,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
       const beginDate = `${currentYear}-01-01`;
       const endDate = `${currentYear}-12-31`;
       
-      const response = await fetch('/api/boondmanager/sync/time-reports', {
+      const response = await fetch(apiUrl('/api/boondmanager/sync/time-reports'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -280,13 +295,9 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
   const syncTimesheets = async () => {
     setSyncingTimesheets(true);
     setSyncResult(null);
-    
+    const { startMonth, endMonth } = getLast3MonthsRange();
     try {
-      // Période 2025 et 2026 pour récupérer toutes les feuilles de temps
-      const startMonth = '2025-01';
-      const endMonth = '2026-12';
-      
-      const response = await fetch('/api/boondmanager/sync/timesheets', {
+      const response = await fetch(apiUrl('/api/boondmanager/sync/timesheets'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -338,6 +349,36 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     }
   };
 
+  const resetTimesheets = async () => {
+    if (!window.confirm('Réinitialiser les feuilles de temps (année n-1 et n) ? Les données seront supprimées. Vous pourrez relancer une synchro (3 derniers mois) ensuite.')) return;
+    setResettingTimesheets(true);
+    setSyncResult(null);
+    const endpoints = ['/api/timesheets-reset', '/api/data/timesheets-reset'];
+    const parseResponse = async (response: Response) => {
+      const text = await response.text();
+      let data: { success?: boolean; message?: string; error?: string } = {};
+      try { data = text ? JSON.parse(text) : {}; } catch { data = {}; }
+      return { response, data };
+    };
+    try {
+      let response = await fetch(apiUrl(endpoints[0]), { method: 'POST' });
+      if (response.status === 404 && endpoints.length > 1) {
+        response = await fetch(apiUrl(endpoints[1]), { method: 'POST' });
+      }
+      const { response: res, data } = await parseResponse(response);
+      if (res.ok && data.success) {
+        setSyncResult({ type: 'timesheets-reset', success: true, message: data.message || 'Feuilles de temps réinitialisées.' });
+      } else {
+        const msg = (data.error || data.message) || (res.status === 404 ? 'Route réinitialisation introuvable (404).' : `Erreur lors de la réinitialisation (HTTP ${res.status}).`);
+        setSyncResult({ type: 'timesheets-reset', success: false, message: msg });
+      }
+    } catch (err) {
+      setSyncResult({ type: 'timesheets-reset', success: false, message: err instanceof Error ? err.message : 'Erreur inconnue' });
+    } finally {
+      setResettingTimesheets(false);
+    }
+  };
+
   return (
     <div className="settings-page">
       <div className="settings-container">
@@ -371,9 +412,17 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           <button 
             className="sync-button sync-timesheets-button" 
             onClick={syncTimesheets}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets}
+            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || resettingTimesheets}
           >
-            {syncingTimesheets ? '⏳ Synchronisation en cours...' : '📅 Synchroniser les feuilles de temps'}
+            {syncingTimesheets ? '⏳ Synchronisation en cours...' : '📅 Synchroniser les feuilles de temps (3 derniers mois)'}
+          </button>
+          
+          <button 
+            className="sync-button sync-timesheets-reset-button" 
+            onClick={resetTimesheets}
+            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || resettingTimesheets}
+          >
+            {resettingTimesheets ? '⏳ Réinitialisation...' : '🗑️ Réinitialiser les feuilles de temps (année n-1 et n)'}
           </button>
         </div>
 
@@ -580,9 +629,9 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
         </div>
 
         <div className="settings-section">
-          <h3>Consultation des fichiers de données</h3>
+          <h3>Consultation des données synchronisées</h3>
           <p className="settings-description">
-            Consultez les fichiers JSON générés par les scripts de synchronisation (sync.js et report.js).
+            Consultez les données stockées dans le cache (KV) après synchronisation depuis BoondManager.
           </p>
           
           <div className="data-files-buttons">
@@ -591,7 +640,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
               onClick={() => loadDataFile('projects')}
               disabled={loadingDataFiles.projects}
             >
-              {loadingDataFiles.projects ? 'Chargement...' : '📦 Charger projects.json'}
+              {loadingDataFiles.projects ? 'Chargement...' : '📦 Charger les projets'}
             </button>
             
             <button 
@@ -599,7 +648,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
               onClick={() => loadDataFile('resources')}
               disabled={loadingDataFiles.resources}
             >
-              {loadingDataFiles.resources ? 'Chargement...' : '👥 Charger resources.json'}
+              {loadingDataFiles.resources ? 'Chargement...' : '👥 Charger les ressources'}
             </button>
             
             <button 
@@ -607,15 +656,15 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
               onClick={() => loadDataFile('forecast-report')}
               disabled={loadingDataFiles['forecast-report']}
             >
-              {loadingDataFiles['forecast-report'] ? 'Chargement...' : '📊 Charger forecast-report.json'}
+              {loadingDataFiles['forecast-report'] ? 'Chargement...' : '📊 Charger le rapport forecast'}
             </button>
           </div>
-
+          
           {dataFiles.projects && (
             <div className={`api-test-result ${dataFiles.projects.success ? 'success' : 'error'}`}>
               <div className="api-test-header">
                 <span className="api-test-icon">{dataFiles.projects.success ? '✅' : '❌'}</span>
-                <h4>projects.json</h4>
+                <h4>Données projets</h4>
               </div>
               <div className="api-test-content">
                 {dataFiles.projects.success ? (
@@ -666,7 +715,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
             <div className={`api-test-result ${dataFiles.resources.success ? 'success' : 'error'}`}>
               <div className="api-test-header">
                 <span className="api-test-icon">{dataFiles.resources.success ? '✅' : '❌'}</span>
-                <h4>resources.json</h4>
+                <h4>Données ressources</h4>
               </div>
               <div className="api-test-content">
                 {dataFiles.resources.success ? (
@@ -714,7 +763,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
             <div className={`api-test-result ${dataFiles['forecast-report'].success ? 'success' : 'error'}`}>
               <div className="api-test-header">
                 <span className="api-test-icon">{dataFiles['forecast-report'].success ? '✅' : '❌'}</span>
-                <h4>forecast-report.json</h4>
+                <h4>Données rapport forecast</h4>
               </div>
               <div className="api-test-content">
                 {dataFiles['forecast-report'].success ? (

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import './Resources.css';
+import { apiUrl } from '../api';
 
 interface Resource {
   id: number;
@@ -142,7 +143,7 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
   // Charger les métadonnées des ressources
   const loadResourcesMetadata = async () => {
     try {
-      const response = await fetch('/api/data/resources-metadata');
+      const response = await fetch(apiUrl('/api/data/resources-metadata'));
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.data) {
@@ -162,7 +163,7 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
   // Sauvegarder les métadonnées des ressources
   const saveResourcesMetadata = async (metadata: typeof resourcesMetadata) => {
     try {
-      const response = await fetch('/api/data/resources-metadata', {
+      const response = await fetch(apiUrl('/api/data/resources-metadata'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -200,76 +201,43 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch('/api/boondmanager/resources');
-      
-      // Vérifier le Content-Type avant de parser le JSON
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text();
-        console.error('❌ Réponse non-JSON reçue:', text.substring(0, 500));
-        throw new Error(`Réponse invalide de l'API (${response.status}): ${text.substring(0, 200)}`);
-      }
-      
+
+      // Lire uniquement depuis la base locale (table resources), sans appel direct à l'API Boond.
+      const response = await fetch(apiUrl('/api/data/resources-local'));
       const data = await response.json();
-      
-      console.log('📥 Réponse API reçue:', data);
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Erreur lors de la récupération des ressources');
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || data.message || 'Erreur lors de la récupération des ressources');
       }
 
-      // Adapter selon la structure de la réponse BoondManager
-      let resourcesData = [];
-      if (data.data && Array.isArray(data.data)) {
-        resourcesData = data.data;
-      } else if (Array.isArray(data)) {
-        resourcesData = data;
-      } else if (data.resources && Array.isArray(data.resources)) {
-        resourcesData = data.resources;
-      } else if (data.persons && Array.isArray(data.persons)) {
-        resourcesData = data.persons;
-      }
-
-      console.log('📊 Nombre de ressources extraites:', resourcesData.length);
-      console.log('📋 Exemple de ressource:', resourcesData[0]);
+      const resourcesData = Array.isArray(data.data) ? data.data : [];
 
       if (resourcesData.length === 0) {
-        console.warn('⚠️  Aucune ressource trouvée dans la réponse');
-        setError('Aucune ressource trouvée. Vérifiez la connexion à l\'API BoondManager.');
         setResources([]);
         return;
       }
 
-      // Confirmer le nombre total de ressources récupérées
-      console.log(`\n✅ Nombre total de ressources récupérées: ${resourcesData.length}\n`);
+      // Mapper les enregistrements enrichis vers le format Resource attendu par la vue.
+      const mappedResources: Resource[] = resourcesData.map((r: any) => ({
+        id: Number(r.id),
+        nom: r.nom || '',
+        prenom: r.prenom || '',
+        // Afficher uniquement les libellés issus du dictionnaire (ou N/A)
+        type: r.typeLabel || 'N/A',
+        statut: r.stateLabel || undefined,
+        // Les champs tempsTravail / statutFeu / commentaires restent gérés par resourcesMetadata pour l’instant
+      }));
 
-      // Mapper les données vers notre format
-      const mappedResources = resourcesData.map((resource: any, index: number) => {
-        const mapped = mapBoondResource(resource, index);
-        return mapped;
-      });
-
-      console.log(`\n✅ ${mappedResources.length} ressources mappées avec succès\n`);
       setResources(mappedResources);
     } catch (err) {
       let errorMessage = 'Une erreur est survenue';
-      
       if (err instanceof Error) {
         errorMessage = err.message;
-        // Si c'est une erreur de parsing JSON, donner plus de détails
-        if (err.message.includes('JSON') || err.message.includes('parse')) {
-          errorMessage = `Erreur de parsing JSON: ${err.message}. Vérifiez que l'API retourne bien du JSON valide.`;
-        }
       } else if (typeof err === 'string') {
         errorMessage = err;
       }
-      
       setError(errorMessage);
       console.error('❌ Error fetching resources:', err);
-      console.error('❌ Error details:', {
-        message: err instanceof Error ? err.message : String(err),
-        stack: err instanceof Error ? err.stack : undefined
-      });
       setResources([]);
     } finally {
       setLoading(false);

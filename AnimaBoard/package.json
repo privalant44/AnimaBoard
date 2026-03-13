@@ -11,6 +11,8 @@
     "dev:win": "powershell -ExecutionPolicy Bypass -File ./dev.ps1",
     "server": "node server/index.js",
     "client": "cd client && npm start",
+    "stop": "npx --yes kill-port 3000 3001",
+    "init-dictionary": "node scripts/init-dictionary.js",
     "build": "cd client && npm run build",
     "start": "node server/index.js",
     "start:prod": "node scripts/run-prod.js",
@@ -20,6 +22,7 @@
     "report": "node report.js",
     "extract-times": "node extract_time_reports.js",
     "sync-timesheets": "node sync_timesheets.js",
+    "sync-timesheets-2years": "node scripts/sync-timesheets-2years.js",
     "migrate-to-kv": "node scripts/migrate-to-kv.js",
     "test-kv": "node scripts/test-kv.js",
     "view-kv": "node scripts/view-kv.js",
@@ -34,6 +37,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@supabase/supabase-js": "^2.99.1",
     "@upstash/redis": "^1.36.1",
     "@vercel/kv": "^0.2.4",
     "axios": "^1.6.2",
@@ -45,6 +49,7 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
-    "nodemon": "^2.0.22"
+    "nodemon": "^2.0.22",
+    "supabase": "^2.78.1"
   }
 }

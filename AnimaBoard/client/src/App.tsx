@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
+import { apiUrl } from './api';
 import Navigation from './components/Navigation';
 import Resources from './components/Resources';
 import Forecast from './components/Forecast';
@@ -30,7 +31,7 @@ function App() {
 
   // Vérifier que l'API répond (évite "Failed to fetch" sans explication)
   useEffect(() => {
-    fetch('/api/health')
+    fetch(apiUrl('/api/health'))
       .then((res) => setApiReachable(res.ok))
       .catch(() => setApiReachable(false));
   }, []);
@@ -43,10 +44,10 @@ function App() {
 
     const run = async () => {
       try {
-        await fetch('/api/boondmanager/sync/resources', { method: 'POST' });
-        await fetch('/api/boondmanager/sync/deliveries', { method: 'POST' });
+        await fetch(apiUrl('/api/boondmanager/sync/resources'), { method: 'POST' });
+        await fetch(apiUrl('/api/boondmanager/sync/deliveries'), { method: 'POST' });
         const { startMonth, endMonth } = getLast3MonthsRange();
-        await fetch('/api/boondmanager/sync/timesheets', {
+        await fetch(apiUrl('/api/boondmanager/sync/timesheets'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ startMonth, endMonth })

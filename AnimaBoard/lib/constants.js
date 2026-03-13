@@ -16,10 +16,10 @@ module.exports = {
   DELIVERIES_END_ID: 500,
   DELIVERIES_BATCH_SIZE: 50,
 
-  // Timesheets
-  TIMESHEETS_MAX_RESULTS: 500,
-  TIMESHEETS_MAX_FOR_VERCEL: 100, // Limite pour éviter les timeouts sur Vercel
-  TIMESHEETS_VALIDATION_STATES: 'waitingForValidation,validated',
+  // Timesheets (max élevé pour récupérer toutes les feuilles 2025-2026)
+  TIMESHEETS_MAX_RESULTS: 5000,
+  TIMESHEETS_MAX_FOR_VERCEL: 500,
+  TIMESHEETS_VALIDATION_STATES: 'draft,submitted,waitingForValidation,validated,rejected',
 
   // Conversion heures/jours
   HOURS_PER_DAY: 7, // Standard français

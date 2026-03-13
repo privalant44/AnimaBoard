@@ -198,8 +198,9 @@ class BoondManagerSync {
           id: resourceId,
           nom: attributes.lastName || resource.lastName || '',
           prenom: attributes.firstName || resource.firstName || '',
-          typeOf: attributes.typeOf || resource.typeOf || null,
-          state: attributes.state || resource.state || null,
+          // Important : conserver le code 0 (0 est un code valide)
+          typeOf: attributes.typeOf ?? resource.typeOf ?? null,
+          state: attributes.state ?? resource.state ?? null,
           isVisible: attributes.isVisible ?? resource.isVisible ?? resource.IsVisible ?? true,
           contracts: contracts,
           raw: resource // Garder les données brutes pour référence
@@ -272,6 +273,7 @@ class BoondManagerSync {
         const embedded = delivery._embedded || {};
         const resource = embedded.resource || {};
         const resourceAttributes = resource.attributes || {};
+        const project = embedded.project || {};
         
         // Extraire le TJM et le convertir en nombre
         let tjm = attributes.unitPriceExcludingTax;
@@ -291,8 +293,11 @@ class BoondManagerSync {
           tjm: tjm,
           startDate: attributes.startDate || '',
           endDate: attributes.endDate || '',
+          projectId: project.id || null,
+          resourceId: resource.id || null,
           resourceFirstName: resourceAttributes.firstName || '',
           resourceLastName: resourceAttributes.lastName || '',
+          state: attributes.state ?? null,
           raw: delivery // Garder les données brutes pour référence
         };
       });

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import './Report.css';
+import { apiUrl } from '../api';
 
 interface Project {
   id: string | number;
@@ -84,7 +85,7 @@ const Report: React.FC<ReportProps> = ({ onBack }) => {
   // Charger les données de forecast
   const loadForecastData = useCallback(async () => {
     try {
-      const response = await fetch('/api/data/forecast-times.json');
+      const response = await fetch(apiUrl('/api/data/forecast-times.json'));
       if (response.ok) {
         const result = await response.json();
         // La structure de l'API est { success: true, data: { metadata: {...}, data: { deliveryId: { forecast: { month: value } } } } }
@@ -102,7 +103,7 @@ const Report: React.FC<ReportProps> = ({ onBack }) => {
   // Charger l'agrégat des timesheets pour les jours saisis
   const loadTimesheetsAggregate = useCallback(async () => {
     try {
-      const response = await fetch('/api/data/timesheets_aggregate.json');
+      const response = await fetch(apiUrl('/api/data/timesheets_aggregate.json'));
       if (response.ok) {
         const data = await response.json();
         const aggregateData = data.data?.data || data.data || [];
@@ -157,143 +158,76 @@ const Report: React.FC<ReportProps> = ({ onBack }) => {
       setLoading(true);
       setError(null);
 
-      // Charger les prestations
-      const deliveriesResponse = await fetch('/api/data/deliveries.json');
-      if (!deliveriesResponse.ok) {
-        throw new Error('Impossible de charger les prestations');
-      }
-      const deliveriesResponseData = await deliveriesResponse.json();
-      const deliveriesData = deliveriesResponseData.data || deliveriesResponseData;
-      const deliveries = (deliveriesData.data && Array.isArray(deliveriesData.data)) 
-        ? deliveriesData.data 
-        : (Array.isArray(deliveriesData) ? deliveriesData : []);
-
-      // Charger les ressources
-      const resourcesResponse = await fetch('/api/data/resources.json');
+      // 1. Charger TOUTES les ressources depuis la base locale (pas l'API)
+      console.log('📡 Chargement des ressources depuis la base...');
+      const resourcesResponse = await fetch(apiUrl('/api/data/resources-local'));
       if (!resourcesResponse.ok) {
         throw new Error('Impossible de charger les ressources');
       }
       const resourcesData = await resourcesResponse.json();
       const resourcesList = resourcesData.data || resourcesData || [];
+      console.log(`📊 ${resourcesList.length} ressources chargées depuis la base`);
 
-      // Récupérer les mappings typeOf et state depuis le dictionnaire
-      let typeOfMapping: { [key: string]: string } = {};
-      let stateMapping: { [key: string]: string } = {};
+      // 2. Charger les prestations pour avoir le mapping delivery -> resource
+      const deliveriesResponse = await fetch(apiUrl('/api/data/deliveries.json'));
+      let deliveriesByResource: { [key: string]: Project[] } = {};
       
-      try {
-        // Utiliser l'endpoint /api/boondmanager/dictionary/resources pour récupérer le mapping typeOf
-        const dictionaryResponse = await fetch('/api/boondmanager/dictionary/resources');
-        if (dictionaryResponse.ok) {
-          const dictionaryData = await dictionaryResponse.json();
-          if (dictionaryData.typeMapping) {
-            Object.keys(dictionaryData.typeMapping).forEach(key => {
-              typeOfMapping[key] = dictionaryData.typeMapping[key];
-              typeOfMapping[Number(key)] = dictionaryData.typeMapping[key];
-              typeOfMapping[String(key)] = dictionaryData.typeMapping[key];
-            });
+      if (deliveriesResponse.ok) {
+        const deliveriesResponseData = await deliveriesResponse.json();
+        const deliveriesData = deliveriesResponseData.data || deliveriesResponseData;
+        const deliveries = (deliveriesData.data && Array.isArray(deliveriesData.data)) 
+          ? deliveriesData.data 
+          : (Array.isArray(deliveriesData) ? deliveriesData : []);
+
+        deliveries.forEach((delivery: any) => {
+          const resourceId = String(delivery.resourceId || delivery.resource_id || '');
+          if (!resourceId) return;
+
+          const project: Project = {
+            id: delivery.id,
+            reference: delivery.id || 'N/A',
+            title: delivery.title || 'Sans titre',
+            startDate: delivery.startDate || '',
+            endDate: delivery.endDate || '',
+            tjm: delivery.tjm !== null && delivery.tjm !== undefined
+              ? Number(delivery.tjm)
+              : (delivery.averageDailyPriceExcludingTax !== null && delivery.averageDailyPriceExcludingTax !== undefined
+                ? Number(delivery.averageDailyPriceExcludingTax)
+                : null),
+            orderedDays: delivery.orderedDays !== null && delivery.orderedDays !== undefined && !isNaN(Number(delivery.orderedDays))
+              ? Number(delivery.orderedDays)
+              : null
+          };
+
+          if (!deliveriesByResource[resourceId]) {
+            deliveriesByResource[resourceId] = [];
           }
-        }
-        
-        // Récupérer le mapping state depuis le dictionnaire complet
-        const fullDictionaryResponse = await fetch('/api/boondmanager/dictionary');
-        if (fullDictionaryResponse.ok) {
-          const fullDictionaryData = await fullDictionaryResponse.json();
-          const dict = fullDictionaryData.data?.data || fullDictionaryData.data || fullDictionaryData;
-          const resourceStates = dict?.setting?.state?.resource || [];
-          
-          resourceStates.forEach((item: any) => {
-            if (item.id !== undefined && item.id !== null && item.value !== undefined) {
-              const idStr = String(item.id);
-              const idNum = Number(item.id);
-              stateMapping[idStr] = item.value;
-              stateMapping[idNum] = item.value;
-              stateMapping[item.id] = item.value;
-            }
-          });
-        }
-      } catch (error) {
-        console.warn('⚠️  Erreur lors de la récupération du dictionnaire:', error);
+          deliveriesByResource[resourceId].push(project);
+        });
+        console.log(`📊 ${Object.keys(deliveriesByResource).length} ressources avec prestations`);
       }
 
-      // Grouper les prestations par ressource
-      const deliveriesByResource: { [key: string]: Project[] } = {};
-
-      // Créer un map des ressources par ID pour accès rapide
-      const resourcesMap: { [key: string]: { nom: string; prenom: string; type?: string; statut?: string } } = {};
-      resourcesList.forEach((resource: any) => {
-        const resourceId = String(resource.id || resource.ID || resource.Id || '');
-        const firstName = resource.prenom || resource.attributes?.firstName || resource.firstName || resource.raw?.attributes?.firstName || '';
-        const lastName = resource.nom || resource.attributes?.lastName || resource.lastName || resource.raw?.attributes?.lastName || '';
+      // 3. Créer la liste de TOUTES les ressources (avec ou sans prestations)
+      const resourcesWithProjects: ResourceWithProjects[] = resourcesList.map((resource: any) => {
+        const resourceId = String(resource.id || '');
+        const firstName = resource.prenom || resource.firstName || '';
+        const lastName = resource.nom || resource.lastName || '';
         
-        // Récupérer le type et le statut depuis resources.json et mapper avec le dictionnaire
-        const typeOfCode = resource.typeOf || resource.raw?.attributes?.typeOf;
-        const stateCode = resource.state || resource.raw?.attributes?.state;
+        // typeLabel et stateLabel sont déjà résolus par /resources-local
+        const type = resource.typeLabel || '';
+        const statut = resource.stateLabel || '';
         
-        // Mapper le type avec toutes les variantes possibles
-        let type = '';
-        if (typeOfCode !== undefined && typeOfCode !== null) {
-          const codeStr = String(typeOfCode);
-          const codeNum = Number(typeOfCode);
-          type = typeOfMapping[codeStr] || typeOfMapping[codeNum] || typeOfMapping[typeOfCode] || codeStr;
-        }
+        // Récupérer les prestations de cette ressource (peut être vide)
+        const projects = deliveriesByResource[resourceId] || [];
         
-        // Mapper le statut avec toutes les variantes possibles
-        let statut = '';
-        if (stateCode !== undefined && stateCode !== null) {
-          const codeStr = String(stateCode);
-          const codeNum = Number(stateCode);
-          statut = stateMapping[codeStr] || stateMapping[codeNum] || stateMapping[stateCode] || codeStr;
-        }
-        
-        if (resourceId) {
-          resourcesMap[resourceId] = { 
-            nom: lastName, 
-            prenom: firstName,
-            type,
-            statut
-          };
-        }
-      });
-
-      deliveries.forEach((delivery: any) => {
-        if (delivery.type !== 'delivery') return;
-
-        const resourceId = String(delivery.resource_id || '');
-        if (!resourceId) return;
-
-        const project: Project = {
-          id: delivery.id,
-          reference: delivery.id || 'N/A',
-          title: delivery.title || 'Sans titre',
-          startDate: delivery.startDate || '',
-          endDate: delivery.endDate || '',
-          tjm: delivery.averageDailyPriceExcludingTax !== null && delivery.averageDailyPriceExcludingTax !== undefined
-            ? Number(delivery.averageDailyPriceExcludingTax)
-            : null,
-          orderedDays: delivery.orderedDays !== null && delivery.orderedDays !== undefined && !isNaN(Number(delivery.orderedDays))
-            ? Number(delivery.orderedDays)
-            : null
-        };
-
-        if (!deliveriesByResource[resourceId]) {
-          deliveriesByResource[resourceId] = [];
-        }
-        deliveriesByResource[resourceId].push(project);
-      });
-
-      // Créer la liste des ressources avec leurs prestations
-      const resourcesWithProjects: ResourceWithProjects[] = [];
-      
-      Object.keys(deliveriesByResource).forEach((resourceId) => {
-        const resourceInfo = resourcesMap[resourceId] || { nom: 'N/A', prenom: 'N/A', type: '', statut: '' };
-        resourcesWithProjects.push({
+        return {
           id: Number(resourceId),
-          nom: resourceInfo.nom,
-          prenom: resourceInfo.prenom,
-          type: resourceInfo.type,
-          statut: resourceInfo.statut,
-          projects: deliveriesByResource[resourceId]
-        });
+          nom: lastName,
+          prenom: firstName,
+          type,
+          statut,
+          projects
+        };
       });
 
       // Trier par nom de famille puis prénom
@@ -304,7 +238,7 @@ const Report: React.FC<ReportProps> = ({ onBack }) => {
         return a.prenom.localeCompare(b.prenom);
       });
 
-      console.log('📊 Ressources chargées:', resourcesWithProjects.length);
+      console.log(`📊 ${resourcesWithProjects.length} ressources affichées (toutes)`);
       setResources(resourcesWithProjects);
     } catch (err) {
       console.error('❌ Erreur lors du chargement des données:', err);
@@ -385,47 +319,34 @@ const Report: React.FC<ReportProps> = ({ onBack }) => {
   // Calculer la valeur totale (saisis + prévisionnels) pour une ressource et un mois
   const getTotalValue = (resourceId: number, month: string): number => {
     const resource = resources.find(r => r.id === resourceId);
-    if (!resource) return 0;
-
     const resourceIdStr = String(resourceId);
     let totalActual = 0; // Jours saisis
     let totalForecast = 0; // Jours prévisionnels
 
-    resource.projects.forEach((project) => {
-      const deliveryId = String(project.id);
-      
-      // Récupérer les jours saisis depuis timesheetsAggregate
-      const resourceIdVariants = [resourceIdStr, String(Number(resourceId)), Number(resourceId).toString()];
-      const deliveryIdVariants = [deliveryId, String(Number(project.id)), Number(project.id).toString()];
-      
-      let foundData: { [month: string]: { days: number; hours: number } } | null = null;
-      
-      for (const resIdVar of resourceIdVariants) {
-        if (timesheetsAggregate[resIdVar]) {
-          for (const delIdVar of deliveryIdVariants) {
-            if (timesheetsAggregate[resIdVar][delIdVar] && timesheetsAggregate[resIdVar][delIdVar][month]) {
-              foundData = timesheetsAggregate[resIdVar][delIdVar];
-              break;
-            }
-          }
-          if (foundData) break;
+    // Parcourir toutes les prestations de la ressource dans timesheetsAggregate
+    const resourceData = timesheetsAggregate[resourceIdStr];
+    if (resourceData) {
+      Object.keys(resourceData).forEach((deliveryId) => {
+        const deliveryData = resourceData[deliveryId];
+        if (deliveryData && deliveryData[month]) {
+          totalActual += deliveryData[month].days || 0;
         }
-      }
-      
-      if (foundData && foundData[month]) {
-        totalActual += foundData[month].days || 0;
-      }
-      
-      // Récupérer les jours prévisionnels depuis forecastData
-      const deliveryForecast = forecastData[deliveryId];
-      if (deliveryForecast && deliveryForecast.forecast) {
-        const monthValue = deliveryForecast.forecast[month] || 0;
-        totalForecast += monthValue;
-      }
-    });
+      });
+    }
 
-    const total = totalActual + totalForecast;
-    return total;
+    // Parcourir les prestations de la ressource pour les prévisions
+    if (resource && resource.projects) {
+      resource.projects.forEach((project) => {
+        const deliveryId = String(project.id);
+        const deliveryForecast = forecastData[deliveryId];
+        if (deliveryForecast && deliveryForecast.forecast) {
+          const monthValue = deliveryForecast.forecast[month] || 0;
+          totalForecast += monthValue;
+        }
+      });
+    }
+
+    return totalActual + totalForecast;
   };
 
   // Fonction pour convertir hex en RGB
@@ -680,7 +601,7 @@ const Report: React.FC<ReportProps> = ({ onBack }) => {
               {filteredResources.length === 0 ? (
                 <tr>
                   <td colSpan={months.length + 1} className="report-table-cell" style={{ textAlign: 'center', padding: '2rem' }}>
-                    Aucune ressource avec prestations trouvée
+                    Aucune ressource trouvée. Synchronisez les ressources depuis Paramètres.
                   </td>
                 </tr>
               ) : (

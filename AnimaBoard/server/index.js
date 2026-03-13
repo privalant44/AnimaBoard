@@ -24,12 +24,36 @@ try {
   const dashboardRoutes = require('./routes/dashboard');
   const testRoutes = require('./routes/test');
   const dataRoutes = require('./routes/data');
+  const kvStorage = require('../lib/kvStorage');
+  const { KV_KEYS } = require('../lib/constants');
 
   app.use('/api/boondmanager', boondManagerRoutes);
   app.use('/api/pennylane', pennylaneRoutes);
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/test', testRoutes);
   app.use('/api/data', dataRoutes);
+
+  // POST /api/timesheets-reset : vide KV puis recharge périodes n-1 et n
+  app.post('/api/timesheets-reset', async (req, res) => {
+    try {
+      await kvStorage.del(KV_KEYS.TIMESHEETS_DATA);
+      await kvStorage.del(KV_KEYS.TIMESHEETS_AGGREGATE);
+      const currentYear = new Date().getFullYear();
+      const startMonth = `${currentYear - 1}-01`;
+      const endMonth = `${currentYear}-12`;
+      const syncTimesheets = require('../sync_timesheets');
+      const result = await syncTimesheets(startMonth, endMonth);
+      const count = result?.metadata?.totalTimesheets ?? 0;
+      const totalEntries = result?.metadata?.totalEntries ?? 0;
+      return res.json({
+        success: true,
+        message: `Feuilles de temps réinitialisées et rechargées (${startMonth} à ${endMonth}) : ${count} feuilles, ${totalEntries} entrées.`
+      });
+    } catch (error) {
+      console.error('❌ Erreur /api/timesheets-reset:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  });
 
   console.log('✅ Routes chargées avec succès');
 } catch (error) {

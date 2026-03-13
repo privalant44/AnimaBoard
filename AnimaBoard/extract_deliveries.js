@@ -33,6 +33,7 @@ async function extractDeliveries() {
   };
   
   const allDeliveries = [];
+  const projectsMap = {}; // Pour collecter les projets uniques
   const startId = 1;
   const endId = 500; // Ajuster selon vos besoins
   let successCount = 0;
@@ -62,6 +63,29 @@ async function extractDeliveries() {
             resourceId = relationships.dependsOn.data.id;
           }
           
+          // Extraire l'ID du projet depuis les relations
+          let projectId = null;
+          if (relationships.project && relationships.project.data) {
+            projectId = relationships.project.data.id;
+            
+            // Chercher les infos du projet dans included
+            const included = response.data.included || [];
+            const projectData = included.find(item => item.type === 'project' && String(item.id) === String(projectId));
+            if (projectData && !projectsMap[projectId]) {
+              const projAttrs = projectData.attributes || {};
+              projectsMap[projectId] = {
+                id: projectId,
+                reference: projAttrs.reference || null,
+                name: projAttrs.name || projAttrs.title || null,
+                state: projAttrs.state ?? null,
+                startDate: projAttrs.startDate || null,
+                endDate: projAttrs.endDate || null,
+                clientName: projAttrs.companyName || null,
+                raw: projectData
+              };
+            }
+          }
+          
           // Extraire les jours commandés - utiliser numberOfDaysInvoicedOrQuantity
           let orderedDays = null;
           if (attributes.numberOfDaysInvoicedOrQuantity !== undefined && attributes.numberOfDaysInvoicedOrQuantity !== null) {
@@ -84,13 +108,14 @@ async function extractDeliveries() {
             endDate: attributes.endDate || null,
             title: attributes.title || null,
             state: attributes.state !== undefined ? attributes.state : null,
-            averageDailyPriceExcludingTax: attributes.averageDailyPriceExcludingTax !== undefined 
+            tjm: attributes.averageDailyPriceExcludingTax !== undefined 
               ? attributes.averageDailyPriceExcludingTax 
               : null,
             averageDailyCost: attributes.averageDailyCost !== undefined 
               ? attributes.averageDailyCost 
               : null,
-            resource_id: resourceId,
+            resourceId: resourceId,
+            projectId: projectId,
             orderedDays: orderedDays !== null && !isNaN(orderedDays) ? orderedDays : null
           };
           
@@ -142,11 +167,28 @@ async function extractDeliveries() {
   };
   
   try {
-    console.log(`\n💾 Sauvegarde en KV (Redis)...`);
+    console.log(`\n💾 Sauvegarde en KV...`);
+    
+    // Sauvegarder les prestations
     await kvStorage.set(KV_KEYS.DELIVERIES, outputData);
-    console.log(`✅ Données prestations sauvegardées en KV.`);
+    console.log(`✅ Données prestations sauvegardées.`);
+    
+    // Sauvegarder les projets
+    const projectsList = Object.values(projectsMap);
+    if (projectsList.length > 0) {
+      // Construire le format attendu par setTable(PROJECTS)
+      const projectsForSave = projectsList.map(p => ({
+        id: p.id,
+        project: p.raw || p,
+        deliveries: [] // Les prestations sont déjà sauvegardées séparément
+      }));
+      await kvStorage.set(KV_KEYS.PROJECTS, projectsForSave);
+      console.log(`✅ ${projectsList.length} projets sauvegardés.`);
+    }
+    
     console.log(`\n📊 Statistiques:`);
-    console.log(`   - Total d'enregistrements: ${allDeliveries.length}`);
+    console.log(`   - Total prestations: ${allDeliveries.length}`);
+    console.log(`   - Total projets: ${projectsList.length}`);
     console.log(`   - Taille du fichier JSON: ${(JSON.stringify(outputData).length / 1024).toFixed(2)} KB`);
     
     // Afficher un aperçu du premier enregistrement
@@ -159,9 +201,10 @@ async function extractDeliveries() {
       console.log(`   - Date début: ${firstRecord.startDate || 'N/A'}`);
       console.log(`   - Date fin: ${firstRecord.endDate || 'N/A'}`);
       console.log(`   - State: ${firstRecord.state !== null ? firstRecord.state : 'N/A'}`);
-      console.log(`   - TJM: ${firstRecord.averageDailyPriceExcludingTax !== null ? firstRecord.averageDailyPriceExcludingTax : 'N/A'}`);
+      console.log(`   - TJM: ${firstRecord.tjm !== null ? firstRecord.tjm : 'N/A'}`);
       console.log(`   - Coût moyen: ${firstRecord.averageDailyCost !== null ? firstRecord.averageDailyCost : 'N/A'}`);
-      console.log(`   - Resource ID: ${firstRecord.resource_id || 'N/A'}`);
+      console.log(`   - Resource ID: ${firstRecord.resourceId || 'N/A'}`);
+      console.log(`   - Project ID: ${firstRecord.projectId || 'N/A'}`);
       console.log(`   - Jours commandés: ${firstRecord.orderedDays !== null ? firstRecord.orderedDays : 'N/A'}`);
     }
     

@@ -1,5 +1,12 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import './Forecast.css';
+import { DATA_REFRESH_EVENT } from '../dataRefresh';
+import { apiUrl } from '../api';
+import {
+  countWorkdaysInMonth,
+  countWorkdaysInYear,
+  holidaySetFromApiRows
+} from '../utils/workdays';
 
 interface Project {
   id: string | number;
@@ -11,26 +18,23 @@ interface Project {
   orderedDays?: number | null;
 }
 
-interface DeliveryTimes {
-  [deliveryId: string]: {
-    actual: { [month: string]: number }; // En jours
-    forecast: { [month: string]: number }; // En jours
-    orderedDays?: number; // Jours commandés depuis la prestation
-  };
-}
-
 interface ResourceWithProjects {
   id: number;
   nom: string;
   prenom: string;
   type?: string;
   statut?: string;
+  /** Prestations visibles (filtre période). */
   projects: Project[];
+  /** Toutes les prestations de la ressource : base du CA par année (hors filtre période). */
+  allProjectsForCA: Project[];
 }
 
 interface ForecastProps {
   onBack: () => void;
 }
+
+type ForecastPeriodOverride = { startDate: string; endDate: string };
 
 /** Évite "JSON.parse: unexpected character" quand l'API renvoie du HTML (erreur Vercel). */
 async function safeParseJson(res: Response): Promise<any> {
@@ -55,6 +59,91 @@ function normalizeApiError(err: unknown): string {
 function safeParseLocalStorage<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;
   try { return JSON.parse(raw) as T; } catch { return fallback; }
+}
+
+/** Carte mois → jours d'absence (clés resourceId en string). */
+function getAbsenceMapForResource(
+  absenceByResource: Record<string, Record<string, number>>,
+  resourceId: number
+): Record<string, number> {
+  const keys = [String(resourceId), String(Number(resourceId)), Number(resourceId).toString()];
+  for (const k of keys) {
+    if (absenceByResource[k]) return absenceByResource[k];
+  }
+  return {};
+}
+
+function sumAbsencesForYear(monthMap: Record<string, number>, year: number): number {
+  let s = 0;
+  for (const [month, days] of Object.entries(monthMap)) {
+    if (month.startsWith(`${year}-`)) s += Number(days) || 0;
+  }
+  return s;
+}
+
+/** Mois calendaire YYYY-MM au plus tard le mois courant (inclus). */
+function isMonthCurrentOrPast(ym: string): boolean {
+  const parts = ym.split('-');
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  if (Number.isNaN(y) || Number.isNaN(m)) return false;
+  const now = new Date();
+  const cy = now.getFullYear();
+  const cm = now.getMonth() + 1;
+  if (y < cy) return true;
+  if (y > cy) return false;
+  return m <= cm;
+}
+
+/** Fond cellule : base #F8E4A7, plus intense quand les jours augmentent ; vide ≈ blanc cassé. */
+function absenceCellBackground(days: number, maxDays: number): string {
+  if (days <= 0) return '#FFFCF3';
+  const t = Math.min(1, maxDays > 0 ? days / maxDays : 1);
+  const base = { r: 248, g: 228, b: 167 };
+  const empty = { r: 255, g: 252, b: 243 };
+  const r = Math.round(empty.r + (base.r - empty.r) * t);
+  const g = Math.round(empty.g + (base.g - empty.g) * t);
+  const b = Math.round(empty.b + (base.b - empty.b) * t);
+  return `rgb(${r},${g},${b})`;
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function isValidYmd(y: number, m: number, d: number): boolean {
+  if (m < 1 || m > 12 || d < 1) return false;
+  const dt = new Date(y, m - 1, d, 12, 0, 0, 0);
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
+}
+
+/** yyyy-mm-dd → jj/mm/aaaa */
+function formatYmdToFr(ymd: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd.trim());
+  if (!m) return ymd;
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+/** jj/mm/aaaa (j et m sur 1 ou 2 chiffres), ou aaaa-mm-jj — → yyyy-mm-dd */
+function parseFrDateToYmd(raw: string): string | null {
+  const s = raw.trim().replace(/\s/g, '');
+  if (!s) return null;
+  let m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (m) {
+    const y = parseInt(m[1], 10);
+    const mo = parseInt(m[2], 10);
+    const d = parseInt(m[3], 10);
+    if (isValidYmd(y, mo, d)) return `${y}-${pad2(mo)}-${pad2(d)}`;
+    return null;
+  }
+  m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+  if (m) {
+    const d = parseInt(m[1], 10);
+    const mo = parseInt(m[2], 10);
+    const y = parseInt(m[3], 10);
+    if (isValidYmd(y, mo, d)) return `${y}-${pad2(mo)}-${pad2(d)}`;
+  }
+  return null;
 }
 
 // Fonction pour charger les filtres depuis localStorage
@@ -102,6 +191,16 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
   const [error, setError] = useState<string | null>(null);
   const [startDate, setStartDate] = useState<string>(savedFilters.startDate);
   const [endDate, setEndDate] = useState<string>(savedFilters.endDate);
+  const [startDateInput, setStartDateInput] = useState<string>(() =>
+    formatYmdToFr(savedFilters.startDate)
+  );
+  const [endDateInput, setEndDateInput] = useState<string>(() =>
+    formatYmdToFr(savedFilters.endDate)
+  );
+
+  const startDatePickerRef = useRef<HTMLInputElement>(null);
+  const endDatePickerRef = useRef<HTMLInputElement>(null);
+
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   
@@ -115,9 +214,9 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
   const [expandedResources, setExpandedResources] = useState<Set<number>>(new Set());
   const [expandedDeliveries, setExpandedDeliveries] = useState<Set<string>>(new Set());
   
-  // États pour les temps mensuels
-  const [deliveryTimes, setDeliveryTimes] = useState<DeliveryTimes>({});
-  const [loadingTimes, setLoadingTimes] = useState<Set<string | number>>(new Set());
+  // Données prévisionnelles et jours commandés indexés par prestation
+  const [forecastByDeliveryId, setForecastByDeliveryId] = useState<Record<string, Record<string, number>>>({});
+  const [orderedDaysByDeliveryId, setOrderedDaysByDeliveryId] = useState<Record<string, number>>({});
   const [editingMonth, setEditingMonth] = useState<{ deliveryId: string | number; month: string } | null>(null);
   
   // État pour l'agrégat des timesheets
@@ -133,38 +232,39 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
   const [allTypeOptions, setAllTypeOptions] = useState<string[]>([]);
   const [allStatutOptions, setAllStatutOptions] = useState<string[]>([]);
 
-  const fetchForecast = useCallback(async () => {
+  const [absenceByResource, setAbsenceByResource] = useState<Record<string, Record<string, number>>>({});
+  /** Dates fériées YYYY-MM-DD (table french_public_holiday via API). */
+  const [frenchHolidayDates, setFrenchHolidayDates] = useState<string[]>([]);
+  const holidayYmdSet = useMemo(() => new Set(frenchHolidayDates), [frenchHolidayDates]);
+
+  const fetchForecast = useCallback(async (period?: ForecastPeriodOverride) => {
+    const filterStart = period?.startDate ?? startDate;
+    const filterEnd = period?.endDate ?? endDate;
     try {
       setLoading(true);
       setError(null);
 
-      // Charger les prestations depuis deliveries.json
-      console.log('📡 Chargement des prestations depuis deliveries.json...');
-      const deliveriesResponse = await fetch('/api/data/deliveries.json');
-      const deliveriesResponseData = await safeParseJson(deliveriesResponse);
-      if (!deliveriesResponse.ok) {
-        const msg = deliveriesResponseData?.error || 'Aucune donnée prestations. Lancez la synchronisation "Prestations" depuis Paramètres.';
+      // Bootstrap unique pour limiter la latence (évite les appels API multiples).
+      const hy = new Date().getFullYear();
+      const bootstrapResponse = await fetch(
+        apiUrl(`/api/data/forecast-bootstrap?from=${hy - 1}&years=12`)
+      );
+      const bootstrapBody = await safeParseJson(bootstrapResponse);
+      if (!bootstrapResponse.ok || !bootstrapBody?.success) {
+        const msg = bootstrapBody?.error || 'Impossible de charger les données Forecast.';
         throw new Error(msg);
       }
-      // La réponse de l'API est { success: true, data: { metadata: {...}, data: [...] } }
-      // On doit extraire deliveriesResponseData.data.data (le tableau des prestations)
-      const deliveriesData = deliveriesResponseData.data || deliveriesResponseData;
-      // deliveriesData peut être soit { metadata: {...}, data: [...] } soit directement [...]
-      const deliveries = (deliveriesData.data && Array.isArray(deliveriesData.data)) 
-        ? deliveriesData.data 
-        : (Array.isArray(deliveriesData) ? deliveriesData : []);
-      console.log(`📊 ${deliveries.length} prestations chargées depuis deliveries.json`);
-
-      // Charger TOUTES les ressources depuis resources-local (base de données)
-      console.log('📡 Chargement des ressources depuis resources-local...');
-      const resourcesResponse = await fetch('/api/data/resources-local');
-      const resourcesData = await safeParseJson(resourcesResponse);
-      if (!resourcesResponse.ok) {
-        const msg = resourcesData?.error || 'Ressources non disponibles. Lancez la synchronisation "Ressources" depuis Paramètres.';
-        throw new Error(msg);
-      }
-      const resourcesList = resourcesData.data || resourcesData || [];
-      console.log(`📊 ${resourcesList.length} ressources chargées depuis resources-local`);
+      const payload = bootstrapBody.data || {};
+      const deliveries = Array.isArray(payload.deliveries) ? payload.deliveries : [];
+      const resourcesList = Array.isArray(payload.resourcesLocal) ? payload.resourcesLocal : [];
+      setOrderedDaysByDeliveryId(payload.orderedDaysByDeliveryId || {});
+      setForecastByDeliveryId(payload.forecastByDeliveryId || {});
+      setTimesheetsAggregate(payload.timesheetsAggregate || {});
+      setAbsenceByResource(payload.absenceByResource || {});
+      const holidayDateList = Array.from(
+        holidaySetFromApiRows(Array.isArray(payload.holidays) ? payload.holidays : [])
+      );
+      setFrenchHolidayDates(holidayDateList);
 
       // Extraire tous les types et statuts pour les options de filtres
       const typeSet = new Set<string>();
@@ -178,65 +278,6 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       setAllTypeOptions(Array.from(typeSet).sort());
       setAllStatutOptions(Array.from(statutSet).sort());
       console.log(`📊 Options filtres: ${typeSet.size} types, ${statutSet.size} statuts`);
-
-      // Récupérer les mappings typeOf et state depuis le dictionnaire
-      console.log('📡 Récupération du dictionnaire pour mapper typeOf et state...');
-      let typeOfMapping: { [key: string]: string } = {};
-      let stateMapping: { [key: string]: string } = {};
-      
-      try {
-        // Utiliser l'endpoint /api/boondmanager/dictionary/resources pour récupérer le mapping typeOf
-        const dictionaryResponse = await fetch('/api/boondmanager/dictionary/resources');
-        if (dictionaryResponse.ok) {
-          const dictionaryData = await safeParseJson(dictionaryResponse);
-          // Le mapping typeOf est directement dans typeMapping
-          if (dictionaryData.typeMapping) {
-            Object.keys(dictionaryData.typeMapping).forEach(key => {
-              typeOfMapping[key] = dictionaryData.typeMapping[key];
-              typeOfMapping[Number(key)] = dictionaryData.typeMapping[key];
-              typeOfMapping[String(key)] = dictionaryData.typeMapping[key];
-            });
-          }
-          console.log(`✅ ${Object.keys(typeOfMapping).length} types mappés`);
-        }
-        
-        // Récupérer le mapping state depuis le dictionnaire complet
-        const fullDictionaryResponse = await fetch('/api/boondmanager/dictionary');
-        if (fullDictionaryResponse.ok) {
-          const fullDictionaryData = await safeParseJson(fullDictionaryResponse);
-          // Extraire le mapping state depuis data.data.setting.state.resource
-          const dict = fullDictionaryData.data?.data || fullDictionaryData.data || fullDictionaryData;
-          const resourceStates = dict?.setting?.state?.resource || [];
-          console.log(`📊 ${resourceStates.length} statuts trouvés dans le dictionnaire`);
-          console.log(`📋 Structure dict:`, Object.keys(dict || {}));
-          console.log(`📋 Structure setting:`, Object.keys(dict?.setting || {}));
-          console.log(`📋 Structure state:`, Object.keys(dict?.setting?.state || {}));
-          
-          if (resourceStates.length === 0) {
-            console.warn('⚠️  Aucun statut trouvé dans le dictionnaire');
-            console.warn('📋 dict.setting.state:', dict?.setting?.state);
-          }
-          
-          resourceStates.forEach((item: any) => {
-            if (item.id !== undefined && item.id !== null && item.value !== undefined) {
-              const idStr = String(item.id);
-              const idNum = Number(item.id);
-              stateMapping[idStr] = item.value;
-              stateMapping[idNum] = item.value;
-              stateMapping[item.id] = item.value;
-              console.log(`  ✅ Mapping state: ${item.id} (str=${idStr}, num=${idNum}) -> "${item.value}"`);
-            } else {
-              console.warn(`⚠️  Élément state invalide:`, item);
-            }
-          });
-          console.log(`✅ ${Object.keys(stateMapping).length} statuts mappés`);
-          console.log(`📋 Mapping state complet:`, stateMapping);
-        } else {
-          console.error(`❌ Erreur HTTP ${fullDictionaryResponse.status} lors de la récupération du dictionnaire`);
-        }
-      } catch (error) {
-        console.warn('⚠️  Erreur lors de la récupération du dictionnaire:', error);
-      }
 
       // Créer un map des ressources par ID pour accès rapide
       // Les typeLabel et stateLabel sont déjà résolus par /resources-local
@@ -255,32 +296,15 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         }
       });
 
-      // Grouper les prestations par ressource
+      // Grouper les prestations par ressource (vue filtrée + liste complète pour le CA annuel)
       const deliveriesByResource: { [key: string]: Project[] } = {};
+      const deliveriesByResourceAll: { [key: string]: Project[] } = {};
 
       deliveries.forEach((delivery: any) => {
         // Récupérer l'ID de la ressource (camelCase ou snake_case selon la source)
         const resourceId = String(delivery.resourceId || delivery.resource_id || '');
         if (!resourceId) {
           return;
-        }
-
-        // Filtrer par période si spécifiée
-        if (startDate && endDate) {
-          const start = new Date(startDate);
-          const end = new Date(endDate);
-          const deliveryStart = delivery.startDate ? new Date(delivery.startDate) : null;
-          const deliveryEnd = delivery.endDate ? new Date(delivery.endDate) : null;
-
-          // Vérifier si la prestation chevauche la période
-          if (deliveryStart && deliveryEnd) {
-            const overlaps = (deliveryStart <= end && deliveryEnd >= start);
-            if (!overlaps) {
-              return; // Prestation en dehors de la période
-            }
-          } else {
-            return; // Pas de dates, on ignore
-          }
         }
 
         // Créer l'objet Project avec les jours commandés
@@ -300,30 +324,58 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
             : null
         };
 
+        if (!deliveriesByResourceAll[resourceId]) {
+          deliveriesByResourceAll[resourceId] = [];
+        }
+        deliveriesByResourceAll[resourceId].push(project);
+
+        // Filtrer par période si spécifiée (affichage uniquement)
+        if (filterStart && filterEnd) {
+          const start = new Date(filterStart);
+          const end = new Date(filterEnd);
+          const deliveryStart = delivery.startDate ? new Date(delivery.startDate) : null;
+          const deliveryEnd = delivery.endDate ? new Date(delivery.endDate) : null;
+
+          if (deliveryStart && deliveryEnd) {
+            const overlaps = deliveryStart <= end && deliveryEnd >= start;
+            if (!overlaps) {
+              return;
+            }
+          } else {
+            return;
+          }
+        }
+
         if (!deliveriesByResource[resourceId]) {
           deliveriesByResource[resourceId] = [];
         }
         deliveriesByResource[resourceId].push(project);
       });
 
+      const sortProjectsByEndDesc = (list: Project[]) =>
+        [...list].sort((a, b) => {
+          const dateA = a.endDate ? new Date(a.endDate).getTime() : 0;
+          const dateB = b.endDate ? new Date(b.endDate).getTime() : 0;
+          return dateB - dateA;
+        });
+
       // Créer la liste des ressources avec leurs prestations
       const resourcesWithProjects: ResourceWithProjects[] = [];
       
       Object.keys(deliveriesByResource).forEach((resourceId) => {
         const resourceInfo = resourcesMap[resourceId] || { nom: 'N/A', prenom: 'N/A', type: '', statut: '' };
-        // Trier les prestations par date de fin décroissante
-        const sortedProjects = [...deliveriesByResource[resourceId]].sort((a, b) => {
-          const dateA = a.endDate ? new Date(a.endDate).getTime() : 0;
-          const dateB = b.endDate ? new Date(b.endDate).getTime() : 0;
-          return dateB - dateA; // Décroissant
-        });
+        const sortedProjects = sortProjectsByEndDesc(deliveriesByResource[resourceId]);
+        const sortedAllForCA = sortProjectsByEndDesc(
+          deliveriesByResourceAll[resourceId] || []
+        );
         resourcesWithProjects.push({
           id: Number(resourceId),
           nom: resourceInfo.nom,
           prenom: resourceInfo.prenom,
           type: resourceInfo.type,
           statut: resourceInfo.statut,
-          projects: sortedProjects
+          projects: sortedProjects,
+          allProjectsForCA: sortedAllForCA
         });
       });
 
@@ -346,73 +398,65 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
           statut: sampleResource.statut
         });
       }
+
       setResources(resourcesWithProjects);
     } catch (err) {
       const errorMessage = normalizeApiError(err);
       setError(errorMessage);
       console.error('❌ Error fetching forecast:', err);
+      setAbsenceByResource({});
+      setFrenchHolidayDates([]);
       setResources([]);
     } finally {
       setLoading(false);
     }
   }, [startDate, endDate]);
 
-  // Charger l'agrégat des timesheets
-  const loadTimesheetsAggregate = useCallback(async () => {
-    try {
-      console.log('📡 Chargement de l\'agrégat des timesheets...');
-      const response = await fetch('/api/data/timesheets_aggregate.json');
-      if (!response.ok) {
-        console.warn('⚠️  Fichier timesheets_aggregate.json non trouvé. Les temps saisis ne seront pas affichés.');
-        return;
-      }
-      const data = await safeParseJson(response);
-      const aggregateData = data.data?.data || data.data || [];
-      
-      console.log(`📊 ${aggregateData.length} lignes agrégées chargées`);
-      
-      // Créer une structure indexée par resourceId, deliveryId et month
-      const indexed: {
-        [resourceId: string]: {
-          [deliveryId: string]: {
-            [month: string]: { days: number; hours: number };
-          };
-        };
-      } = {};
-      
-      aggregateData.forEach((item: any) => {
-        const resourceId = String(item.resourceId || '');
-        const deliveryId = String(item.deliveryId || '');
-        const month = item.month || '';
-        
-        if (!resourceId || !deliveryId || !month) {
-          return;
-        }
-        
-        if (!indexed[resourceId]) {
-          indexed[resourceId] = {};
-        }
-        if (!indexed[resourceId][deliveryId]) {
-          indexed[resourceId][deliveryId] = {};
-        }
-        
-        // Convertir les jours en heures (1 jour = 7 heures par défaut, ou utiliser totalHours si disponible)
-        const days = parseFloat(item.totalDays) || 0;
-        const hours = parseFloat(item.totalHours) || 0;
-        // Si on a des jours mais pas d'heures, convertir (1 jour = 7h)
-        const totalHours = hours > 0 ? hours : (days * 7);
-        
-        indexed[resourceId][deliveryId][month] = {
-          days,
-          hours: totalHours
-        };
-      });
-      
-      setTimesheetsAggregate(indexed);
-      console.log(`✅ Agrégat indexé avec succès`);
-    } catch (error) {
-      console.error('❌ Erreur lors du chargement de l\'agrégat des timesheets:', error);
+  const handleActualiser = useCallback(() => {
+    const s = parseFrDateToYmd(startDateInput.trim());
+    const e = parseFrDateToYmd(endDateInput.trim());
+    if (!s || !e) {
+      alert(
+        'Indiquez une date de début et une date de fin au format jj/mm/aaaa (ex. 15/03/2026).'
+      );
+      return;
     }
+    if (s > e) {
+      alert('La date de début doit être antérieure ou égale à la date de fin.');
+      return;
+    }
+    setStartDate(s);
+    setEndDate(e);
+    setStartDateInput(formatYmdToFr(s));
+    setEndDateInput(formatYmdToFr(e));
+    void fetchForecast({ startDate: s, endDate: e });
+  }, [startDateInput, endDateInput, fetchForecast]);
+
+  const openStartDatePicker = () => {
+    const el = startDatePickerRef.current;
+    if (!el) return;
+    const parsed = parseFrDateToYmd(startDateInput.trim()) || startDate;
+    el.value = parsed;
+    el.showPicker?.();
+  };
+
+  const openEndDatePicker = () => {
+    const el = endDatePickerRef.current;
+    if (!el) return;
+    const parsed = parseFrDateToYmd(endDateInput.trim()) || endDate;
+    el.value = parsed;
+    el.showPicker?.();
+  };
+
+  const fetchForecastRef = useRef(fetchForecast);
+  fetchForecastRef.current = fetchForecast;
+
+  useEffect(() => {
+    const onRefresh = () => {
+      void fetchForecastRef.current();
+    };
+    window.addEventListener(DATA_REFRESH_EVENT, onRefresh);
+    return () => window.removeEventListener(DATA_REFRESH_EVENT, onRefresh);
   }, []);
 
   // Sauvegarder les dates dans localStorage à chaque changement
@@ -454,12 +498,15 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
   }, [statutFilter]);
 
   useEffect(() => {
-    if (startDate && endDate) {
-      fetchForecast();
+    if (savedFilters.startDate && savedFilters.endDate) {
+      void fetchForecast({
+        startDate: savedFilters.startDate,
+        endDate: savedFilters.endDate
+      });
     }
-    // Charger l'agrégat au montage du composant
-    loadTimesheetsAggregate();
-  }, [startDate, endDate, fetchForecast, loadTimesheetsAggregate]);
+    // Chargement initial uniquement (ensuite : bouton Actualiser)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Filtrer les ressources par type et statut
   const filteredResources = useMemo(() => {
@@ -493,10 +540,30 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
   // Réinitialiser la page quand le filtre change
   useEffect(() => {
     setCurrentPage(1);
-  }, [typeFilter, statutFilter]);
+  }, [typeFilter, statutFilter, startDate, endDate]);
 
   // Les options de filtres sont chargées depuis toutes les ressources de la base
   // (allTypeOptions et allStatutOptions sont mis à jour dans fetchForecast)
+
+  // Nettoyer les filtres persistés : ne garder que les valeurs présentes dans les options actuelles
+  // (libellés). Évite que d'anciens codes mémorisés gonflent le compteur (code + libellé).
+  useEffect(() => {
+    if (allTypeOptions.length === 0) return;
+    const valid = new Set(allTypeOptions);
+    setTypeFilter(prev => {
+      const cleaned = Array.from(new Set(prev.filter(t => valid.has(t))));
+      return cleaned.length === prev.length ? prev : cleaned;
+    });
+  }, [allTypeOptions]);
+
+  useEffect(() => {
+    if (allStatutOptions.length === 0) return;
+    const valid = new Set(allStatutOptions);
+    setStatutFilter(prev => {
+      const cleaned = Array.from(new Set(prev.filter(s => valid.has(s))));
+      return cleaned.length === prev.length ? prev : cleaned;
+    });
+  }, [allStatutOptions]);
 
   // Fonction pour basculer l'état plié/déplié d'une ressource
   const toggleResourceExpanded = (resourceId: number) => {
@@ -572,101 +639,37 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
     }
   };
 
-  // Charger les temps pour une prestation
-  const loadDeliveryTimes = useCallback(async (deliveryId: string | number, resourceId: number, projectStartDate: string, projectEndDate: string) => {
-    if (loadingTimes.has(deliveryId)) return;
-    
-    setLoadingTimes(prev => new Set(prev).add(deliveryId));
-    
-    try {
-      // Charger les temps prévisionnels depuis le fichier JSON
-      const forecastTimesResponse = await fetch('/api/data/forecast-times.json');
-      let forecastTimes: any = { data: {} };
-      if (forecastTimesResponse.ok) {
-        const forecastData = await safeParseJson(forecastTimesResponse);
-        forecastTimes = forecastData.data || forecastData;
-      }
-
-      // Charger les temps saisis depuis l'agrégat des timesheets (en jours)
-      let actualTimes: { [month: string]: number } = {};
-      
-      const resourceIdStr = String(resourceId);
-      const deliveryIdStr = String(deliveryId);
-      
-      // Récupérer les temps depuis l'agrégat indexé
-      // Essayer plusieurs variantes d'IDs pour la correspondance
-      const resourceIdVariants = [resourceIdStr, String(Number(resourceId)), Number(resourceId).toString()];
-      const deliveryIdVariants = [deliveryIdStr, String(Number(deliveryId)), Number(deliveryId).toString()];
-      
+  // Retourne les jours saisis indexés par mois pour une prestation/ressource.
+  const getActualTimesForDelivery = useCallback(
+    (deliveryId: string | number, resourceId: number): { [month: string]: number } => {
+      const resourceIdVariants = [String(resourceId), String(Number(resourceId)), Number(resourceId).toString()];
+      const deliveryIdVariants = [String(deliveryId), String(Number(deliveryId)), Number(deliveryId).toString()];
       let foundData: { [month: string]: { days: number; hours: number } } | null = null;
-      
       for (const resIdVar of resourceIdVariants) {
-        if (timesheetsAggregate[resIdVar]) {
-          for (const delIdVar of deliveryIdVariants) {
-            if (timesheetsAggregate[resIdVar][delIdVar]) {
-              foundData = timesheetsAggregate[resIdVar][delIdVar];
-              break;
-            }
-          }
-          if (foundData) break;
-        }
-      }
-      
-      if (foundData) {
-        // Charger TOUS les mois, pas seulement ceux dans la période du projet
-        // pour avoir le détail complet dans le tableau
-        Object.keys(foundData).forEach((month) => {
-          // Utiliser les jours directement (pas de conversion en heures)
-          const timeData = foundData![month];
-          actualTimes[month] = timeData.days || 0;
-        });
-        
-        console.log(`✅ Temps saisis (jours) récupérés depuis l'agrégat pour la prestation ${deliveryId} (ressource ${resourceId}):`, actualTimes);
-      } else {
-        console.log(`⚠️  Aucun temps saisi trouvé dans l'agrégat pour la prestation ${deliveryId} (ressource ${resourceId})`);
-        console.log(`   Ressources disponibles:`, Object.keys(timesheetsAggregate).slice(0, 10));
-      }
-
-      // Charger les jours commandés depuis les prestations (déjà chargé dans fetchForecast, on le récupère depuis les prestations)
-      let orderedDays: number | null = null;
-      try {
-        const deliveriesResponse = await fetch('/api/data/deliveries.json');
-        if (deliveriesResponse.ok) {
-          const deliveriesData = await safeParseJson(deliveriesResponse);
-          const deliveries = deliveriesData.data?.data || deliveriesData.data || [];
-          const delivery = deliveries.find((d: any) => String(d.id) === String(deliveryId));
-          if (delivery && delivery.orderedDays !== null && delivery.orderedDays !== undefined) {
-            orderedDays = parseFloat(delivery.orderedDays);
+        if (!timesheetsAggregate[resIdVar]) continue;
+        for (const delIdVar of deliveryIdVariants) {
+          if (timesheetsAggregate[resIdVar][delIdVar]) {
+            foundData = timesheetsAggregate[resIdVar][delIdVar];
+            break;
           }
         }
-      } catch (error) {
-        console.warn(`⚠️  Impossible de charger les jours commandés pour la prestation ${deliveryId}:`, error);
+        if (foundData) break;
       }
-
-      // Mettre à jour l'état
-      setDeliveryTimes(prev => ({
-        ...prev,
-        [String(deliveryId)]: {
-          actual: actualTimes,
-          forecast: forecastTimes.data?.[String(deliveryId)]?.forecast || {},
-          orderedDays: orderedDays || undefined
-        }
-      }));
-    } catch (error) {
-      console.error(`❌ Erreur lors du chargement des temps pour la prestation ${deliveryId}:`, error);
-    } finally {
-      setLoadingTimes(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(deliveryId);
-        return newSet;
+      if (!foundData) return {};
+      const data = foundData;
+      const actual: { [month: string]: number } = {};
+      Object.keys(data).forEach((month) => {
+        actual[month] = data[month]?.days || 0;
       });
-    }
-  }, [loadingTimes, timesheetsAggregate]);
+      return actual;
+    },
+    [timesheetsAggregate]
+  );
 
   // Sauvegarder un temps prévisionnel (en jours)
   const saveForecastTime = useCallback(async (deliveryId: string | number, month: string, days: number) => {
     try {
-      const response = await fetch('/api/data/forecast-times', {
+      const response = await fetch(apiUrl('/api/data/forecast-times'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -682,15 +685,12 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         throw new Error('Erreur lors de la sauvegarde');
       }
 
-      // Mettre à jour l'état local
-      setDeliveryTimes(prev => ({
+      // Mettre à jour l'état local (cache prévisionnel par prestation).
+      setForecastByDeliveryId(prev => ({
         ...prev,
         [String(deliveryId)]: {
-          ...prev[String(deliveryId)],
-          forecast: {
-            ...(prev[String(deliveryId)]?.forecast || {}),
-            [month]: days
-          }
+          ...(prev[String(deliveryId)] || {}),
+          [month]: days
         }
       }));
 
@@ -701,51 +701,53 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
     }
   }, []);
 
-  // Obtenir tous les mois de 2026
-  const get2026Months = (): string[] => {
+  /** Mois jan–déc de l’année en cours (aligné avec les absences Boond synchronisées). */
+  const getGridMonths = (): string[] => {
+    const y = new Date().getFullYear();
     const months: string[] = [];
     for (let month = 1; month <= 12; month++) {
-      months.push(`2026-${String(month).padStart(2, '0')}`);
+      months.push(`${y}-${String(month).padStart(2, '0')}`);
     }
     return months;
   };
 
-  // Calculer le cumul 2025 pour une prestation
-  const get2025Cumulative = (deliveryId: string | number, resourceId: number): number => {
-    const resourceIdStr = String(resourceId);
-    const deliveryIdStr = String(deliveryId);
-    
-    // Essayer plusieurs variantes d'IDs
-    const resourceIdVariants = [resourceIdStr, String(Number(resourceId)), Number(resourceId).toString()];
-    const deliveryIdVariants = [deliveryIdStr, String(Number(deliveryId)), Number(deliveryId).toString()];
-    
-    let foundData: { [month: string]: { days: number; hours: number } } | null = null;
-    
+  /** Cherche les temps saisis (agrégat) pour une ressource × prestation. */
+  const lookupTimesheetData = (
+    deliveryId: string | number,
+    resourceId: number
+  ): { [month: string]: { days: number; hours: number } } | null => {
+    const resourceIdVariants = [String(resourceId), String(Number(resourceId)), Number(resourceId).toString()];
+    const deliveryIdVariants = [String(deliveryId), String(Number(deliveryId)), Number(deliveryId).toString()];
+
     for (const resIdVar of resourceIdVariants) {
-      if (timesheetsAggregate[resIdVar]) {
-        for (const delIdVar of deliveryIdVariants) {
-          if (timesheetsAggregate[resIdVar][delIdVar]) {
-            foundData = timesheetsAggregate[resIdVar][delIdVar];
-            break;
-          }
+      if (!timesheetsAggregate[resIdVar]) continue;
+      for (const delIdVar of deliveryIdVariants) {
+        if (timesheetsAggregate[resIdVar][delIdVar]) {
+          return timesheetsAggregate[resIdVar][delIdVar];
         }
-        if (foundData) break;
       }
     }
-    
-    if (!foundData) {
-      return 0;
-    }
-    
+    return null;
+  };
+
+  const getActualDaysForMonth = (
+    deliveryId: string | number,
+    resourceId: number,
+    month: string
+  ): number => lookupTimesheetData(deliveryId, resourceId)?.[month]?.days || 0;
+
+  /** Cumul jours saisis sur l’année précédente (colonne de gauche du tableau). */
+  const get2025Cumulative = (deliveryId: string | number, resourceId: number): number => {
+    const foundData = lookupTimesheetData(deliveryId, resourceId);
+    if (!foundData) return 0;
+
+    const priorYear = new Date().getFullYear() - 1;
     let total = 0;
-    
     Object.keys(foundData).forEach((month) => {
-      if (month.startsWith('2025-')) {
-        const timeData = foundData![month];
-        total += timeData.days || 0;
+      if (month.startsWith(`${priorYear}-`)) {
+        total += foundData[month].days || 0;
       }
     });
-    
     return total;
   };
 
@@ -753,8 +755,9 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
   const getResourceCA = (resource: ResourceWithProjects, year: number): number => {
     const resourceIdStr = String(resource.id);
     let totalCA = 0;
-    
-    resource.projects.forEach((project) => {
+    const projectsForYear = resource.allProjectsForCA ?? resource.projects;
+
+    projectsForYear.forEach((project) => {
       const deliveryIdStr = String(project.id);
       const tjm = project.tjm || 0;
       
@@ -830,7 +833,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         <div className="forecast-container">
           <div className="error-state">
             <p className="error-message">❌ {error}</p>
-            <button className="retry-button" onClick={fetchForecast}>
+            <button className="retry-button" onClick={() => void fetchForecast()}>
               Réessayer
             </button>
           </div>
@@ -853,25 +856,75 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
           <div className="date-filters-group">
             <div className="date-filter">
               <label htmlFor="start-date">Date de début :</label>
-              <input
-                type="date"
-                id="start-date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="date-input"
-              />
+              <div className="forecast-date-field">
+                <input
+                  type="text"
+                  id="start-date"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="jj/mm/aaaa"
+                  value={startDateInput}
+                  onChange={(e) => setStartDateInput(e.target.value)}
+                  className="date-input forecast-date-text-input"
+                />
+                <input
+                  ref={startDatePickerRef}
+                  type="date"
+                  className="forecast-native-date-hidden"
+                  aria-hidden
+                  tabIndex={-1}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v) setStartDateInput(formatYmdToFr(v));
+                  }}
+                />
+                <button
+                  type="button"
+                  className="forecast-calendar-btn"
+                  onClick={openStartDatePicker}
+                  aria-label="Calendrier date de début"
+                  title="Choisir dans le calendrier"
+                >
+                  📅
+                </button>
+              </div>
             </div>
             <div className="date-filter">
               <label htmlFor="end-date">Date de fin :</label>
-              <input
-                type="date"
-                id="end-date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="date-input"
-              />
+              <div className="forecast-date-field">
+                <input
+                  type="text"
+                  id="end-date"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="jj/mm/aaaa"
+                  value={endDateInput}
+                  onChange={(e) => setEndDateInput(e.target.value)}
+                  className="date-input forecast-date-text-input"
+                />
+                <input
+                  ref={endDatePickerRef}
+                  type="date"
+                  className="forecast-native-date-hidden"
+                  aria-hidden
+                  tabIndex={-1}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v) setEndDateInput(formatYmdToFr(v));
+                  }}
+                />
+                <button
+                  type="button"
+                  className="forecast-calendar-btn"
+                  onClick={openEndDatePicker}
+                  aria-label="Calendrier date de fin"
+                  title="Choisir dans le calendrier"
+                >
+                  📅
+                </button>
+              </div>
             </div>
-            <button className="refresh-button" onClick={fetchForecast}>
+            <button className="refresh-button" onClick={handleActualiser}>
               Actualiser
             </button>
             
@@ -1016,20 +1069,103 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                         </div>
                       ) : (
                         <div className="projects-list-container">
+                          {(() => {
+                            const resAbs = getAbsenceMapForResource(absenceByResource, resource.id);
+                            const months = getGridMonths();
+                            const gridYear =
+                              months.length > 0
+                                ? parseInt(months[0].split('-')[0], 10)
+                                : new Date().getFullYear();
+                            const prevYear = gridYear - 1;
+                            const totalPrevYear = sumAbsencesForYear(resAbs, prevYear);
+                            const maxDays = Math.max(
+                              totalPrevYear,
+                              ...months.map((m) => resAbs[m] || 0),
+                              1
+                            );
+                            return (
+                              <div className="project-card forecast-absences-block">
+                                <div className="project-months">
+                                  <table className="forecast-table forecast-absences-compact">
+                                    <tbody>
+                                      <tr className="forecast-absences-row forecast-absences-row-headers">
+                                        <th className="forecast-absences-corner" scope="row">
+                                          Absences
+                                        </th>
+                                        <th className="forecast-absences-month-head" scope="col">
+                                          <span className="forecast-absences-month-primary">{prevYear}</span>
+                                          <span
+                                            className="forecast-absences-month-workdays"
+                                            title={`${countWorkdaysInYear(prevYear, holidayYmdSet)} jours ouvrés en ${prevYear} (lun–ven, fériés métropole exclus)`}
+                                          >
+                                            {countWorkdaysInYear(prevYear, holidayYmdSet)}
+                                          </span>
+                                        </th>
+                                        {months.map((month) => {
+                                          const ouv = countWorkdaysInMonth(month, holidayYmdSet);
+                                          return (
+                                            <th
+                                              key={month}
+                                              className="forecast-absences-month-head"
+                                              scope="col"
+                                            >
+                                              <span className="forecast-absences-month-primary">
+                                                {formatMonthName(month)}
+                                              </span>
+                                              <span
+                                                className="forecast-absences-month-workdays"
+                                                title={`${ouv} jours ouvrés (lun–ven, fériés métropole exclus)`}
+                                              >
+                                                {ouv}
+                                              </span>
+                                            </th>
+                                          );
+                                        })}
+                                      </tr>
+                                      <tr className="forecast-absences-row forecast-absences-row-values">
+                                        <th className="forecast-absences-corner" scope="row">
+                                          Nombre
+                                        </th>
+                                        <td
+                                          className="forecast-absences-cell"
+                                          style={{
+                                            backgroundColor: absenceCellBackground(totalPrevYear, maxDays)
+                                          }}
+                                        >
+                                          {totalPrevYear > 0 ? totalPrevYear.toFixed(1) : '—'}
+                                        </td>
+                                        {months.map((month) => {
+                                          const d = resAbs[month] || 0;
+                                          return (
+                                            <td
+                                              key={month}
+                                              className="forecast-absences-cell"
+                                              style={{
+                                                backgroundColor: absenceCellBackground(d, maxDays)
+                                              }}
+                                            >
+                                              {d > 0 ? Number(d).toFixed(1) : '—'}
+                                            </td>
+                                          );
+                                        })}
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            );
+                          })()}
                           {resource.projects.map((project, index) => {
                             const deliveryId = String(project.id);
                             const isDeliveryExpanded = expandedDeliveries.has(deliveryId);
-                            const times = deliveryTimes[deliveryId] || { actual: {}, forecast: {} };
+                            const actualTimes = getActualTimesForDelivery(project.id, resource.id);
+                            const forecastTimes = forecastByDeliveryId[deliveryId] || {};
+                            const actualPrevYearCum = get2025Cumulative(project.id, resource.id);
                             
-                            // Charger les temps si pas encore chargés
-                            if (!deliveryTimes[deliveryId] && !loadingTimes.has(project.id)) {
-                              loadDeliveryTimes(project.id, resource.id, project.startDate, project.endDate);
-                            }
-                            
-                            // Utiliser les jours commandés depuis le projet ou depuis times
+                            // Utiliser les jours commandés depuis la prestation déjà chargée
                             const orderedDays = project.orderedDays !== null && project.orderedDays !== undefined 
                               ? project.orderedDays 
-                              : (times.orderedDays !== null && times.orderedDays !== undefined ? times.orderedDays : null);
+                              : (orderedDaysByDeliveryId[deliveryId] ?? null);
                             
                             // Calculer les jours consommés (tous les jours depuis timesheetsAggregate)
                             const resourceIdStr = String(resource.id);
@@ -1096,10 +1232,10 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                       <span className="project-tjm-inline"></span>
                                     )}
                                     <button className="project-button project-button-ordered" onClick={(e) => e.stopPropagation()}>
-                                      Cde : {orderedDays !== null && orderedDays !== undefined ? `${orderedDays.toFixed(0)} j` : '-'}
+                                      Cde : {orderedDays !== null && orderedDays !== undefined ? orderedDays.toFixed(0) : '-'}
                                     </button>
                                     <button className="project-button project-button-consumed" onClick={(e) => e.stopPropagation()}>
-                                      Conso : {consumedDays.toFixed(1)} j
+                                      Conso : {consumedDays.toFixed(1)}
                                     </button>
                                     <button 
                                       className={`project-button project-button-delta ${
@@ -1110,7 +1246,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                       onClick={(e) => e.stopPropagation()}
                                     >
                                       Delta : {orderedDays !== null && orderedDays !== undefined 
-                                        ? `${(orderedDays - consumedDays).toFixed(1)} j` 
+                                        ? (orderedDays - consumedDays).toFixed(1)
                                         : '-'}
                                     </button>
                                     <button className="project-button project-button-ca" onClick={(e) => e.stopPropagation()}>
@@ -1124,8 +1260,8 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                     <thead>
                                       <tr>
                                         <th className="table-row-label"></th>
-                                        <th className="table-header">2025</th>
-                                        {get2026Months().map((month) => (
+                                        <th className="table-header">{new Date().getFullYear() - 1}</th>
+                                        {getGridMonths().map((month) => (
                                           <th key={month} className="table-header">
                                             {formatMonthName(month)}
                                           </th>
@@ -1135,45 +1271,54 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                     <tbody>
                                       {/* Ligne Temps saisi */}
                                       <tr className="forecast-row">
-                                        <td className="table-row-label">Temps saisi (jours)</td>
+                                        <td className="table-row-label">Temps saisi</td>
                                         <td className="table-cell actual-cell">
-                                          {loadingTimes.has(project.id) ? (
-                                            <span className="loading">...</span>
-                                          ) : (
-                                            <span className={get2025Cumulative(project.id, resource.id) > 0 ? 'has-hours' : 'no-hours'}>
-                                              {get2025Cumulative(project.id, resource.id).toFixed(1)}j
-                                            </span>
-                                          )}
+                                          <span className={actualPrevYearCum > 0 ? 'has-hours' : 'no-hours'}>
+                                            {actualPrevYearCum > 0 ? actualPrevYearCum.toFixed(1) : '-'}
+                                          </span>
                                         </td>
-                                        {get2026Months().map((month) => {
-                                          const actualDays = times.actual[month] || 0;
+                                        {getGridMonths().map((month) => {
+                                          const actualDays = getActualDaysForMonth(project.id, resource.id, month);
                                           return (
                                             <td key={month} className="table-cell actual-cell">
-                                              {loadingTimes.has(project.id) ? (
-                                                <span className="loading">...</span>
-                                              ) : (
-                                                <span className={actualDays > 0 ? 'has-hours' : 'no-hours'}>
-                                                  {actualDays.toFixed(1)}j
-                                                </span>
-                                              )}
+                                              <span className={actualDays > 0 ? 'has-hours' : 'no-hours'}>
+                                                {actualDays > 0 ? actualDays.toFixed(1) : '-'}
+                                              </span>
                                             </td>
                                           );
                                         })}
                                       </tr>
                                       {/* Ligne Temps prévisionnel */}
                                       <tr className="forecast-row">
-                                        <td className="table-row-label">Temps prévisionnel (jours)</td>
+                                        <td className="table-row-label">Temps prévisionnel</td>
                                         <td className="table-cell forecast-cell">
                                           <span className="no-forecast">-</span>
                                         </td>
-                                        {get2026Months().map((month) => {
-                                          const forecastDays = times.forecast[month] || 0;
+                                        {getGridMonths().map((month) => {
+                                          const forecastDays = forecastTimes[month] ?? 0;
+                                          const actualDays = actualTimes[month] ?? 0;
                                           const isEditing = editingMonth?.deliveryId === project.id && editingMonth?.month === month;
                                           
                                           // Vérifier si le mois est au-delà de la date de fin
                                           const monthDate = new Date(month + '-01');
                                           const endDate = project.endDate ? new Date(project.endDate) : null;
                                           const isBeyondEndDate = endDate && monthDate > endDate;
+
+                                          const hasForecastSaisi = Object.prototype.hasOwnProperty.call(
+                                            forecastTimes,
+                                            month
+                                          );
+                                          const hasActualSaisi = Object.prototype.hasOwnProperty.call(actualTimes, month);
+                                          const showForecastDelta =
+                                            isMonthCurrentOrPast(month) && hasForecastSaisi && hasActualSaisi;
+
+                                          const rawDelta = actualDays - forecastDays;
+                                          const deltaNearZero = Math.abs(rawDelta) < 0.05;
+                                          const deltaDisplayText = deltaNearZero
+                                            ? '-'
+                                            : rawDelta > 0
+                                              ? `+${rawDelta.toFixed(1)}`
+                                              : rawDelta.toFixed(1);
                                           
                                           return (
                                             <td 
@@ -1220,6 +1365,16 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                                     ✕
                                                   </button>
                                                 </div>
+                                              ) : showForecastDelta ? (
+                                                <div
+                                                  className={`forecast-display forecast-display-delta ${isBeyondEndDate ? 'beyond-end-date' : ''}`}
+                                                  onClick={() => {
+                                                    setEditingMonth({ deliveryId: project.id, month });
+                                                  }}
+                                                  title={`Δ saisi − prévi : ${deltaDisplayText} (saisi ${actualDays.toFixed(1)}, prévi ${forecastDays.toFixed(1)}) — cliquer pour modifier`}
+                                                >
+                                                  {deltaDisplayText}
+                                                </div>
                                               ) : (
                                                 <div
                                                   className={`forecast-display ${forecastDays > 0 ? 'has-forecast' : 'no-forecast'} ${isBeyondEndDate ? 'beyond-end-date' : ''}`}
@@ -1228,7 +1383,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                                   }}
                                                   title={isBeyondEndDate ? 'Mois au-delà de la date de fin - saisie possible' : 'Cliquez pour modifier'}
                                                 >
-                                                  {forecastDays > 0 ? `${forecastDays.toFixed(1)}j` : '-'}
+                                                  {forecastDays > 0 ? forecastDays.toFixed(1) : '-'}
                                                 </div>
                                               )}
                                             </td>

@@ -535,6 +535,66 @@ router.get('/dictionary', async (req, res) => {
   }
 });
 
+// Synchroniser le dictionnaire (libellés type_of / state des ressources) dans la table `dictionnaire`.
+// Indispensable après une réinitialisation de la base : les vues Ressources/Forecast en dépendent
+// pour afficher les libellés au lieu des codes numériques.
+router.post('/sync/dictionary', async (req, res) => {
+  try {
+    console.log('🔄 Synchronisation du dictionnaire demandée...');
+    const { getSupabase } = require('../../lib/supabaseClient');
+    const supabase = getSupabase();
+    if (!supabase) {
+      return res.status(500).json({ success: false, error: 'Supabase non configuré (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).' });
+    }
+
+    const typeOfMapping = await boondManagerService.getTypeOfMapping();
+    const stateMapping = await boondManagerService.getStateMapping();
+
+    const rows = [];
+    Object.entries(typeOfMapping || {}).forEach(([code, label]) => {
+      if (label != null) rows.push({ table_name: 'resources', column_name: 'type_of', code: String(code), label: String(label) });
+    });
+    Object.entries(stateMapping || {}).forEach(([code, label]) => {
+      if (label != null) rows.push({ table_name: 'resources', column_name: 'state', code: String(code), label: String(label) });
+    });
+
+    // Dédoublonnage défensif (même code mappé sous forme numérique et chaîne par le service).
+    const seen = new Set();
+    const uniqueRows = rows.filter((r) => {
+      const key = `${r.table_name}|${r.column_name}|${r.code}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    for (let i = 0; i < uniqueRows.length; i += 100) {
+      const chunk = uniqueRows.slice(i, i + 100);
+      const { error } = await supabase
+        .from('dictionnaire')
+        .upsert(chunk, { onConflict: 'table_name,column_name,code' });
+      if (error) throw error;
+    }
+
+    const typesCount = uniqueRows.filter((r) => r.column_name === 'type_of').length;
+    const statesCount = uniqueRows.filter((r) => r.column_name === 'state').length;
+    console.log(`✅ Dictionnaire synchronisé: ${typesCount} types + ${statesCount} statuts`);
+
+    res.json({
+      success: true,
+      message: `Dictionnaire synchronisé : ${typesCount} types et ${statesCount} statuts.`,
+      count: uniqueRows.length
+    });
+  } catch (error) {
+    console.error('❌ Erreur lors de la synchronisation du dictionnaire:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la synchronisation du dictionnaire',
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
 // Synchroniser les ressources
 router.post('/sync/resources', async (req, res) => {
   try {
@@ -641,7 +701,7 @@ router.post('/sync/timesheets', async (req, res) => {
     
     const result = await syncTimesheets(startMonth, endMonth);
     
-    const count = result?.data?.length || 0;
+    const count = result?.metadata?.totalTimesheets ?? (Array.isArray(result?.data) ? result.data.length : 0);
     const totalEntries = result?.metadata?.totalEntries || 0;
     console.log(`✅ Synchronisation des feuilles de temps terminée: ${count} feuilles, ${totalEntries} entrées`);
     
@@ -657,6 +717,45 @@ router.post('/sync/timesheets', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la synchronisation des feuilles de temps',
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+// Synchroniser les absences Boond (agrégat par collaborateur et mois)
+router.post('/sync/absences', async (req, res) => {
+  try {
+    console.log('🔄 Synchronisation des absences demandée...');
+    let { beginDate, endDate } = req.body || {};
+    if (!beginDate || !endDate) {
+      const y = new Date().getFullYear();
+      // Année précédente + en cours (aligné grille Forecast + absences multi-années)
+      beginDate = beginDate || `${y - 1}-01-01`;
+      endDate = endDate || `${y}-12-31`;
+    }
+
+    const { syncAbsences } = require('../../sync_absences');
+    const result = await syncAbsences({ beginDate, endDate });
+
+    const count = result?.data?.length || 0;
+    const rawCount = result?.metadata?.rawRecordCount ?? 0;
+    console.log(`✅ Synchronisation des absences terminée: ${rawCount} enreg. Boond → ${count} lignes agrégées`);
+
+    res.json({
+      success: true,
+      message: `Synchronisation réussie: ${count} lignes (collaborateur × mois), ${rawCount} absences Boond`,
+      count,
+      rawRecordCount: rawCount,
+      metadata: result?.metadata,
+      beginDate,
+      endDate
+    });
+  } catch (error) {
+    console.error('❌ Erreur lors de la synchronisation des absences:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la synchronisation des absences',
       error: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });

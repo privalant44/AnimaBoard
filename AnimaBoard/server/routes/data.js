@@ -1,11 +1,11 @@
 /**
- * Routes /api/data - Données depuis KV (Redis) ou BoondManager en direct.
- * Plus aucun fichier JSON : tout est en KV ou API BoondManager.
+ * Routes /api/data - Données depuis Supabase (lib/db.js via kvStorage) ou BoondManager en direct.
  */
 const express = require('express');
 const router = express.Router();
 const kvStorage = require('../../lib/kvStorage');
 const { KV_KEYS } = require('../../lib/constants');
+const { toHolidayYmdString } = require('../../lib/holidayDate');
 const boondManagerService = require('../services/boondManagerService');
 
 // Helper: réponse standard avec data
@@ -45,55 +45,58 @@ async function handleResources(req, res) {
 router.get('/resources', handleResources);
 router.get('/resources.json', handleResources);
 
+async function getResourcesLocalEnriched() {
+  // Lire les ressources persistées (table resources via kvStorage -> db)
+  const stored = await kvStorage.get(KV_KEYS.RESOURCES, []);
+  const baseList = Array.isArray(stored) ? stored : (stored?.data || []);
+
+  // Lire le dictionnaire pour resources.type_of et resources.state
+  const { getSupabase } = require('../../lib/supabaseClient');
+  const supabase = getSupabase();
+  const dictType = {};
+  const dictState = {};
+
+  if (supabase) {
+    const { data: dictRows, error } = await supabase
+      .from('dictionnaire')
+      .select('table_name, column_name, code, label')
+      .eq('table_name', 'resources');
+
+    if (error) {
+      console.error('❌ Erreur lecture dictionnaire:', error.message || error);
+    } else {
+      (dictRows || []).forEach((row) => {
+        if (row.column_name === 'type_of') {
+          dictType[String(row.code)] = row.label;
+        } else if (row.column_name === 'state') {
+          dictState[String(row.code)] = row.label;
+        }
+      });
+    }
+  }
+
+  return baseList.map((r) => {
+    const typeCode = r.typeOf ?? r.type_of ?? null;
+    const stateCode = r.state ?? null;
+    const typeLabel = typeCode !== null && typeCode !== undefined
+      ? (dictType[String(typeCode)] || String(typeCode))
+      : 'N/A';
+    const stateLabel = stateCode !== null && stateCode !== undefined
+      ? (dictState[String(stateCode)] || String(stateCode))
+      : undefined;
+
+    return {
+      ...r,
+      typeLabel,
+      stateLabel,
+    };
+  });
+}
+
 // --- Resources locales (lecture uniquement base, sans appel API) - pour la vue Ressources
 router.get('/resources-local', async (req, res) => {
   try {
-    // Lire les ressources persistées (table resources via kvStorage -> db)
-    const stored = await kvStorage.get(KV_KEYS.RESOURCES, []);
-    const baseList = Array.isArray(stored) ? stored : (stored?.data || []);
-
-    // Lire le dictionnaire pour resources.type_of et resources.state
-    const { getSupabase } = require('../../lib/supabaseClient');
-    const supabase = getSupabase();
-    let dictType = {};
-    let dictState = {};
-
-    if (supabase) {
-      const { data: dictRows, error } = await supabase
-        .from('dictionnaire')
-        .select('table_name, column_name, code, label')
-        .eq('table_name', 'resources');
-
-      if (error) {
-        console.error('❌ Erreur lecture dictionnaire:', error.message || error);
-      } else {
-        (dictRows || []).forEach((row) => {
-          if (row.column_name === 'type_of') {
-            dictType[String(row.code)] = row.label;
-          } else if (row.column_name === 'state') {
-            dictState[String(row.code)] = row.label;
-          }
-        });
-      }
-    }
-
-    const list = baseList.map((r) => {
-      const typeCode = r.typeOf ?? r.type_of ?? null;
-      const stateCode = r.state ?? null;
-      const typeLabel = typeCode !== null && typeCode !== undefined
-        ? (dictType[String(typeCode)] || String(typeCode))
-        : 'N/A';
-      const stateLabel = stateCode !== null && stateCode !== undefined
-        ? (dictState[String(stateCode)] || String(stateCode))
-        : undefined;
-
-      return {
-        ...r,
-        typeLabel,
-        stateLabel,
-      };
-    });
-
+    const list = await getResourcesLocalEnriched();
     return okData(res, list, 'resources', list.length);
   } catch (error) {
     console.error('❌ Erreur /api/data/resources-local:', error);
@@ -200,6 +203,87 @@ router.get('/timesheets_data.json', async (req, res) => {
   }
 });
 
+// --- Jours fériés France (table french_public_holiday, repli calcul lib/frenchHolidays.js)
+router.get('/french-holidays.json', async (req, res) => {
+  try {
+    const { getSupabase } = require('../../lib/supabaseClient');
+    const {
+      getHolidayRowsForYearRange
+    } = require('../../lib/frenchHolidays');
+
+    const nowY = new Date().getFullYear();
+    const startYear = Math.max(2000, parseInt(String(req.query.from ?? nowY), 10) || nowY);
+    const numYears = Math.min(15, Math.max(1, parseInt(String(req.query.years ?? '10'), 10) || 10));
+    const endYear = startYear + numYears - 1;
+
+    let holidays = [];
+    const supabase = getSupabase();
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('french_public_holiday')
+        .select('holiday_date, label, year')
+        .gte('year', startYear)
+        .lte('year', endYear)
+        .order('holiday_date', { ascending: true });
+      if (error) {
+        console.warn('⚠️ lecture french_public_holiday:', error.message);
+      } else if (data && data.length > 0) {
+        holidays = data
+          .map((r) => ({
+            holiday_date: toHolidayYmdString(r.holiday_date),
+            label: r.label || '',
+            year: r.year
+          }))
+          .filter((r) => r.holiday_date);
+      }
+    }
+
+    if (holidays.length === 0) {
+      holidays = getHolidayRowsForYearRange(startYear, endYear);
+      holidays = holidays.map((r) => ({
+        holiday_date: r.holiday_date,
+        label: r.label,
+        year: r.year
+      }));
+    }
+
+    return res.json({
+      success: true,
+      file: 'french-holidays',
+      data: { holidays, fromYear: startYear, toYear: endYear },
+      count: holidays.length
+    });
+  } catch (error) {
+    console.error('❌ Erreur /api/data/french-holidays.json:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// --- Absences mensuelles par collaborateur (KV / table absence)
+router.get('/absence-monthly.json', async (req, res) => {
+  try {
+    const stored = await kvStorage.get(KV_KEYS.ABSENCE_MONTHLY, null);
+    if (!stored) {
+      return res.status(404).json({
+        success: false,
+        error: 'Absences non disponibles. Lancez la synchronisation « Absences » depuis Paramètres.',
+        file: 'absence-monthly'
+      });
+    }
+    const list = stored.data || stored;
+    const count = Array.isArray(list) ? list.length : 0;
+    return res.setHeader('Content-Type', 'application/json').json({
+      success: true,
+      file: 'absence-monthly',
+      data: stored,
+      count
+    });
+  } catch (error) {
+    console.error('❌ Erreur /api/data/absence-monthly.json:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // --- Timesheets aggregate (KV)
 router.get('/timesheets_aggregate.json', async (req, res) => {
   try {
@@ -215,6 +299,119 @@ router.get('/timesheets_aggregate.json', async (req, res) => {
     const count = Array.isArray(data) ? data.length : (data.data ? data.data.length : 0);
     return res.setHeader('Content-Type', 'application/json').json({ success: true, file: 'timesheets_aggregate', data: stored, count });
   } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// --- Bootstrap Forecast (un seul appel pour limiter la latence côté client)
+router.get('/forecast-bootstrap', async (req, res) => {
+  try {
+    const deliveriesStored = await kvStorage.get(KV_KEYS.DELIVERIES, null);
+    if (!deliveriesStored) {
+      return res.status(404).json({
+        success: false,
+        error: 'Aucune donnée prestations. Lancez la synchronisation "Prestations" depuis Paramètres.',
+      });
+    }
+    const deliveriesData = deliveriesStored.data || deliveriesStored;
+    const deliveries = Array.isArray(deliveriesData) ? deliveriesData : (deliveriesData.data || []);
+
+    const resourcesLocal = await getResourcesLocalEnriched();
+
+    const forecastStored = await kvStorage.get(KV_KEYS.FORECAST_TIMES, null);
+    const forecastRaw = forecastStored?.data || {};
+
+    const forecastByDeliveryId = {};
+    Object.keys(forecastRaw).forEach((deliveryId) => {
+      forecastByDeliveryId[String(deliveryId)] = forecastRaw[deliveryId]?.forecast || {};
+    });
+
+    const orderedDaysByDeliveryId = {};
+    deliveries.forEach((d) => {
+      const od = d?.orderedDays;
+      if (od !== null && od !== undefined && !isNaN(Number(od))) {
+        orderedDaysByDeliveryId[String(d.id)] = Number(od);
+      }
+    });
+
+    const absenceStored = await kvStorage.get(KV_KEYS.ABSENCE_MONTHLY, null);
+    const absenceRows = Array.isArray(absenceStored?.data)
+      ? absenceStored.data
+      : (Array.isArray(absenceStored) ? absenceStored : []);
+    const absenceByResource = {};
+    absenceRows.forEach((row) => {
+      const rid = String(row.resourceId ?? '');
+      const mo = String(row.month ?? '');
+      if (!rid || !mo) return;
+      if (!absenceByResource[rid]) absenceByResource[rid] = {};
+      absenceByResource[rid][mo] = (absenceByResource[rid][mo] || 0) + (Number(row.days) || 0);
+    });
+
+    const { getSupabase } = require('../../lib/supabaseClient');
+    const { getHolidayRowsForYearRange } = require('../../lib/frenchHolidays');
+    const nowY = new Date().getFullYear();
+    const startYear = Math.max(2000, parseInt(String(req.query.from ?? nowY - 1), 10) || (nowY - 1));
+    const numYears = Math.min(15, Math.max(1, parseInt(String(req.query.years ?? '12'), 10) || 12));
+    const endYear = startYear + numYears - 1;
+    let holidayRows = [];
+    const supabase = getSupabase();
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('french_public_holiday')
+        .select('holiday_date, label, year')
+        .gte('year', startYear)
+        .lte('year', endYear)
+        .order('holiday_date', { ascending: true });
+      if (!error && data && data.length > 0) {
+        holidayRows = data
+          .map((r) => ({
+            holiday_date: toHolidayYmdString(r.holiday_date),
+            label: r.label || '',
+            year: r.year,
+          }))
+          .filter((r) => r.holiday_date);
+      }
+    }
+    if (holidayRows.length === 0) {
+      holidayRows = getHolidayRowsForYearRange(startYear, endYear).map((r) => ({
+        holiday_date: r.holiday_date,
+        label: r.label,
+        year: r.year,
+      }));
+    }
+
+    const timesheetsStored = await kvStorage.get(KV_KEYS.TIMESHEETS_AGGREGATE, null);
+    const aggregateRows = timesheetsStored?.data || timesheetsStored || [];
+    const timesheetsAggregate = {};
+    (Array.isArray(aggregateRows) ? aggregateRows : []).forEach((item) => {
+      const resourceId = String(item.resourceId || '');
+      const deliveryId = String(item.deliveryId || '');
+      const month = item.month || '';
+      if (!resourceId || !deliveryId || !month) return;
+      if (!timesheetsAggregate[resourceId]) timesheetsAggregate[resourceId] = {};
+      if (!timesheetsAggregate[resourceId][deliveryId]) timesheetsAggregate[resourceId][deliveryId] = {};
+      const days = parseFloat(item.totalDays) || 0;
+      const hours = parseFloat(item.totalHours) || 0;
+      timesheetsAggregate[resourceId][deliveryId][month] = {
+        days,
+        hours: hours > 0 ? hours : (days * 7),
+      };
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        deliveries,
+        resourcesLocal,
+        forecastByDeliveryId,
+        orderedDaysByDeliveryId,
+        absenceByResource,
+        holidays: holidayRows,
+        timesheetsAggregate,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Erreur /api/data/forecast-bootstrap:', error);
     return res.status(500).json({ success: false, error: error.message });
   }
 });

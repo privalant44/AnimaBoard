@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import './Resources.css';
 import { apiUrl } from '../api';
+import { DATA_REFRESH_EVENT } from '../dataRefresh';
 
 interface Resource {
   id: number;
@@ -178,7 +179,14 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
 
       // Lire uniquement depuis la base locale (table resources), sans appel direct à l'API Boond.
       const response = await fetch(apiUrl('/api/data/resources-local'));
-      const data = await response.json();
+      const contentType = response.headers.get('content-type') || '';
+      const raw = await response.text();
+      if (!contentType.includes('application/json')) {
+        throw new Error(
+          `Réponse invalide (${response.status}) : l’API a renvoyé du HTML au lieu de JSON. Vérifiez que le serveur tourne (npm run dev) ou que les routes /api sont déployées.`
+        );
+      }
+      const data = JSON.parse(raw);
 
       if (!response.ok || !data.success) {
         throw new Error(data.error || data.message || 'Erreur lors de la récupération des ressources');
@@ -218,11 +226,43 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
     }
   };
 
+  const fetchResourcesRef = useRef(fetchResources);
+  const loadResourcesMetadataRef = useRef(loadResourcesMetadata);
+  fetchResourcesRef.current = fetchResources;
+  loadResourcesMetadataRef.current = loadResourcesMetadata;
+
+  useEffect(() => {
+    const onRefresh = () => {
+      void fetchResourcesRef.current();
+      void loadResourcesMetadataRef.current();
+    };
+    window.addEventListener(DATA_REFRESH_EVENT, onRefresh);
+    return () => window.removeEventListener(DATA_REFRESH_EVENT, onRefresh);
+  }, []);
+
   // Obtenir la liste unique des types pour le filtre
   const uniqueTypes = Array.from(new Set(resources.map(r => r.type).filter(t => t && t !== 'N/A'))).sort();
   
   // Obtenir la liste unique des statuts pour le filtre
   const uniqueStatuts = Array.from(new Set(resources.map(r => r.statut).filter((s): s is string => s !== undefined && s !== null && s !== 'N/A'))).sort();
+
+  // Nettoyer les filtres persistés (localStorage) : retirer les valeurs obsolètes (ex. anciens codes
+  // mémorisés quand le dictionnaire était vide) et dédoublonner, sinon le compteur compte code + libellé.
+  useEffect(() => {
+    if (resources.length === 0) return;
+    const validTypes = new Set(resources.map(r => r.type).filter(t => t && t !== 'N/A'));
+    const validStatuts = new Set(
+      resources.map(r => r.statut).filter((s): s is string => s !== undefined && s !== null && s !== 'N/A')
+    );
+    setTypeFilter(prev => {
+      const cleaned = Array.from(new Set(prev.filter(t => validTypes.has(t))));
+      return cleaned.length === prev.length ? prev : cleaned;
+    });
+    setStatutFilter(prev => {
+      const cleaned = Array.from(new Set(prev.filter(s => validStatuts.has(s))));
+      return cleaned.length === prev.length ? prev : cleaned;
+    });
+  }, [resources]);
 
   // Filtrer et trier les ressources
   const filteredAndSortedResources = useMemo(() => {

@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import './Settings.css';
 import { apiUrl } from '../api';
+import { dispatchDataRefresh } from '../dataRefresh';
 
 interface SettingsProps {
   onLogoChange: (logoUrl: string) => void;
@@ -29,8 +30,10 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
   const [syncingDeliveries, setSyncingDeliveries] = useState(false);
   const [syncingTimeReports, setSyncingTimeReports] = useState(false);
   const [syncingTimesheets, setSyncingTimesheets] = useState(false);
+  const [syncingAbsences, setSyncingAbsences] = useState(false);
+  const [syncingDictionary, setSyncingDictionary] = useState(false);
   const [resettingTimesheets, setResettingTimesheets] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ type: 'resources' | 'deliveries' | 'time-reports' | 'timesheets' | 'timesheets-reset' | null; success: boolean; message: string } | null>(null);
+  const [syncResult, setSyncResult] = useState<{ type: 'resources' | 'deliveries' | 'time-reports' | 'timesheets' | 'timesheets-reset' | 'absences' | 'dictionary' | null; success: boolean; message: string } | null>(null);
 
   /** Période des 3 derniers mois (YYYY-MM). */
   const getLast3MonthsRange = () => {
@@ -163,6 +166,40 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     }
   };
 
+  const syncDictionary = async () => {
+    setSyncingDictionary(true);
+    setSyncResult(null);
+
+    try {
+      const response = await fetch(apiUrl('/api/boondmanager/sync/dictionary'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setSyncResult({
+          type: 'dictionary',
+          success: true,
+          message: data.message || 'Dictionnaire synchronisé'
+        });
+        dispatchDataRefresh();
+      } else {
+        const msg = (data.error || data.message) || 'Erreur lors de la synchronisation du dictionnaire';
+        setSyncResult({ type: 'dictionary', success: false, message: msg });
+      }
+    } catch (err) {
+      setSyncResult({
+        type: 'dictionary',
+        success: false,
+        message: err instanceof Error ? err.message : 'Erreur inconnue (vérifiez que le serveur API tourne sur le port 3000)'
+      });
+    } finally {
+      setSyncingDictionary(false);
+    }
+  };
+
   const syncResources = async () => {
     setSyncingResources(true);
     setSyncResult(null);
@@ -183,6 +220,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           success: true,
           message: data.message || 'Synchronisation réussie'
         });
+        dispatchDataRefresh();
       } else {
         const msg = (data.error || data.message) || 'Erreur lors de la synchronisation';
         const detail = data.errorDetail ? ` — ${data.errorDetail}` : '';
@@ -223,6 +261,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           success: true,
           message: data.message || 'Extraction réussie'
         });
+        dispatchDataRefresh();
       } else {
         const msg = (data.error || data.message) || 'Erreur lors de l\'extraction';
         const detail = data.errorDetail ? ` — ${data.errorDetail}` : '';
@@ -272,6 +311,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           success: true,
           message: data.message || 'Extraction des temps saisis réussie'
         });
+        dispatchDataRefresh();
       } else {
         const msg = (data.error || data.message) || 'Erreur lors de l\'extraction des temps saisis';
         const detail = data.errorDetail ? ` — ${data.errorDetail}` : '';
@@ -329,6 +369,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           success: true,
           message: data.message || 'Synchronisation des feuilles de temps réussie'
         });
+        dispatchDataRefresh();
       } else {
         const msg = (data.error || data.message) || 'Erreur lors de la synchronisation des feuilles de temps';
         const detail = data.errorDetail ? ` — ${data.errorDetail}` : '';
@@ -346,6 +387,42 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
       });
     } finally {
       setSyncingTimesheets(false);
+    }
+  };
+
+  const syncAbsences = async () => {
+    setSyncingAbsences(true);
+    setSyncResult(null);
+    const y = new Date().getFullYear();
+    const beginDate = `${y - 1}-01-01`;
+    const endDate = `${y}-12-31`;
+    try {
+      const response = await fetch(apiUrl('/api/boondmanager/sync/absences'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ beginDate, endDate })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setSyncResult({
+          type: 'absences',
+          success: true,
+          message: data.message || 'Synchronisation des absences réussie'
+        });
+        dispatchDataRefresh();
+      } else {
+        const msg = (data.error || data.message) || 'Erreur lors de la synchronisation des absences';
+        const detail = data.errorDetail ? ` — ${data.errorDetail}` : '';
+        setSyncResult({ type: 'absences', success: false, message: msg + detail });
+      }
+    } catch (err) {
+      setSyncResult({
+        type: 'absences',
+        success: false,
+        message: err instanceof Error ? err.message : 'Erreur inconnue'
+      });
+    } finally {
+      setSyncingAbsences(false);
     }
   };
 
@@ -368,6 +445,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
       const { response: res, data } = await parseResponse(response);
       if (res.ok && data.success) {
         setSyncResult({ type: 'timesheets-reset', success: true, message: data.message || 'Feuilles de temps réinitialisées.' });
+        dispatchDataRefresh();
       } else {
         const msg = (data.error || data.message) || (res.status === 404 ? 'Route réinitialisation introuvable (404).' : `Erreur lors de la réinitialisation (HTTP ${res.status}).`);
         setSyncResult({ type: 'timesheets-reset', success: false, message: msg });
@@ -388,15 +466,23 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           <button 
             className="sync-button sync-resources-button" 
             onClick={syncResources}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets}
+            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingDictionary}
           >
             {syncingResources ? '⏳ Actualisation en cours...' : '🔄 Actualiser les ressources'}
+          </button>
+
+          <button
+            className="sync-button sync-dictionary-button"
+            onClick={syncDictionary}
+            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingDictionary}
+          >
+            {syncingDictionary ? '⏳ Synchronisation en cours...' : '📖 Synchroniser le dictionnaire (libellés type / statut)'}
           </button>
           
           <button 
             className="sync-button sync-deliveries-button" 
             onClick={syncDeliveries}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets}
+            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingDictionary}
           >
             {syncingDeliveries ? '⏳ Extraction en cours...' : '📋 Actualiser les prestations (extract)'}
           </button>
@@ -404,7 +490,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           <button 
             className="sync-button sync-time-reports-button" 
             onClick={syncTimeReports}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets}
+            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingDictionary}
           >
             {syncingTimeReports ? '⏳ Extraction en cours...' : '⏰ Actualiser les temps saisis'}
           </button>
@@ -412,15 +498,23 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           <button 
             className="sync-button sync-timesheets-button" 
             onClick={syncTimesheets}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || resettingTimesheets}
+            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingDictionary || resettingTimesheets}
           >
             {syncingTimesheets ? '⏳ Synchronisation en cours...' : '📅 Synchroniser les feuilles de temps (3 derniers mois)'}
+          </button>
+
+          <button
+            className="sync-button sync-absences-button"
+            onClick={syncAbsences}
+            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingDictionary || resettingTimesheets}
+          >
+            {syncingAbsences ? '⏳ Synchronisation en cours...' : '🏖️ Synchroniser les absences (N-1 et année en cours)'}
           </button>
           
           <button 
             className="sync-button sync-timesheets-reset-button" 
             onClick={resetTimesheets}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || resettingTimesheets}
+            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingDictionary || resettingTimesheets}
           >
             {resettingTimesheets ? '⏳ Réinitialisation...' : '🗑️ Réinitialiser les feuilles de temps (année n-1 et n)'}
           </button>

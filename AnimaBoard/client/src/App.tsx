@@ -33,7 +33,7 @@ function App() {
 
   // Vérifier que l'API répond (évite "Failed to fetch" sans explication)
   useEffect(() => {
-    fetch(apiUrl('/api/health'))
+    fetch(apiUrl('/api/env-check'))
       .then((res) => setApiReachable(res.ok))
       .catch(() => setApiReachable(false));
   }, []);

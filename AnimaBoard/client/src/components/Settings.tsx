@@ -24,6 +24,8 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
   const [apiTestResult, setApiTestResult] = useState<ApiTestResult | null>(null);
   const [loadingDictionary, setLoadingDictionary] = useState(false);
   const [dictionaryData, setDictionaryData] = useState<any>(null);
+  const [loadingOpportunities, setLoadingOpportunities] = useState(false);
+  const [opportunitiesData, setOpportunitiesData] = useState<any>(null);
   const [loadingDataFiles, setLoadingDataFiles] = useState<{ [key: string]: boolean }>({});
   const [dataFiles, setDataFiles] = useState<{ [key: string]: any }>({});
   const [syncingResources, setSyncingResources] = useState(false);
@@ -31,9 +33,10 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
   const [syncingTimeReports, setSyncingTimeReports] = useState(false);
   const [syncingTimesheets, setSyncingTimesheets] = useState(false);
   const [syncingAbsences, setSyncingAbsences] = useState(false);
+  const [syncingBesoins, setSyncingBesoins] = useState(false);
   const [syncingDictionary, setSyncingDictionary] = useState(false);
   const [resettingTimesheets, setResettingTimesheets] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ type: 'resources' | 'deliveries' | 'time-reports' | 'timesheets' | 'timesheets-reset' | 'absences' | 'dictionary' | null; success: boolean; message: string } | null>(null);
+  const [syncResult, setSyncResult] = useState<{ type: 'resources' | 'deliveries' | 'time-reports' | 'timesheets' | 'timesheets-reset' | 'absences' | 'dictionary' | 'besoins' | null; success: boolean; message: string } | null>(null);
 
   /** Période des 3 derniers mois (YYYY-MM). */
   const getLast3MonthsRange = () => {
@@ -141,6 +144,31 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
       });
     } finally {
       setLoadingDictionary(false);
+    }
+  };
+
+  const loadOpportunities = async () => {
+    setLoadingOpportunities(true);
+    setOpportunitiesData(null);
+
+    try {
+      const response = await fetch(apiUrl('/api/boondmanager/opportunites'));
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setOpportunitiesData(data);
+      } else {
+        setOpportunitiesData({
+          error: data.error || data.message || 'Erreur lors du chargement des opportunités',
+          details: data
+        });
+      }
+    } catch (err) {
+      setOpportunitiesData({
+        error: err instanceof Error ? err.message : 'Erreur inconnue'
+      });
+    } finally {
+      setLoadingOpportunities(false);
     }
   };
 
@@ -367,7 +395,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
         setSyncResult({
           type: 'timesheets',
           success: true,
-          message: data.message || 'Synchronisation des feuilles de temps réussie'
+          message: data.message || 'Synchronisation des feuilles de temps (production + interne) réussie'
         });
         dispatchDataRefresh();
       } else {
@@ -426,6 +454,38 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     }
   };
 
+  const syncBesoinsRecentMonths = async () => {
+    setSyncingBesoins(true);
+    setSyncResult(null);
+    try {
+      const response = await fetch(apiUrl('/api/boondmanager/sync/besoins/snapshot?recentMonths=2'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recentMonths: 2 })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setSyncResult({
+          type: 'besoins',
+          success: true,
+          message: data.message || 'Actualisation des besoins (2 derniers mois) réussie'
+        });
+        dispatchDataRefresh();
+      } else {
+        const msg = (data.error || data.message) || 'Erreur lors de l’actualisation des besoins';
+        setSyncResult({ type: 'besoins', success: false, message: msg });
+      }
+    } catch (err) {
+      setSyncResult({
+        type: 'besoins',
+        success: false,
+        message: err instanceof Error ? err.message : 'Erreur inconnue'
+      });
+    } finally {
+      setSyncingBesoins(false);
+    }
+  };
+
   const resetTimesheets = async () => {
     if (!window.confirm('Réinitialiser les feuilles de temps (année n-1 et n) ? Les données seront supprimées. Vous pourrez relancer une synchro (3 derniers mois) ensuite.')) return;
     setResettingTimesheets(true);
@@ -466,7 +526,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           <button 
             className="sync-button sync-resources-button" 
             onClick={syncResources}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingDictionary}
+            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary}
           >
             {syncingResources ? '⏳ Actualisation en cours...' : '🔄 Actualiser les ressources'}
           </button>
@@ -474,7 +534,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           <button
             className="sync-button sync-dictionary-button"
             onClick={syncDictionary}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingDictionary}
+            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary}
           >
             {syncingDictionary ? '⏳ Synchronisation en cours...' : '📖 Synchroniser le dictionnaire (libellés type / statut)'}
           </button>
@@ -482,7 +542,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           <button 
             className="sync-button sync-deliveries-button" 
             onClick={syncDeliveries}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingDictionary}
+            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary}
           >
             {syncingDeliveries ? '⏳ Extraction en cours...' : '📋 Actualiser les prestations (extract)'}
           </button>
@@ -490,7 +550,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           <button 
             className="sync-button sync-time-reports-button" 
             onClick={syncTimeReports}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingDictionary}
+            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary}
           >
             {syncingTimeReports ? '⏳ Extraction en cours...' : '⏰ Actualiser les temps saisis'}
           </button>
@@ -498,23 +558,31 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           <button 
             className="sync-button sync-timesheets-button" 
             onClick={syncTimesheets}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingDictionary || resettingTimesheets}
+            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary || resettingTimesheets}
           >
-            {syncingTimesheets ? '⏳ Synchronisation en cours...' : '📅 Synchroniser les feuilles de temps (3 derniers mois)'}
+            {syncingTimesheets ? '⏳ Synchronisation en cours...' : '📅 Synchroniser les feuilles de temps (prod + interne, 3 derniers mois)'}
           </button>
 
           <button
             className="sync-button sync-absences-button"
             onClick={syncAbsences}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingDictionary || resettingTimesheets}
+            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary || resettingTimesheets}
           >
             {syncingAbsences ? '⏳ Synchronisation en cours...' : '🏖️ Synchroniser les absences (N-1 et année en cours)'}
+          </button>
+
+          <button
+            className="sync-button sync-besoins-button"
+            onClick={syncBesoinsRecentMonths}
+            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary || resettingTimesheets}
+          >
+            {syncingBesoins ? '⏳ Actualisation en cours...' : '🎯 Actualiser les besoins/opportunités (2 derniers mois)'}
           </button>
           
           <button 
             className="sync-button sync-timesheets-reset-button" 
             onClick={resetTimesheets}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingDictionary || resettingTimesheets}
+            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary || resettingTimesheets}
           >
             {resettingTimesheets ? '⏳ Réinitialisation...' : '🗑️ Réinitialiser les feuilles de temps (année n-1 et n)'}
           </button>
@@ -715,6 +783,59 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
                         </pre>
                       </div>
                     )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="settings-section">
+          <h3>Opportunités BoondManager</h3>
+          <p className="settings-description">
+            Affiche le contenu de l’endpoint <code>/opportunites</code> de BoondManager.
+          </p>
+
+          <button
+            className="test-api-button"
+            onClick={loadOpportunities}
+            disabled={loadingOpportunities}
+          >
+            {loadingOpportunities ? 'Chargement...' : 'Charger les opportunités'}
+          </button>
+
+          {opportunitiesData && (
+            <div className={`api-test-result ${opportunitiesData.error ? 'error' : 'success'}`}>
+              {opportunitiesData.error ? (
+                <>
+                  <div className="api-test-header">
+                    <span className="api-test-icon">❌</span>
+                    <h4>Erreur</h4>
+                  </div>
+                  <div className="api-test-content">
+                    <p><strong>Erreur:</strong> {opportunitiesData.error}</p>
+                    {opportunitiesData.details && (
+                      <pre className="api-test-json">
+                        {JSON.stringify(opportunitiesData.details, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="api-test-header">
+                    <span className="api-test-icon">✅</span>
+                    <h4>Opportunités BoondManager</h4>
+                  </div>
+                  <div className="api-test-content">
+                    <p><strong>Nombre d'entrées:</strong> {opportunitiesData.count ?? (opportunitiesData.data?.length || 0)}</p>
+                    <div className="api-test-data">
+                      <p><strong>Données brutes (premiers 5000 caractères):</strong></p>
+                      <pre className="api-test-json">
+                        {JSON.stringify(opportunitiesData.data || opportunitiesData.raw || opportunitiesData, null, 2).substring(0, 5000)}
+                        {JSON.stringify(opportunitiesData.data || opportunitiesData.raw || opportunitiesData, null, 2).length > 5000 ? '...' : ''}
+                      </pre>
+                    </div>
                   </div>
                 </>
               )}

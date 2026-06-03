@@ -2,6 +2,235 @@ const express = require('express');
 const router = express.Router();
 const boondManagerService = require('../services/boondManagerService');
 
+function extractOpportunitiesFromPayload(payload) {
+  if (!payload) return [];
+  return (
+    (payload._embedded && Array.isArray(payload._embedded.opportunities) && payload._embedded.opportunities) ||
+    (Array.isArray(payload.data) && payload.data) ||
+    (Array.isArray(payload.opportunities) && payload.opportunities) ||
+    (Array.isArray(payload.items) && payload.items) ||
+    (Array.isArray(payload) && payload) ||
+    []
+  );
+}
+
+async function fetchBoondOpportunitiesPage(queryParams = {}, fixedEndpoint = null) {
+  const endpoints = ['/opportunites', '/opportunities'];
+  const candidates = fixedEndpoint ? [fixedEndpoint] : endpoints;
+  let payload = null;
+  let lastError = null;
+  let usedEndpoint = null;
+
+  for (const endpoint of candidates) {
+    try {
+      payload = await boondManagerService.makeRequest(endpoint, queryParams);
+      if (payload) {
+        usedEndpoint = endpoint;
+        break;
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  if (!payload && lastError) throw lastError;
+  if (!payload) throw new Error('Aucune réponse BoondManager pour les opportunités.');
+  return {
+    endpoint: usedEndpoint,
+    payload,
+    list: extractOpportunitiesFromPayload(payload)
+  };
+}
+
+function extractPaginationInfo(payload) {
+  const p = payload?.meta?.pagination || {};
+  const currentPage = Number(p.page ?? p.currentPage ?? p.current ?? 1);
+  const totalPages = Number(p.pages ?? p.totalPages ?? p.pageCount ?? p.lastPage ?? p.maxPage ?? 0);
+  const perPage = Number(p.max ?? p.perPage ?? p.limit ?? 0);
+
+  return {
+    currentPage: Number.isFinite(currentPage) && currentPage > 0 ? currentPage : 1,
+    totalPages: Number.isFinite(totalPages) && totalPages > 0 ? totalPages : null,
+    perPage: Number.isFinite(perPage) && perPage > 0 ? perPage : null
+  };
+}
+
+function getOpportunityDedupKey(item) {
+  if (!item || typeof item !== 'object') return '__invalid__';
+  const attrs = item.attributes || {};
+  const id = item.id ?? attrs.id ?? item.opportunityId ?? attrs.opportunityId;
+  if (id !== undefined && id !== null && id !== '') return `id:${String(id)}`;
+
+  const title = attrs.title ?? item.title ?? attrs.name ?? item.name ?? '';
+  const created = attrs.creationDate ?? item.creationDate ?? attrs.createdAt ?? item.createdAt ?? '';
+  const updated = attrs.updateDate ?? item.updateDate ?? attrs.updatedAt ?? item.updatedAt ?? '';
+  const typeOf = attrs.typeOf ?? item.typeOf ?? attrs.type ?? item.type ?? '';
+  return `fallback:${String(title)}|${String(created)}|${String(updated)}|${String(typeOf)}`;
+}
+
+async function fetchBoondOpportunities(queryParams = {}, options = {}) {
+  const { paginate = false, maxPages = 200 } = options;
+  const first = await fetchBoondOpportunitiesPage(queryParams);
+
+  if (!paginate) {
+    return {
+      endpoint: first.endpoint,
+      payload: first.payload,
+      list: first.list,
+      pagesFetched: 1
+    };
+  }
+
+  const { totalPages, currentPage, perPage } = extractPaginationInfo(first.payload);
+  const uniqueById = new Map();
+  first.list.forEach((item) => {
+    const key = getOpportunityDedupKey(item);
+    if (!uniqueById.has(key)) uniqueById.set(key, item);
+  });
+
+  let pagesFetched = 1;
+  let page = currentPage;
+  let stagnantPages = 0;
+
+  while (pagesFetched < maxPages) {
+    if (totalPages && page >= totalPages) break;
+    if (!totalPages && first.list.length === 0) break;
+
+    const nextPage = page + 1;
+    const pagedQuery = { ...queryParams, page: nextPage };
+    const next = await fetchBoondOpportunitiesPage(pagedQuery, first.endpoint);
+    const pageList = Array.isArray(next.list) ? next.list : [];
+    if (pageList.length === 0) break;
+
+    const before = uniqueById.size;
+    pageList.forEach((item) => {
+      const key = getOpportunityDedupKey(item);
+      if (!uniqueById.has(key)) uniqueById.set(key, item);
+    });
+
+    const after = uniqueById.size;
+    stagnantPages = after === before ? stagnantPages + 1 : 0;
+    pagesFetched += 1;
+    page = nextPage;
+
+    // Protection anti-boucle: si les pages suivantes n'apportent rien, on arrête.
+    if (stagnantPages >= 2) break;
+    // Sans info "totalPages", si la page reçue n'est plus pleine, on suppose la fin.
+    if (!totalPages && perPage && pageList.length < perPage) break;
+  }
+
+  return {
+    endpoint: first.endpoint,
+    payload: first.payload,
+    list: Array.from(uniqueById.values()),
+    pagesFetched
+  };
+}
+
+function parseDateLike(value) {
+  if (value === undefined || value === null || value === '') return null;
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  const fromEpoch = (n) => {
+    if (!Number.isFinite(n)) return null;
+    // Boond peut renvoyer des epochs en secondes ou millisecondes.
+    const ms = Math.abs(n) < 1e12 ? n * 1000 : n;
+    const d = new Date(ms);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+
+  if (typeof value === 'number') return fromEpoch(value);
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  const boondMsMatch = raw.match(/^\/Date\(([-]?\d+)\)\/$/);
+  if (boondMsMatch) {
+    return fromEpoch(Number(boondMsMatch[1]));
+  }
+
+  if (/^[-]?\d+(\.\d+)?$/.test(raw)) {
+    return fromEpoch(Number(raw));
+  }
+
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function toIsoOrNull(value) {
+  const d = parseDateLike(value);
+  return d ? d.toISOString() : null;
+}
+
+function normalizeOpportunityToBesoin(item) {
+  if (!item || typeof item !== 'object') return null;
+
+  const attrs = item.attributes || {};
+  const rawId =
+    item.id ??
+    attrs.id ??
+    item.opportunityId ??
+    attrs.opportunityId ??
+    null;
+
+  const id = Number(rawId);
+  if (!Number.isFinite(id)) return null;
+
+  const title =
+    attrs.title ??
+    item.title ??
+    attrs.name ??
+    item.name ??
+    attrs.label ??
+    item.label ??
+    '';
+
+  const createdAt =
+    attrs.creationDate ??
+    item.creationDate ??
+    attrs.createdAt ??
+    item.createdAt ??
+    attrs.created_at ??
+    item.created_at ??
+    null;
+
+  const updatedAt =
+    attrs.updateDate ??
+    item.updateDate ??
+    attrs.updatedAt ??
+    item.updatedAt ??
+    attrs.updated_at ??
+    item.updated_at ??
+    null;
+
+  const typeOf =
+    attrs.typeOf ??
+    item.typeOf ??
+    attrs.projectType ??
+    item.projectType ??
+    attrs.type ??
+    item.type ??
+    null;
+  const state =
+    attrs.state ??
+    item.state ??
+    attrs.status ??
+    item.status ??
+    null;
+
+  return {
+    id,
+    titre: String(title || ''),
+    date_creation: toIsoOrNull(createdAt),
+    date_mise_a_jour: toIsoOrNull(updatedAt),
+    type_of: typeOf !== undefined && typeOf !== null && typeOf !== '' ? String(typeOf) : null,
+    state: state !== undefined && state !== null && state !== '' ? String(state) : null
+  };
+}
+
 // Test de connexion à l'API
 router.get('/test', async (req, res) => {
   try {
@@ -248,6 +477,116 @@ router.get('/services', async (req, res) => {
     res.json(services);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Récupérer les opportunités BoondManager
+// Certaines instances exposent /opportunites (FR), d'autres /opportunities (EN).
+router.get('/opportunites', async (req, res) => {
+  try {
+    const query = { ...(req.query || {}) };
+    const allPagesFlag = String(query.allPages || '').toLowerCase();
+    const paginate = allPagesFlag === '1' || allPagesFlag === 'true' || allPagesFlag === 'yes';
+    delete query.allPages;
+    const { list, payload, pagesFetched } = await fetchBoondOpportunities(query, { paginate });
+
+    res.json({
+      success: true,
+      count: list.length,
+      data: list,
+      pagesFetched,
+      raw: payload
+    });
+  } catch (error) {
+    console.error('❌ Erreur lors de la récupération des opportunités BoondManager:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+// Resynchroniser les besoins depuis les opportunités Boond (sans table snapshot).
+router.post('/sync/besoins/snapshot', async (req, res) => {
+  try {
+    console.log('🔄 Synchronisation des besoins demandée...');
+    const { getSupabase } = require('../../lib/supabaseClient');
+    const supabase = getSupabase();
+    if (!supabase) {
+      return res.status(500).json({
+        success: false,
+        error: 'Supabase non configuré (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).'
+      });
+    }
+
+    const recentMonthsRaw = req.query.recentMonths ?? req.body?.recentMonths;
+    const recentMonths = Number.parseInt(String(recentMonthsRaw ?? ''), 10);
+    const useRecentMode = Number.isFinite(recentMonths) && recentMonths > 0;
+
+    const query = { ...(req.query || {}) };
+    delete query.allPages;
+    delete query.recentMonths;
+    const { list: boondList, pagesFetched } = await fetchBoondOpportunities(query, { paginate: true });
+    const normalized = boondList
+      .map((item) => normalizeOpportunityToBesoin(item))
+      .filter((row) => row !== null);
+
+    const byId = new Map();
+    normalized.forEach((row) => {
+      byId.set(row.id, row);
+    });
+    const uniqueRows = Array.from(byId.values());
+    let rowsToUpsert = uniqueRows;
+    let cutoffIso = null;
+
+    if (useRecentMode) {
+      const now = new Date();
+      const cutoffDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (recentMonths - 1), 1, 0, 0, 0, 0));
+      cutoffIso = cutoffDate.toISOString();
+      rowsToUpsert = uniqueRows.filter((row) => {
+        const ref = row.date_mise_a_jour || row.date_creation;
+        if (!ref) return false;
+        const d = new Date(ref);
+        return !Number.isNaN(d.getTime()) && d >= cutoffDate;
+      });
+    } else {
+      const { error: deleteError } = await supabase.from('besoins').delete().not('id', 'is', null);
+      if (deleteError) throw deleteError;
+    }
+
+    for (let i = 0; i < rowsToUpsert.length; i += 500) {
+      const chunk = rowsToUpsert.slice(i, i + 500);
+      const { error } = await supabase.from('besoins').upsert(chunk, { onConflict: 'id' });
+      if (error) throw error;
+    }
+
+    res.json({
+      success: true,
+      message: useRecentMode
+        ? `Synchronisation des besoins (sur ${recentMonths} derniers mois) terminée : ${rowsToUpsert.length} besoins synchronisés.`
+        : `Synchronisation des besoins terminée : ${rowsToUpsert.length} besoins synchronisés.`,
+      details: {
+        syncedCount: rowsToUpsert.length,
+        pagesFetched,
+        mode: useRecentMode ? 'recent-months' : 'full',
+        recentMonths: useRecentMode ? recentMonths : null,
+        cutoffIso
+      }
+    });
+  } catch (error) {
+    console.error('❌ Erreur lors de la synchronisation des besoins:', error);
+    const hint =
+      error?.code === '42P01'
+        ? 'La table besoins est absente. Appliquez la migration Supabase correspondante.'
+        : undefined;
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la synchronisation des besoins',
+      error: error.message,
+      hint,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
@@ -535,7 +874,7 @@ router.get('/dictionary', async (req, res) => {
   }
 });
 
-// Synchroniser le dictionnaire (libellés type_of / state des ressources) dans la table `dictionnaire`.
+// Synchroniser le dictionnaire (libellés type_of / state des ressources et opportunités) dans la table `dictionnaire`.
 // Indispensable après une réinitialisation de la base : les vues Ressources/Forecast en dépendent
 // pour afficher les libellés au lieu des codes numériques.
 router.post('/sync/dictionary', async (req, res) => {
@@ -547,15 +886,55 @@ router.post('/sync/dictionary', async (req, res) => {
       return res.status(500).json({ success: false, error: 'Supabase non configuré (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).' });
     }
 
-    const typeOfMapping = await boondManagerService.getTypeOfMapping();
-    const stateMapping = await boondManagerService.getStateMapping();
+    // Un seul appel dictionnaire pour éviter les allers-retours API Boond.
+    const dictionary = await boondManagerService.getDictionary();
+    const dict = dictionary?.data?.data || dictionary?.data || dictionary || {};
+    const typeOfList = dict?.setting?.typeOf?.resource || [];
+    // Pour les opportunités, Boond expose les types via typeOf.project sur cette instance.
+    const opportunityTypeOfList = dict?.setting?.typeOf?.project || dict?.setting?.typeOf?.opportunity || [];
+    const resourceStateList = dict?.setting?.state?.resource || [];
+    const opportunityStateList = dict?.setting?.state?.opportunity || [];
 
     const rows = [];
-    Object.entries(typeOfMapping || {}).forEach(([code, label]) => {
-      if (label != null) rows.push({ table_name: 'resources', column_name: 'type_of', code: String(code), label: String(label) });
+    (Array.isArray(typeOfList) ? typeOfList : []).forEach((item) => {
+      if (item?.id !== undefined && item?.id !== null && item?.value !== undefined) {
+        rows.push({
+          table_name: 'resources',
+          column_name: 'type_of',
+          code: String(item.id),
+          label: String(item.value)
+        });
+      }
     });
-    Object.entries(stateMapping || {}).forEach(([code, label]) => {
-      if (label != null) rows.push({ table_name: 'resources', column_name: 'state', code: String(code), label: String(label) });
+    (Array.isArray(resourceStateList) ? resourceStateList : []).forEach((item) => {
+      if (item?.id !== undefined && item?.id !== null && item?.value !== undefined) {
+        rows.push({
+          table_name: 'resources',
+          column_name: 'state',
+          code: String(item.id),
+          label: String(item.value)
+        });
+      }
+    });
+    (Array.isArray(opportunityTypeOfList) ? opportunityTypeOfList : []).forEach((item) => {
+      if (item?.id !== undefined && item?.id !== null && item?.value !== undefined) {
+        rows.push({
+          table_name: 'opportunities',
+          column_name: 'type_of',
+          code: String(item.id),
+          label: String(item.value)
+        });
+      }
+    });
+    (Array.isArray(opportunityStateList) ? opportunityStateList : []).forEach((item) => {
+      if (item?.id !== undefined && item?.id !== null && item?.value !== undefined) {
+        rows.push({
+          table_name: 'opportunities',
+          column_name: 'state',
+          code: String(item.id),
+          label: String(item.value)
+        });
+      }
     });
 
     // Dédoublonnage défensif (même code mappé sous forme numérique et chaîne par le service).
@@ -575,14 +954,26 @@ router.post('/sync/dictionary', async (req, res) => {
       if (error) throw error;
     }
 
-    const typesCount = uniqueRows.filter((r) => r.column_name === 'type_of').length;
-    const statesCount = uniqueRows.filter((r) => r.column_name === 'state').length;
-    console.log(`✅ Dictionnaire synchronisé: ${typesCount} types + ${statesCount} statuts`);
+    const typesCount = uniqueRows.filter((r) => r.table_name === 'resources' && r.column_name === 'type_of').length;
+    const resourceStatesCount = uniqueRows.filter((r) => r.table_name === 'resources' && r.column_name === 'state').length;
+    const opportunityTypesCount = uniqueRows.filter((r) => r.table_name === 'opportunities' && r.column_name === 'type_of').length;
+    const opportunityStatesCount = uniqueRows.filter((r) => r.table_name === 'opportunities' && r.column_name === 'state').length;
+    console.log(`✅ Dictionnaire synchronisé: ${typesCount} types ressources + ${resourceStatesCount} statuts ressources + ${opportunityTypesCount} types opportunités + ${opportunityStatesCount} statuts opportunités`);
 
     res.json({
       success: true,
-      message: `Dictionnaire synchronisé : ${typesCount} types et ${statesCount} statuts.`,
-      count: uniqueRows.length
+      message: `Dictionnaire synchronisé : ${typesCount} types ressources, ${resourceStatesCount} statuts ressources, ${opportunityTypesCount} types opportunités, ${opportunityStatesCount} statuts opportunités.`,
+      count: uniqueRows.length,
+      details: {
+        resources: {
+          typeOf: typesCount,
+          state: resourceStatesCount
+        },
+        opportunities: {
+          typeOf: opportunityTypesCount,
+          state: opportunityStatesCount
+        }
+      }
     });
   } catch (error) {
     console.error('❌ Erreur lors de la synchronisation du dictionnaire:', error);
@@ -707,7 +1098,7 @@ router.post('/sync/timesheets', async (req, res) => {
     
     res.json({
       success: true,
-      message: `Synchronisation réussie: ${count} feuilles de temps synchronisées (${totalEntries} entrées)`,
+      message: `Synchronisation réussie: ${count} feuilles de temps synchronisées (${totalEntries} entrées, production + non-production)`,
       count: count,
       totalEntries: totalEntries,
       metadata: result?.metadata

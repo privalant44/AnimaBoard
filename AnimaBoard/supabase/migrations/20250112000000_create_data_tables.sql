@@ -129,7 +129,9 @@ create table if not exists public.resources_metadata (
   updated_at timestamptz default now()
 );
 
--- Détail des feuilles de temps (une ligne par feuille x prestation, uniquement production)
+-- Détail des feuilles de temps
+-- - delivery_id != 0 : lignes production par prestation
+-- - delivery_id = 0  : ligne de synthèse mensuelle par ressource (prod + interne)
 create table if not exists public.timesheets_detail (
   id serial primary key,
   timesheet_id bigint not null,
@@ -137,7 +139,8 @@ create table if not exists public.timesheets_detail (
   resource_name text,
   month text not null,          -- ex: '2025-01'
   delivery_id bigint not null,
-  total_days numeric not null default 0,
+  total_days_prod numeric not null default 0,
+  total_days_int numeric not null default 0,
   total_hours numeric not null default 0,
   synced_at timestamptz default now()
 );

@@ -5,9 +5,7 @@
  * Usage : node scripts/sync-timesheets-2years.js
  *    ou : npm run sync-timesheets-2years
  *
- * En dev sans Redis : les données sont stockées en mémoire et perdues à la sortie
- * du script. Pour voir les temps consommés dans Forecast, lancez la synchro
- * depuis l'app (Paramètres > Timesheets) ou configurez Redis (UPSTASH_*).
+ * Nécessite Supabase (SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY) pour persister les données.
  */
 const path = require('path');
 
@@ -27,9 +25,9 @@ syncTimesheets(startMonth, endMonth)
     const totalEntries = result?.metadata?.totalEntries ?? 0;
     console.log('\n✅ Synchronisation terminée avec succès !');
     console.log(`   ${count} feuilles de temps, ${totalEntries} entrées.\n`);
-    if (!kvStorage.isKVAvailable()) {
-      console.log('⚠️  En dev sans Redis : les données viennent d\'être écrites en mémoire et seront perdues à la fin de ce script.');
-      console.log('   Pour afficher les temps consommés dans la vue Forecast, lancez la synchro depuis l\'app : Paramètres > bouton "Timesheets".\n');
+    const { getSupabase } = require('../lib/supabaseClient');
+    if (!getSupabase()) {
+      console.log('⚠️  Supabase non configuré : les données ne sont pas persistées en base.\n');
     }
     process.exit(0);
   })

@@ -316,7 +316,7 @@ class BoondManagerSync {
   async sync() {
     try {
       console.log('🚀 Démarrage de la synchronisation des ressources BoondManager...\n');
-      console.log(`📁 Stockage: KV (Redis)\n`);
+      console.log(`📁 Stockage: Supabase (tables métier)\n`);
       await this.ensureDataDir();
 
       // Synchronisation des ressources uniquement
@@ -325,7 +325,7 @@ class BoondManagerSync {
       console.log('\n✅ Synchronisation terminée avec succès !\n');
       console.log(`📊 Résumé:`);
       console.log(`   - ${resources.length} ressources synchronisées`);
-      console.log(`\n📁 Données enregistrées en KV (Redis)\n`);
+      console.log(`\n📁 Données enregistrées en Supabase\n`);
 
       return { resources };
     } catch (error) {

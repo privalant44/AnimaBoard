@@ -40,7 +40,7 @@ AnimaBoard/
 
 ## Installation
 
-**En local, il suffit de :** Node.js 18+, puis `npm run install-all`, puis créer un `.env` (voir ci‑dessous). Aucun Redis ni base de données à installer : le KV utilise Upstash (cloud) ou un cache mémoire si les variables KV ne sont pas configurées.
+**En local, il suffit de :** Node.js 18+, puis `npm run install-all`, puis créer un `.env` (voir ci‑dessous). Les données métier sont stockées dans **Supabase/Postgres** (`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`). Un cache mémoire de secours existe si Supabase n’est pas configuré.
 
 1. **Installer les dépendances** :
 ```bash
@@ -66,7 +66,7 @@ npm run install-all
    📖 **Voir le guide détaillé** : `CONFIGURATION_API.md`
 
 3. **Stockage des données**  
-   Aucun fichier JSON n’est utilisé : en développement et en production, les données (métadonnées, forecast, prestations, timesheets, etc.) sont stockées en **KV (Redis)**. Configurer Upstash Redis (ou Vercel KV) : voir `VERCEL_KV_SETUP.md`.
+   Aucun fichier JSON local n’est utilisé : les données (ressources, prestations, timesheets, forecast, etc.) sont en **tables Supabase**. Voir `supabase/dev_init.sql` (dev) ou `supabase/migrations/` (prod).
 
 ## Utilisation
 

@@ -1,5 +1,5 @@
 /**
- * GET /api/data/deliveries.json - Prestations (KV uniquement)
+ * GET /api/data/deliveries.json - Prestations (Supabase)
  */
 const kvStorage = require('../../lib/kvStorage');
 const { KV_KEYS } = require('../../lib/constants');

@@ -205,25 +205,20 @@ async function getTimesheetDetail(timesheetId, index, total) {
     }
   }
 
-  // Filtrer uniquement les items avec activityType "production"
-  const productionItems = items.filter((item) => {
-    const workUnitType = item.workUnitType || {};
-    const activityType = workUnitType.activityType || '';
+  const productionCount = items.filter((item) => {
+    const activityType = item?.workUnitType?.activityType || '';
     return activityType === 'production';
-  });
-
-  const filteredCount = items.length - productionItems.length;
-  if (filteredCount > 0) {
-    console.log(`   🔍 ${filteredCount} items filtrés (non-production), ${productionItems.length} items production conservés`);
-  }
-
-  console.log(`   ✅ ${productionItems.length} items production trouvés pour la feuille ${timesheetId}`);
+  }).length;
+  const nonProductionCount = items.length - productionCount;
+  console.log(
+    `   ✅ ${items.length} items trouvés pour la feuille ${timesheetId} (${productionCount} production, ${nonProductionCount} non-production)`
+  );
 
   return {
     timesheet: response,
     timesheetData: timesheetData,
     included: included,
-    items: productionItems
+    items
   };
 }
 
@@ -370,6 +365,7 @@ function extractItemInfo(item, itemIndex = 0, included = [], timesheetData = nul
 
   // Extraire la valeur totale (utiliser duration/days en priorité)
   const value = days !== null ? days : (hours !== null ? hours : 0);
+  const activityType = item?.workUnitType?.activityType || null;
 
   // Extraire la date (jour) depuis l'item
   let date = null;
@@ -383,6 +379,7 @@ function extractItemInfo(item, itemIndex = 0, included = [], timesheetData = nul
   return {
     projectId: projectId ? String(projectId) : null,
     deliveryId: deliveryId ? String(deliveryId) : null,
+    activityType,
     days: days !== null ? (typeof days === 'number' ? days : parseFloat(days)) : null,
     hours: hours !== null ? (typeof hours === 'number' ? hours : parseFloat(hours)) : null,
     value: typeof value === 'number' ? value : parseFloat(value) || 0,
@@ -480,6 +477,9 @@ function createAggregate(timesheetsData) {
     
     // Parcourir tous les items de ce timesheet
     for (const item of timesheet.items) {
+      if (item.activityType !== 'production') {
+        continue;
+      }
       const deliveryId = item.deliveryId ? String(item.deliveryId) : null;
       
       // Ignorer les items sans prestation
@@ -535,7 +535,10 @@ function createAggregate(timesheetsData) {
 
 const { getSupabase } = require('./lib/supabaseClient');
 
-// Fonction pour sauvegarder le détail des feuilles de temps (une ligne par feuille x prestation, uniquement production)
+// Fonction pour sauvegarder le détail des feuilles de temps.
+// - lignes "production" par feuille x prestation (delivery_id != 0)
+// - ligne de synthèse par feuille x mois x ressource (delivery_id = 0)
+//   réservée au non-productif (total_days_prod forcé à 0).
 async function saveTimesheetsDetail(timesheetsData, startMonthStr, endMonthStr) {
   const supabase = getSupabase();
   if (!supabase) {
@@ -583,19 +586,51 @@ async function saveTimesheetsDetail(timesheetsData, startMonthStr, endMonthStr) 
     const month = sheet.month || null;
     if (!resourceId || !month) continue;
 
-    // Agréger par prestation au sein de la feuille
+    let prodMonthTotalDays = 0;
+    let intMonthTotalDays = 0;
+    let prodMonthTotalHours = 0;
+    let intMonthTotalHours = 0;
+
+    // Agréger production par prestation au sein de la feuille
     const perDelivery = {};
     for (const item of sheet.items) {
+      const activityType = String(item.activityType || '').toLowerCase();
+      const days = item.days !== null && item.days !== undefined ? Number(item.days) || 0 : 0;
+      const hours = item.hours !== null && item.hours !== undefined ? Number(item.hours) || 0 : 0;
+
+      if (activityType === 'production') {
+        prodMonthTotalDays += days;
+        prodMonthTotalHours += hours;
+      } else {
+        intMonthTotalDays += days;
+        intMonthTotalHours += hours;
+      }
+
+      if (activityType !== 'production') continue;
       const deliveryId = item.deliveryId ? Number(item.deliveryId) : null;
       if (!deliveryId) continue;
 
       if (!perDelivery[deliveryId]) {
         perDelivery[deliveryId] = { totalDays: 0, totalHours: 0 };
       }
-      const days = item.days !== null && item.days !== undefined ? Number(item.days) || 0 : 0;
-      const hours = item.hours !== null && item.hours !== undefined ? Number(item.hours) || 0 : 0;
       perDelivery[deliveryId].totalDays += days;
       perDelivery[deliveryId].totalHours += hours;
+    }
+
+    // Ligne de synthèse mensuelle ressource (delivery_id=0)
+    // Convention métier: ne pas remettre de productif ici pour éviter
+    // tout double comptage avec les lignes détaillées par prestation.
+    if (prodMonthTotalDays !== 0 || intMonthTotalDays !== 0 || prodMonthTotalHours !== 0 || intMonthTotalHours !== 0) {
+      rows.push({
+        timesheet_id: Number(sheet.timesheetId),
+        resource_id: resourceId,
+        resource_name: resourceName,
+        month,
+        delivery_id: 0,
+        total_days_prod: 0,
+        total_days_int: intMonthTotalDays,
+        total_hours: intMonthTotalHours,
+      });
     }
 
     Object.entries(perDelivery).forEach(([deliveryId, agg]) => {
@@ -605,14 +640,15 @@ async function saveTimesheetsDetail(timesheetsData, startMonthStr, endMonthStr) 
         resource_name: resourceName,
         month,
         delivery_id: Number(deliveryId),
-        total_days: agg.totalDays,
+        total_days_prod: agg.totalDays,
+        total_days_int: 0,
         total_hours: agg.totalHours,
       });
     });
   }
 
   if (rows.length === 0) {
-    console.log('ℹ️  Aucun détail à sauvegarder dans timesheets_detail (aucune ligne production avec prestation trouvée).');
+    console.log('ℹ️  Aucun détail à sauvegarder dans timesheets_detail (aucune ligne exploitable trouvée).');
     return;
   }
 
@@ -826,7 +862,7 @@ async function syncTimesheets(startMonth = null, endMonth = null) {
       console.log(`✅ Données timesheets sauvegardées en KV.`);
     }
     
-    // Étape 3b : Sauvegarder le détail des feuilles par prestation (table timesheets_detail)
+    // Étape 3b : Sauvegarder le détail des feuilles (prod + interne) dans timesheets_detail
     await saveTimesheetsDetail(timesheetsData, startMonthStr, endMonthStr);
 
     // Étape 4 : Créer l'agrégat par ressource, mois et prestation (en mémoire, pour statistiques)
@@ -842,7 +878,7 @@ async function syncTimesheets(startMonth = null, endMonth = null) {
       },
       data: aggregateData
     };
-    console.log(`💾 Sauvegarde de l'agrégat en KV (métadonnées uniquement)...`);
+    console.log(`💾 Sauvegarde des métadonnées agrégat en Supabase...`);
     await kvStorage.set(KV_KEYS.TIMESHEETS_AGGREGATE, { metadata: aggregateOutput.metadata });
     console.log(`✅ Métadonnées de l'agrégat sauvegardées.`);
     

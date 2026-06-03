@@ -34,6 +34,12 @@ function decrypt(encBase64) {
 }
 
 function init() {
+  try {
+    require('./tlsConfig').initTls();
+  } catch (_) {
+    // tlsConfig optionnel
+  }
+
   const key = getKey();
   if (!key) return;
 

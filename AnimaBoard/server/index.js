@@ -11,13 +11,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Servir les fichiers statiques du client en production
-if (process.env.NODE_ENV === 'production') {
-  const clientBuildPath = path.join(__dirname, '..', 'client', 'build');
-  app.use(express.static(clientBuildPath));
-}
-
-// Routes avec gestion d'erreur
+// Routes API en premier (avant le static / SPA) pour ne jamais renvoyer index.html sur /api/*
 try {
   const boondManagerRoutes = require('./routes/boondManager');
   const pennylaneRoutes = require('./routes/pennylane');
@@ -83,10 +77,15 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
-// Servir l'application React pour toutes les routes non-API en production
+// Static React + fallback SPA (production uniquement, après les routes /api)
 if (process.env.NODE_ENV === 'production') {
+  const clientBuildPath = path.join(__dirname, '..', 'client', 'build');
+  app.use(express.static(clientBuildPath));
   app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'client', 'build', 'index.html'));
+    if (req.path.startsWith('/api/')) {
+      return res.status(404).json({ success: false, error: 'Route API introuvable' });
+    }
+    res.sendFile(path.join(clientBuildPath, 'index.html'));
   });
 }
 

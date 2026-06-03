@@ -24,7 +24,7 @@ module.exports = {
   // Conversion heures/jours
   HOURS_PER_DAY: 7, // Standard français
 
-  // Stockage KV (plus de fichiers JSON en dev ni en prod)
+  // Clés métier routées vers les tables Supabase (lib/db.js)
   KV_KEYS: {
     RESOURCES_METADATA: 'resources_metadata',
     FORECAST_TIMES: 'forecast_times',
@@ -34,6 +34,8 @@ module.exports = {
     PROJECTS: 'projects',
     RESOURCES: 'resources',
     FORECAST_REPORT: 'forecast_report',
-    TEMPS_MISSIONS: 'temps_missions'
+    TEMPS_MISSIONS: 'temps_missions',
+    /** Agrégat absences Boond : { metadata, data: [{ resourceId, month, days }] } */
+    ABSENCE_MONTHLY: 'absence_monthly'
   }
 };

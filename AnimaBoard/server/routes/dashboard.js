@@ -37,4 +37,53 @@ router.get('/revenue-by-month', async (req, res) => {
   }
 });
 
+// Compte de résultat mensuel (Pennylane v2 : ledger_entries, comptes 6 et 7)
+router.get('/income-statement', async (req, res) => {
+  try {
+    const year = req.query.year != null ? req.query.year : undefined;
+    const data = await dashboardService.getPennylaneIncomeStatement(year);
+    res.json(data);
+  } catch (error) {
+    console.error('❌ Erreur income-statement:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Force une synchronisation Pennylane du compte de résultat pour l'année demandée.
+router.post('/income-statement/sync', async (req, res) => {
+  try {
+    const data = await dashboardService.syncPennylaneIncomeStatement();
+    res.json(data);
+  } catch (error) {
+    console.error('❌ Erreur income-statement sync:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Initialisation ciblée de la table compte de résultat (ex: 2025 + 2026).
+router.post('/income-statement/init', async (req, res) => {
+  try {
+    const years = Array.isArray(req.body?.years) && req.body.years.length > 0
+      ? req.body.years
+      : [2025, 2026];
+    const result = await dashboardService.syncPennylaneIncomeStatementYears(years);
+    res.json({ ok: true, years: result });
+  } catch (error) {
+    console.error('❌ Erreur income-statement init:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Récap principal mensuel (année en cours par défaut)
+router.get('/home-monthly-recap', async (req, res) => {
+  try {
+    const year = req.query.year != null ? req.query.year : undefined;
+    const data = await dashboardService.getHomeMonthlyRecap(year);
+    res.json(data);
+  } catch (error) {
+    console.error('❌ Erreur home-monthly-recap:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;

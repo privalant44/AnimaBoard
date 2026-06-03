@@ -1,5 +1,5 @@
 /**
- * GET/POST /api/data/resources-metadata - Métadonnées ressources (KV)
+ * GET/POST /api/data/resources-metadata - Métadonnées ressources (Supabase)
  */
 const kvStorage = require('../../lib/kvStorage');
 const { KV_KEYS } = require('../../lib/constants');

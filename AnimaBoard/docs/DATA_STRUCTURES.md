@@ -164,7 +164,7 @@ C’est la structure lue par Forecast et Report pour afficher les temps saisis p
 
 **Écrit par :**  
 - Lecture/écriture via API : `GET /api/data/forecast-times.json`, `POST /api/data/forecast-times` (server/routes/data.js).  
-- Script migration : `scripts/migrate-to-kv.js` (import ancien JSON).
+- Persistance : table `forecast_times` via `lib/db.js`.
 
 **Type :** objet avec `metadata` et `data`.
 
@@ -240,7 +240,6 @@ C’est la structure lue par Forecast et Report pour afficher les temps saisis p
 ## 9. Métadonnées ressources — clé `resources_metadata`
 
 **Écrit par :**  
-- Script `scripts/migrate-to-kv.js` (import ancien JSON).  
 - API `POST /api/data/resources-metadata` (server/routes/data.js) avec le body comme valeur.
 
 **Type :** objet libre (métadonnées par ressource ou autre usage interne). Pas de structure imposée par le reste de l’app.

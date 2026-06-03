@@ -5,11 +5,16 @@
   "outputDirectory": "client/build",
   "framework": null,
   "functions": {
+    "api/cron/daily-sync.js": { "maxDuration": 300 },
     "api/**/*.js": { "maxDuration": 60 }
   },
+  "crons": [
+    {
+      "path": "/api/cron/daily-sync",
+      "schedule": "0 4 * * *"
+    }
+  ],
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/", "destination": "/index.html" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

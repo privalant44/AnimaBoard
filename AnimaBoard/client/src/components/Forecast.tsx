@@ -48,8 +48,17 @@ async function safeParseJson(res: Response): Promise<any> {
   }
 }
 
-function normalizeApiError(err: unknown): string {
+function normalizeApiError(err: unknown, endpointHint?: string): string {
   const msg = err instanceof Error ? err.message : String(err);
+  if (/failed to fetch|networkerror|load failed|fetch failed/i.test(msg)) {
+    return [
+      'Impossible de joindre l’API (erreur réseau).',
+      endpointHint ? `Endpoint: ${endpointHint}.` : '',
+      'Vérifiez que le serveur API est démarré et que la route existe (notamment en déploiement Vercel).'
+    ]
+      .filter(Boolean)
+      .join(' ');
+  }
   if (/JSON\.parse|unexpected character|SyntaxError/i.test(msg)) {
     return 'Réponse invalide du serveur: l\'API n\'a pas renvoyé de JSON (erreur ou timeout Vercel). Vérifiez les logs du déploiement.';
   }
@@ -240,15 +249,13 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
   const fetchForecast = useCallback(async (period?: ForecastPeriodOverride) => {
     const filterStart = period?.startDate ?? startDate;
     const filterEnd = period?.endDate ?? endDate;
+    const bootstrapEndpoint = apiUrl(`/api/data/forecast-bootstrap?from=${new Date().getFullYear() - 1}&years=12`);
     try {
       setLoading(true);
       setError(null);
 
       // Bootstrap unique pour limiter la latence (évite les appels API multiples).
-      const hy = new Date().getFullYear();
-      const bootstrapResponse = await fetch(
-        apiUrl(`/api/data/forecast-bootstrap?from=${hy - 1}&years=12`)
-      );
+      const bootstrapResponse = await fetch(bootstrapEndpoint);
       const bootstrapBody = await safeParseJson(bootstrapResponse);
       if (!bootstrapResponse.ok || !bootstrapBody?.success) {
         const msg = bootstrapBody?.error || 'Impossible de charger les données Forecast.';
@@ -401,7 +408,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
 
       setResources(resourcesWithProjects);
     } catch (err) {
-      const errorMessage = normalizeApiError(err);
+      const errorMessage = normalizeApiError(err, bootstrapEndpoint);
       setError(errorMessage);
       console.error('❌ Error fetching forecast:', err);
       setAbsenceByResource({});
@@ -697,7 +704,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       setEditingMonth(null);
     } catch (error) {
       console.error(`❌ Erreur lors de la sauvegarde du temps prévisionnel:`, error);
-      alert('Erreur lors de la sauvegarde. Veuillez réessayer.');
+      alert(normalizeApiError(error, apiUrl('/api/data/forecast-times')));
     }
   }, []);
 

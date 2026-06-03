@@ -1,0 +1,1 @@
+delete from timesheets_detail

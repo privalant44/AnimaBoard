@@ -6,6 +6,7 @@ import Resources from './components/Resources';
 import Forecast from './components/Forecast';
 import Report from './components/Report';
 import Settings from './components/Settings';
+import HomeMonthlyRecap from './components/HomeMonthlyRecap';
 
 type Tab = 'home' | 'resources' | 'forecast' | 'report' | 'settings';
 
@@ -24,6 +25,7 @@ function getLast3MonthsRange(): { startMonth: string; endMonth: string } {
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('home');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [apiReachable, setApiReachable] = useState<boolean | null>(null);
   const [autoSyncStatus, setAutoSyncStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
@@ -36,7 +38,7 @@ function App() {
       .catch(() => setApiReachable(false));
   }, []);
 
-  // À la connexion au portail : sync automatique ressources + prestations + feuilles de temps (3 derniers mois)
+  // À la connexion au portail : sync automatique ressources + prestations + feuilles de temps + besoins + compte de résultat.
   useEffect(() => {
     if (apiReachable !== true || autoSyncRan.current) return;
     autoSyncRan.current = true;
@@ -51,6 +53,15 @@ function App() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ startMonth, endMonth })
+        });
+        await fetch(apiUrl('/api/boondmanager/sync/besoins/snapshot?recentMonths=2'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recentMonths: 2 })
+        });
+        await fetch(apiUrl('/api/dashboard/income-statement/sync'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
         });
         setAutoSyncStatus('done');
       } catch {
@@ -96,11 +107,7 @@ function App() {
         return <Settings onLogoChange={handleLogoChange} currentLogo={logoUrl} />;
       case 'home':
       default:
-        return (
-          <main className="app-main">
-            <p className="welcome-message">Bienvenue sur votre tableau de bord</p>
-          </main>
-        );
+        return <HomeMonthlyRecap />;
     }
   };
 
@@ -113,12 +120,12 @@ function App() {
       )}
       {autoSyncStatus === 'running' && (
         <div style={{ background: '#1a73e8', color: '#fff', padding: '8px 16px', textAlign: 'center' }}>
-          Synchronisation automatique en cours (ressources, prestations, feuilles de temps)…
+          Synchronisation automatique en cours (ressources, prestations, feuilles de temps, besoins/opportunités, compte de résultat)…
         </div>
       )}
       {autoSyncStatus === 'done' && (
         <div style={{ background: '#0d7d3d', color: '#fff', padding: '8px 16px', textAlign: 'center' }}>
-          Données à jour (ressources, prestations, feuilles de temps des 3 derniers mois).
+          Données à jour (ressources, prestations, feuilles de temps des 3 derniers mois, besoins/opportunités des 2 derniers mois, compte de résultat).
         </div>
       )}
       {autoSyncStatus === 'error' && (
@@ -126,10 +133,10 @@ function App() {
           Une erreur est survenue lors de la synchronisation automatique. Vous pouvez relancer manuellement depuis Paramètres.
         </div>
       )}
-      {activeTab !== 'resources' && activeTab !== 'forecast' && activeTab !== 'report' && (
-        <>
-          <header className="app-header">
-            <div className="logo-container">
+      <div className={`app-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+        <aside className="app-sidebar">
+          <div className="app-sidebar-logo-row">
+            <div className="logo-container app-sidebar-logo">
               {logoUrl ? (
                 <img src={logoUrl} alt="Logo Anima Néo" className="uploaded-logo" />
               ) : (
@@ -139,12 +146,31 @@ function App() {
                 </>
               )}
             </div>
-            <h1 className="main-title">Tableau de Bord Anima Néo</h1>
-          </header>
-          <Navigation activeTab={activeTab} onTabChange={setActiveTab} />
-        </>
-      )}
-      {renderContent()}
+            <button
+              type="button"
+              className="sidebar-toggle-button"
+              onClick={() => setSidebarCollapsed((v) => !v)}
+              aria-label={sidebarCollapsed ? 'Déplier la barre latérale' : 'Plier la barre latérale'}
+              title={sidebarCollapsed ? 'Déplier la barre' : 'Plier la barre'}
+            >
+              <svg
+                className={`sidebar-toggle-icon ${sidebarCollapsed ? 'is-collapsed' : 'is-expanded'}`}
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path d="M15.78 6.97a.75.75 0 0 1 0 1.06L11.81 12l3.97 3.97a.75.75 0 1 1-1.06 1.06l-4.5-4.5a.75.75 0 0 1 0-1.06l4.5-4.5a.75.75 0 0 1 1.06 0Z" />
+                <path d="M12.78 6.97a.75.75 0 0 1 0 1.06L8.81 12l3.97 3.97a.75.75 0 1 1-1.06 1.06l-4.5-4.5a.75.75 0 0 1 0-1.06l4.5-4.5a.75.75 0 0 1 1.06 0Z" />
+              </svg>
+            </button>
+          </div>
+          <Navigation
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            isCollapsed={sidebarCollapsed}
+          />
+        </aside>
+        <section className="app-content">{renderContent()}</section>
+      </div>
     </div>
   );
 }

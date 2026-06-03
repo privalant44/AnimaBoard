@@ -1,6 +1,6 @@
 /**
  * Accès aux tables Supabase pour les données métier (ressources, prestations, etc.).
- * Utilisé par kvStorage quand USE_DB_TABLES est actif ou quand les tables existent.
+ * Utilisé par kvStorage pour toutes les clés métier (TABLE_KEYS).
  */
 
 const { getSupabase } = require('./supabaseClient');
@@ -15,7 +15,8 @@ const TABLE_KEYS = new Set([
   KV_KEYS.FORECAST_TIMES,
   KV_KEYS.FORECAST_REPORT,
   KV_KEYS.TEMPS_MISSIONS,
-  KV_KEYS.RESOURCES_METADATA
+  KV_KEYS.RESOURCES_METADATA,
+  KV_KEYS.ABSENCE_MONTHLY
 ]);
 
 function isTableKey(key) {
@@ -124,12 +125,14 @@ async function getTable(key, defaultValue = null) {
         // Agréger dynamiquement depuis timesheets_detail
         const { data: rows, error } = await supabase
           .from('timesheets_detail')
-          .select('resource_id, resource_name, delivery_id, month, total_days, total_hours');
+          .select('resource_id, resource_name, delivery_id, month, total_days_prod, total_hours');
         if (error) throw error;
         if (!rows || rows.length === 0) return defaultValue;
 
         const byKey = {};
         rows.forEach((r) => {
+          // delivery_id=0 = ligne de synthèse mensuelle (pour TACE), hors agrégat prestation.
+          if (Number(r.delivery_id) === 0) return;
           const key = `${r.resource_id || ''}__${r.delivery_id || ''}__${r.month || ''}`;
           if (!byKey[key]) {
             byKey[key] = {
@@ -141,7 +144,7 @@ async function getTable(key, defaultValue = null) {
               totalHours: 0,
             };
           }
-          byKey[key].totalDays += Number(r.total_days) || 0;
+          byKey[key].totalDays += Number(r.total_days_prod) || 0;
           byKey[key].totalHours += Number(r.total_hours) || 0;
         });
 
@@ -191,6 +194,23 @@ async function getTable(key, defaultValue = null) {
         if (error) throw error;
         return row && row.value ? row.value : (defaultValue !== null ? defaultValue : {});
       }
+      case KV_KEYS.ABSENCE_MONTHLY: {
+        const { data: rows, error } = await supabase
+          .from('absence')
+          .select('resource_id, month, days, synced_at')
+          .order('resource_id', { ascending: true })
+          .order('month', { ascending: true });
+        if (error) throw error;
+        const list = (rows || []).map((r) => ({
+          resourceId: Number(r.resource_id),
+          month: r.month,
+          days: Number(r.days) || 0
+        }));
+        return {
+          metadata: { count: list.length, source: 'DB' },
+          data: list
+        };
+      }
       default:
         return defaultValue;
     }
@@ -202,7 +222,10 @@ async function getTable(key, defaultValue = null) {
 
 async function setTable(key, value) {
   const supabase = getSupabase();
-  if (!supabase) return;
+  if (!supabase) {
+    console.error(`❌ db.setTable(${key}): Supabase non configuré (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)`);
+    return;
+  }
 
   try {
     switch (key) {
@@ -211,17 +234,18 @@ async function setTable(key, value) {
         if (list.length === 0) return;
         const rows = list.map((r) => ({
           id: r.id,
-          nom: r.nom || '',
-          prenom: r.prenom || '',
-          type_of: r.typeOf ?? null,
-          state: r.state ?? null,
-          is_visible: r.isVisible !== false,
+          nom: r.nom || r.lastName || r.LastName || '',
+          prenom: r.prenom || r.firstName || r.FirstName || '',
+          type_of: r.typeOf ?? r.type ?? null,
+          state: r.state ?? r.State ?? null,
+          is_visible: r.isVisible !== false && r.isVisible !== 0 && r.isVisible !== '0',
           contracts: r.contracts || [],
           raw: r.raw || {}
         }));
         // Upsert uniquement les colonnes Boond (nom, prenom, type_of, state, is_visible, contracts, raw)
         // sans toucher d'éventuelles colonnes locales (temps, statut interne, commentaires, etc.).
-        await supabase.from('resources').upsert(rows, { onConflict: 'id' });
+        const { error } = await supabase.from('resources').upsert(rows, { onConflict: 'id' });
+        if (error) throw error;
         break;
       }
       case KV_KEYS.DELIVERIES: {
@@ -386,11 +410,37 @@ async function setTable(key, value) {
         await supabase.from('resources_metadata').upsert({ key: 'resources_metadata', value: val, updated_at: new Date().toISOString() }, { onConflict: 'key' });
         break;
       }
+      case KV_KEYS.ABSENCE_MONTHLY: {
+        const list =
+          value && value.data && Array.isArray(value.data)
+            ? value.data
+            : Array.isArray(value)
+              ? value
+              : [];
+        const { error: delErr } = await supabase.from('absence').delete().gte('days', 0);
+        if (delErr) throw delErr;
+        if (list.length === 0) break;
+        const now = new Date().toISOString();
+        const rows = list.map((r) => ({
+          resource_id: Number(r.resourceId),
+          month: String(r.month),
+          days: Number(r.days) || 0,
+          synced_at: now
+        }));
+        const chunkSize = 500;
+        for (let i = 0; i < rows.length; i += chunkSize) {
+          const chunk = rows.slice(i, i + chunkSize);
+          const { error } = await supabase.from('absence').insert(chunk);
+          if (error) throw error;
+        }
+        break;
+      }
       default:
         break;
     }
   } catch (err) {
     console.error(`❌ db.setTable(${key}):`, err.message || err);
+    throw err;
   }
 }
 
@@ -428,6 +478,9 @@ async function delTable(key) {
         break;
       case KV_KEYS.RESOURCES_METADATA:
         await supabase.from('resources_metadata').delete().eq('key', 'resources_metadata');
+        break;
+      case KV_KEYS.ABSENCE_MONTHLY:
+        await supabase.from('absence').delete().gte('days', 0);
         break;
       default:
         break;

@@ -28,9 +28,9 @@ router.get('/', async (req, res) => {
     config.boondManager.error = error.message;
   }
 
-  // Tester Pennylane
+  // Tester Pennylane (API v2 trial_balance)
   try {
-    await pennylaneService.getInvoices();
+    await pennylaneService.probeApi();
     config.pennylane.status = 'connected';
   } catch (error) {
     config.pennylane.status = 'error';

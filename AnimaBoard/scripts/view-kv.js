@@ -1,5 +1,5 @@
 /**
- * Affiche le contenu du stockage (KV Redis ou cache mémoire) en dev.
+ * Affiche un résumé des données métier en base (Supabase via kvStorage / lib/db.js).
  *
  * Usage:
  *   node scripts/view-kv.js        # résumé des clés
@@ -7,9 +7,11 @@
  */
 
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+require('../lib/secretEnv');
 
 const kvStorage = require('../lib/kvStorage');
 const { KV_KEYS } = require('../lib/constants');
+const { getSupabase } = require('../lib/supabaseClient');
 
 const showFull = process.argv.includes('--full');
 
@@ -25,31 +27,27 @@ function summarize(value) {
 }
 
 async function main() {
-  console.log('📦 Contenu du stockage (dev)\n');
-  console.log('Source:', kvStorage.isKVAvailable() ? 'Redis (Upstash/Vercel KV)' : 'Cache mémoire (pas de Redis configuré)');
-  if (kvStorage.isKVAvailable()) {
-    if (process.env.UPSTASH_REDIS_REST_URL) console.log('   → Upstash Console: https://console.upstash.com/');
-    else console.log('   → Vercel Dashboard: Project → Storage → KV');
+  const supabase = getSupabase();
+  console.log('📦 Contenu du stockage métier\n');
+  console.log('Source:', supabase ? 'Supabase (service_role)' : '❌ Supabase non configuré (cache mémoire uniquement)');
+  if (!supabase) {
+    console.log('   → Définir SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY dans .env\n');
+  } else {
+    console.log('');
   }
-  console.log('');
 
   const keys = Object.entries(KV_KEYS);
   for (const [name, key] of keys) {
     const value = await kvStorage.get(key, null);
     const isEmpty = value === null || value === undefined;
     const summary = summarize(value);
-    console.log(`${isEmpty ? '○' : '●'} ${key}`);
-    console.log(`    ${isEmpty ? 'vide' : summary}`);
-    if (showFull && !isEmpty && typeof value === 'object') {
-      const json = JSON.stringify(value, null, 2);
-      const preview = json.length > 800 ? json.slice(0, 800) + '\n  ... (tronqué)' : json;
-      console.log(preview.split('\n').map(l => '    ' + l).join('\n'));
+    console.log(`${name} (${key}): ${isEmpty ? 'vide' : summary}`);
+    if (showFull && !isEmpty) {
+      const preview = JSON.stringify(value, null, 2);
+      console.log(preview.length > 2000 ? `${preview.slice(0, 2000)}…` : preview);
       console.log('');
     }
   }
-
-  console.log('\n💡 Pour remplir les données : Paramètres → Actualiser les ressources / prestations / timesheets.');
-  console.log('   Ou en CLI : npm run sync  puis  node extract_deliveries.js  etc.');
 }
 
 main().catch((err) => {

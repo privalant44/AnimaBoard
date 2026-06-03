@@ -22,11 +22,13 @@
     "report": "node report.js",
     "extract-times": "node extract_time_reports.js",
     "sync-timesheets": "node sync_timesheets.js",
+    "sync-absences": "node sync_absences.js",
     "sync-timesheets-2years": "node scripts/sync-timesheets-2years.js",
-    "migrate-to-kv": "node scripts/migrate-to-kv.js",
-    "test-kv": "node scripts/test-kv.js",
-    "view-kv": "node scripts/view-kv.js",
-    "encrypt-env": "node scripts/encrypt-env.js"
+    "init-income-statement": "node scripts/init-pennylane-income-statement.js",
+    "view-db": "node scripts/view-kv.js",
+    "encrypt-env": "node scripts/encrypt-env.js",
+    "seed-french-holidays": "node scripts/seed-french-holidays.js",
+    "dump-ledger-month": "node scripts/dump-pennylane-ledger-month.js"
   },
   "keywords": [
     "dashboard",
@@ -37,9 +39,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@supabase/supabase-js": "^2.99.1",
-    "@upstash/redis": "^1.36.1",
-    "@vercel/kv": "^0.2.4",
+    "@supabase/supabase-js": "^2.101.0",
     "axios": "^1.6.2",
     "cors": "^2.8.5",
     "csv-parse": "^5.6.0",

@@ -27,11 +27,10 @@ async function get(key, defaultValue = null) {
 }
 
 async function set(key, value) {
-  memoryCache[key] = value;
-
   if (db.isTableKey(key)) {
     await db.setTable(key, value);
   }
+  memoryCache[key] = value;
 }
 
 async function del(key) {

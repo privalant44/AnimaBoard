@@ -1,5 +1,5 @@
 /**
- * GET /api/data/timesheets_aggregate.json - Agrégat timesheets (KV)
+ * GET /api/data/timesheets_aggregate.json - Agrégat timesheets (Supabase)
  */
 const kvStorage = require('../../lib/kvStorage');
 const { KV_KEYS } = require('../../lib/constants');

@@ -226,6 +226,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  position: relative;
 }
 
 .date-filter label {
@@ -254,6 +255,51 @@
   outline: none;
   border-color: #2C5F5D;
   box-shadow: 0 0 0 2px rgba(44, 95, 93, 0.1);
+}
+
+.forecast-date-text-input {
+  padding: 0.6rem 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.forecast-date-field {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.forecast-date-field .forecast-date-text-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.forecast-native-date-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  clip: rect(0 0 0 0);
+}
+
+.forecast-calendar-btn {
+  flex-shrink: 0;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #a6c9c8;
+  border-radius: 8px;
+  background: #f8fbfb;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.forecast-calendar-btn:hover {
+  background: #eaf4f3;
+  border-color: #7ba8a6;
 }
 
 /* Style pour l'icône de calendrier dans le champ date */
@@ -625,6 +671,74 @@
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+}
+
+.forecast-absences-block {
+  border: 1px solid #e6d9b8;
+  background: #fffef9;
+  margin-bottom: 0.5rem;
+}
+
+.forecast-absences-compact {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.forecast-absences-row-headers {
+  background: #f8e4a7;
+  color: #2c5f5d;
+}
+
+.forecast-absences-corner {
+  text-align: left;
+  font-weight: 600;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #e6cf8f;
+  background: #f0d890;
+  color: #2c5f5d;
+  vertical-align: middle;
+}
+
+.forecast-absences-month-head {
+  font-weight: 600;
+  padding: 0.4rem 0.3rem;
+  border: 1px solid #e6cf8f;
+  text-align: center;
+  vertical-align: top;
+  line-height: 1.2;
+}
+
+.forecast-absences-month-primary {
+  display: block;
+  font-size: inherit;
+  white-space: nowrap;
+}
+
+/* Très petit : n’étire pas la colonne (ligne courte + police minuscule) */
+.forecast-absences-month-workdays {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #4d6160;
+  line-height: 1.1;
+  margin-top: 0.12rem;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  transform: none;
+  transform-origin: top center;
+}
+
+.forecast-absences-row-values .forecast-absences-corner {
+  background: #f5dc98;
+}
+
+.forecast-absences-cell {
+  padding: 0.45rem 0.35rem;
+  border: 1px solid #e6d9b8;
+  text-align: center;
+  font-weight: 600;
+  color: #2c5f5d;
 }
 
 .project-card {
@@ -1042,6 +1156,31 @@
   background: #7BA8A6;
   color: white;
   transform: scale(1.05);
+}
+
+/* Delta saisi − prévisionnel (mois courant ou passé, les deux saisis) */
+.forecast-display.forecast-display-delta {
+  background: #f8e4a7;
+  color: #2c5f5d;
+  font-weight: 600;
+  border: 1px solid #e5d59a;
+}
+
+.forecast-display.forecast-display-delta:hover {
+  background: #f0dc99;
+  color: #2c5f5d;
+  transform: scale(1.05);
+}
+
+.forecast-table td.forecast-cell.beyond-end-date .forecast-display.forecast-display-delta {
+  background: #f8e4a7;
+  color: #2c5f5d;
+  border-color: #e5d59a;
+}
+
+.forecast-table td.forecast-cell.beyond-end-date .forecast-display.forecast-display-delta:hover {
+  background: #f0dc99;
+  color: #2c5f5d;
 }
 
 .forecast-edit {

@@ -174,10 +174,12 @@ class BoondManagerService {
             console.log(`✅ Utilisation du stateMapping avec ${stateMappingSize} entrées`);
           }
 
-          // Filtrer les ressources avec IsVisible = true
+          // Ressources « visibles » : exclure seulement les cas explicitement masqués
+          // (Boond peut renvoyer 1/0 ou true/false ; un test === true excluait tout.)
           const visibleResources = resources.filter((resource) => {
-            const isVisible = resource.attributes?.isVisible ?? resource.isVisible ?? resource.IsVisible ?? true;
-            return isVisible === true;
+            const v = resource.attributes?.isVisible ?? resource.isVisible ?? resource.IsVisible ?? true;
+            if (v === false || v === 0 || v === '0' || v === 'false') return false;
+            return true;
           });
 
           console.log(`📊 Nombre de ressources après filtrage IsVisible=true: ${visibleResources.length} sur ${resources.length}`);
@@ -548,6 +550,35 @@ class BoondManagerService {
     }
   }
 
+  /**
+   * Absences (planning) — API Boond « Absences ».
+   * baseURL contient déjà /api : utiliser /absences (pas /api/absences en double).
+   * Certains clones Boond filtrent sur startDate/endDate plutôt que beginDate/endDate.
+   * @param {{ maxResults?: number, offset?: number, page?: number, beginDate?: string, endDate?: string }} params
+   */
+  async getAbsences(params = {}) {
+    const maxResults = params.maxResults ?? 200;
+    const begin = params.beginDate;
+    const end = params.endDate;
+    const query = {
+      maxResults,
+      ...(params.offset != null && params.offset > 0 ? { offset: params.offset } : {}),
+      ...(params.page != null && params.page > 0 ? { page: params.page } : {}),
+      ...(begin ? { beginDate: begin, startDate: begin } : {}),
+      ...(end ? { endDate: end } : {})
+    };
+    const endpoints = ['/absences', '/api/absences'];
+    let lastErr;
+    for (const endpoint of endpoints) {
+      try {
+        return await this.makeRequest(endpoint, query);
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw lastErr || new Error('Absences : aucun endpoint valide (/absences)');
+  }
+
   // Données mockées pour le développement
   getMockData(endpoint) {
     if (endpoint.includes('resources')) {
@@ -582,6 +613,9 @@ class BoondManagerService {
           { id: 2, resourceId: 2, projectId: 2, serviceId: 2, hours: 6, date: '2024-01-15' }
         ]
       };
+    }
+    if (endpoint.includes('absences')) {
+      return { data: [] };
     }
     return { data: [] };
   }

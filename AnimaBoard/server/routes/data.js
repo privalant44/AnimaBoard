@@ -398,6 +398,37 @@ router.get('/forecast-bootstrap', async (req, res) => {
       };
     });
 
+    // Fallback historique: complète les mois absents depuis Supabase (utile pour N-1/N-2).
+    if (supabase) {
+      const { data: tsRows, error: tsError } = await supabase
+        .from('timesheets_detail')
+        .select('resource_id,delivery_id,month,total_days_prod')
+        .gte('month', `${startYear}-01`)
+        .lte('month', `${endYear}-12`)
+        .neq('delivery_id', 0);
+      if (!tsError && Array.isArray(tsRows)) {
+        tsRows.forEach((row) => {
+          const resourceId = String(row.resource_id || '');
+          const deliveryId = String(row.delivery_id || '');
+          const month = String(row.month || '');
+          if (!resourceId || !deliveryId || !month) return;
+          const days = Number(row.total_days_prod) || 0;
+          if (days <= 0) return;
+
+          if (!timesheetsAggregate[resourceId]) timesheetsAggregate[resourceId] = {};
+          if (!timesheetsAggregate[resourceId][deliveryId]) timesheetsAggregate[resourceId][deliveryId] = {};
+
+          // Ne remplit que les cellules absentes pour éviter de doubler l'agrégat KV existant.
+          if (!timesheetsAggregate[resourceId][deliveryId][month]) {
+            timesheetsAggregate[resourceId][deliveryId][month] = {
+              days,
+              hours: days * 7,
+            };
+          }
+        });
+      }
+    }
+
     return res.json({
       success: true,
       data: {

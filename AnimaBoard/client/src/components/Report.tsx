@@ -30,15 +30,10 @@ interface ForecastData {
 
 interface ReportProps {
   onBack: () => void;
+  initialReport?: ReportSection;
 }
 
 type ReportSection = 'menu' | 'forecast-year' | 'pennylane-pl';
-
-interface AccountTotals {
-  charges: number;
-  produits: number;
-  lineCount: number;
-}
 
 interface IncomeStatementRow {
   month: string;
@@ -46,7 +41,11 @@ interface IncomeStatementRow {
   charges: number;
   resultat: number;
   entriesCount?: number;
-  byAccount?: Record<string, AccountTotals>;
+  caAnimaNeo: number;
+  caSousTraitance: number;
+  salaires: number;
+  cotisationsSociales: number;
+  autresCharges: number;
 }
 
 interface IncomeStatementResponse {
@@ -55,155 +54,11 @@ interface IncomeStatementResponse {
   method: string;
   filterAccounts?: string;
   description: string;
+  comments?: string;
   monthly: IncomeStatementRow[];
-  totals: Omit<IncomeStatementRow, 'month' | 'entriesCount' | 'byAccount'>;
-  totalsByAccount?: Record<string, AccountTotals>;
+  totals: Omit<IncomeStatementRow, 'month' | 'entriesCount'>;
   counts: { months: number; ledgerLinesClass6Or7?: number };
-}
-
-/**
- * Détail produits sous « Produits » : somme des lignes dont le compte général commence par le préfixe
- * (après normalisation). Anima Néo = 706 hors 70612 pour éviter le double comptage avec Sous-traitance.
- */
-const PL_PRODUITS_DETAIL_ROWS: ReadonlyArray<{
-  label: string;
-  prefix: string;
-  excludePrefix?: string;
-  title: string;
-}> = [
-  {
-    label: 'Anima Néo',
-    prefix: '706',
-    excludePrefix: '70612',
-    title: 'Produits — comptes commençant par 706 (hors 70612)',
-  },
-  {
-    label: 'Sous-traitance',
-    prefix: '70612',
-    title: 'Produits — comptes commençant par 70612',
-  },
-];
-
-function normalizeLedgerAccountNumber(s: string): string {
-  const t = String(s || '')
-    .trim()
-    .replace(/\s/g, '');
-  const stripped = t.replace(/^0+/, '');
-  return stripped.length ? stripped : '0';
-}
-
-function produitsSumByAccountPrefix(
-  byAccount: Record<string, AccountTotals> | undefined,
-  prefix: string,
-  excludePrefix?: string
-): number {
-  if (!byAccount) return 0;
-  const p = normalizeLedgerAccountNumber(prefix);
-  const ex = excludePrefix ? normalizeLedgerAccountNumber(excludePrefix) : null;
-  let sum = 0;
-  for (const k of Object.keys(byAccount)) {
-    const nk = normalizeLedgerAccountNumber(k);
-    if (!nk.startsWith(p)) continue;
-    if (ex != null && ex !== '' && nk.startsWith(ex)) continue;
-    sum += byAccount[k].produits;
-  }
-  return Math.round(sum * 100) / 100;
-}
-
-/** Détail charges sous « Charges » : montants = débit − crédit (agrégation serveur). */
-type ChargeDetailRowConfig =
-  | { label: string; kind: 'prefix'; prefix: string; title: string }
-  | { label: string; kind: 'prefixes'; prefixes: readonly string[]; title: string }
-  | { label: string; kind: 'autres6'; excludePrefixes: readonly string[]; title: string };
-
-const PL_CHARGES_DETAIL_ROWS: readonly ChargeDetailRowConfig[] = [
-  { label: 'Salaires', kind: 'prefix', prefix: '641', title: 'Charges — comptes commençant par 641' },
-  {
-    label: 'Cotisations sociales',
-    kind: 'prefixes',
-    prefixes: ['645', '647', '649'],
-    title: 'Charges — comptes commençant par 645, 647 ou 649',
-  },
-  {
-    label: 'Autres charges',
-    kind: 'autres6',
-    excludePrefixes: ['641', '645', '647', '649'],
-    title: 'Charges — comptes classe 6 hors 641, 645, 647 et 649',
-  },
-];
-
-function chargesSumByAccountPrefix(
-  byAccount: Record<string, AccountTotals> | undefined,
-  prefix: string
-): number {
-  if (!byAccount) return 0;
-  const p = normalizeLedgerAccountNumber(prefix);
-  let sum = 0;
-  for (const k of Object.keys(byAccount)) {
-    const nk = normalizeLedgerAccountNumber(k);
-    if (!nk.startsWith(p)) continue;
-    sum += byAccount[k].charges;
-  }
-  return Math.round(sum * 100) / 100;
-}
-
-function chargesSumByAnyAccountPrefix(
-  byAccount: Record<string, AccountTotals> | undefined,
-  prefixes: readonly string[]
-): number {
-  if (!byAccount) return 0;
-  const ps = prefixes.map((x) => normalizeLedgerAccountNumber(x));
-  let sum = 0;
-  for (const k of Object.keys(byAccount)) {
-    const nk = normalizeLedgerAccountNumber(k);
-    if (!ps.some((p) => nk.startsWith(p))) continue;
-    sum += byAccount[k].charges;
-  }
-  return Math.round(sum * 100) / 100;
-}
-
-function chargesSumAutresClasse6(
-  byAccount: Record<string, AccountTotals> | undefined,
-  excludePrefixes: readonly string[]
-): number {
-  if (!byAccount) return 0;
-  const ex = excludePrefixes.map((x) => normalizeLedgerAccountNumber(x));
-  let sum = 0;
-  for (const k of Object.keys(byAccount)) {
-    const nk = normalizeLedgerAccountNumber(k);
-    if (!nk.startsWith('6')) continue;
-    if (ex.some((p) => nk.startsWith(p))) continue;
-    sum += byAccount[k].charges;
-  }
-  return Math.round(sum * 100) / 100;
-}
-
-function chargesForDetailRow(
-  byAccount: Record<string, AccountTotals> | undefined,
-  row: ChargeDetailRowConfig
-): number {
-  if (row.kind === 'prefix') return chargesSumByAccountPrefix(byAccount, row.prefix);
-  if (row.kind === 'prefixes') return chargesSumByAnyAccountPrefix(byAccount, row.prefixes);
-  return chargesSumAutresClasse6(byAccount, row.excludePrefixes);
-}
-
-/** Tri pour le détail par compte : classe 6 vs 7 (autres clés ignorées). */
-function partitionTotalsByAccountClass(
-  totalsByAccount: Record<string, AccountTotals>
-): {
-  classe6: Array<[string, AccountTotals]>;
-  classe7: Array<[string, AccountTotals]>;
-} {
-  const classe6: Array<[string, AccountTotals]> = [];
-  const classe7: Array<[string, AccountTotals]> = [];
-  for (const [acc, t] of Object.entries(totalsByAccount)) {
-    const n = normalizeLedgerAccountNumber(acc);
-    if (n.startsWith('6')) classe6.push([acc, t]);
-    else if (n.startsWith('7')) classe7.push([acc, t]);
-  }
-  classe6.sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }));
-  classe7.sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }));
-  return { classe6, classe7 };
+  lastSyncAt?: string | null;
 }
 
 // Fonction pour charger les filtres depuis localStorage
@@ -225,7 +80,7 @@ const loadReportFiltersFromStorage = () => {
   }
 };
 
-const Report: React.FC<ReportProps> = ({ onBack }) => {
+const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
   // Charger les filtres depuis localStorage au démarrage
   const savedFilters = loadReportFiltersFromStorage();
   
@@ -246,15 +101,17 @@ const Report: React.FC<ReportProps> = ({ onBack }) => {
   const [statutFilter, setStatutFilter] = useState<string[]>(savedFilters.statutFilter);
   const [typeDropdownOpen, setTypeDropdownOpen] = useState<boolean>(false);
   const [statutDropdownOpen, setStatutDropdownOpen] = useState<boolean>(false);
-  const [activeReport, setActiveReport] = useState<ReportSection>('menu');
+  const [activeReport, setActiveReport] = useState<ReportSection>(initialReport || 'menu');
   const [plYear, setPlYear] = useState<number>(() => new Date().getFullYear());
   const [plData, setPlData] = useState<IncomeStatementResponse | null>(null);
   const [plLoading, setPlLoading] = useState(false);
   const [plError, setPlError] = useState<string | null>(null);
+  const [plRefreshing, setPlRefreshing] = useState(false);
   const [plProduitsDetailOpen, setPlProduitsDetailOpen] = useState(true);
   const [plChargesDetailOpen, setPlChargesDetailOpen] = useState(true);
-  const [plByAccountClasse6Open, setPlByAccountClasse6Open] = useState(true);
-  const [plByAccountClasse7Open, setPlByAccountClasse7Open] = useState(true);
+  const [snapBesoinsLoading, setSnapBesoinsLoading] = useState(false);
+  const [snapBesoinsStatus, setSnapBesoinsStatus] = useState<string | null>(null);
+  const [snapBesoinsError, setSnapBesoinsError] = useState<string | null>(null);
 
   // Obtenir tous les mois de l'année en cours
   const getCurrentYearMonths = (): string[] => {
@@ -367,6 +224,11 @@ const Report: React.FC<ReportProps> = ({ onBack }) => {
   loadReportBootstrapRef.current = loadReportBootstrap;
 
   useEffect(() => {
+    if (!initialReport) return;
+    setActiveReport(initialReport);
+  }, [initialReport]);
+
+  useEffect(() => {
     const onRefresh = () => {
       void loadReportBootstrapRef.current();
     };
@@ -378,41 +240,75 @@ const Report: React.FC<ReportProps> = ({ onBack }) => {
     void loadReportBootstrap();
   }, [loadReportBootstrap]);
 
-  useEffect(() => {
-    if (activeReport !== 'pennylane-pl') return;
-    let cancelled = false;
-    (async () => {
+  const loadIncomeStatement = useCallback(
+    async (forceSync = false) => {
+      if (activeReport !== 'pennylane-pl') return;
       setPlLoading(true);
       setPlError(null);
       try {
+        if (forceSync) {
+          const syncResponse = await fetch(apiUrl('/api/dashboard/income-statement/sync'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          });
+          const syncBody = await syncResponse.json().catch(() => ({}));
+          if (!syncResponse.ok) {
+            throw new Error((syncBody && syncBody.error) || `Erreur ${syncResponse.status}`);
+          }
+        }
         const response = await fetch(apiUrl(`/api/dashboard/income-statement?year=${plYear}`));
         const body = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error((body && body.error) || `Erreur ${response.status}`);
-        }
-        if (!cancelled) {
-          setPlData(body as IncomeStatementResponse);
-        }
+        if (!response.ok) throw new Error((body && body.error) || `Erreur ${response.status}`);
+        setPlData(body as IncomeStatementResponse);
       } catch (e) {
-        if (!cancelled) {
-          setPlData(null);
-          setPlError(e instanceof Error ? e.message : 'Erreur lors du chargement');
-        }
+        setPlData(null);
+        setPlError(e instanceof Error ? e.message : 'Erreur lors du chargement');
       } finally {
-        if (!cancelled) {
-          setPlLoading(false);
-        }
+        setPlLoading(false);
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeReport, plYear]);
+    },
+    [activeReport, plYear]
+  );
 
-  const plByAccountPartition = useMemo(() => {
-    if (!plData?.totalsByAccount) return { classe6: [], classe7: [] } as const;
-    return partitionTotalsByAccountClass(plData.totalsByAccount);
-  }, [plData?.totalsByAccount]);
+  useEffect(() => {
+    void loadIncomeStatement(false);
+  }, [loadIncomeStatement]);
+
+  const handleRefreshIncomeStatement = useCallback(async () => {
+    try {
+      setPlRefreshing(true);
+      await loadIncomeStatement(true);
+    } finally {
+      setPlRefreshing(false);
+    }
+  }, [loadIncomeStatement]);
+
+  const handleSnapBesoins = useCallback(async () => {
+    try {
+      setSnapBesoinsLoading(true);
+      setSnapBesoinsError(null);
+      setSnapBesoinsStatus('Traitement en cours...');
+
+      const response = await fetch(apiUrl('/api/boondmanager/sync/besoins/snapshot'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.success) {
+        throw new Error(body?.error || body?.message || `Erreur ${response.status}`);
+      }
+
+      const syncedCount = Number(body?.details?.syncedCount ?? 0);
+      setSnapBesoinsStatus(`Sync OK (${syncedCount} besoins).`);
+    } catch (e) {
+      console.error('❌ Erreur sync besoins:', e);
+      setSnapBesoinsStatus(null);
+      setSnapBesoinsError(e instanceof Error ? e.message : 'Erreur lors de la synchronisation');
+    } finally {
+      setSnapBesoinsLoading(false);
+    }
+  }, []);
 
   // Sauvegarder les filtres dans localStorage
   useEffect(() => {
@@ -591,6 +487,13 @@ const Report: React.FC<ReportProps> = ({ onBack }) => {
       maximumFractionDigits: 0,
     }).format(value);
 
+  const formatDateTimeFr = (value: string | null | undefined): string => {
+    if (!value) return 'Non disponible';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return 'Non disponible';
+    return d.toLocaleString('fr-FR');
+  };
+
   const months = getCurrentYearMonths();
 
   if (loading) {
@@ -601,6 +504,21 @@ const Report: React.FC<ReportProps> = ({ onBack }) => {
             ← Retour
           </button>
           <h2>Rapports</h2>
+          <div className="report-header-actions">
+            {snapBesoinsError ? (
+              <span className="snap-besoins-status snap-besoins-status--error">{snapBesoinsError}</span>
+            ) : (
+              snapBesoinsStatus && <span className="snap-besoins-status">{snapBesoinsStatus}</span>
+            )}
+            <button
+              type="button"
+              className="snap-besoins-button"
+              onClick={() => void handleSnapBesoins()}
+              disabled={snapBesoinsLoading}
+            >
+              {snapBesoinsLoading ? 'Sync Besoins...' : 'Sync Besoins'}
+            </button>
+          </div>
         </div>
         <div className="report-container">
           <div className="loading-state">
@@ -620,6 +538,21 @@ const Report: React.FC<ReportProps> = ({ onBack }) => {
             ← Retour
           </button>
           <h2>Rapports</h2>
+          <div className="report-header-actions">
+            {snapBesoinsError ? (
+              <span className="snap-besoins-status snap-besoins-status--error">{snapBesoinsError}</span>
+            ) : (
+              snapBesoinsStatus && <span className="snap-besoins-status">{snapBesoinsStatus}</span>
+            )}
+            <button
+              type="button"
+              className="snap-besoins-button"
+              onClick={() => void handleSnapBesoins()}
+              disabled={snapBesoinsLoading}
+            >
+              {snapBesoinsLoading ? 'Sync Besoins...' : 'Sync Besoins'}
+            </button>
+          </div>
         </div>
         <div className="report-container">
           <div className="error-state">
@@ -640,6 +573,21 @@ const Report: React.FC<ReportProps> = ({ onBack }) => {
           ← Retour
         </button>
         <h2>Rapports</h2>
+        <div className="report-header-actions">
+          {snapBesoinsError ? (
+            <span className="snap-besoins-status snap-besoins-status--error">{snapBesoinsError}</span>
+          ) : (
+            snapBesoinsStatus && <span className="snap-besoins-status">{snapBesoinsStatus}</span>
+          )}
+          <button
+            type="button"
+            className="snap-besoins-button"
+            onClick={() => void handleSnapBesoins()}
+            disabled={snapBesoinsLoading}
+          >
+            {snapBesoinsLoading ? 'Sync Besoins...' : 'Sync Besoins'}
+          </button>
+        </div>
       </div>
       <div className="report-container">
         {activeReport === 'menu' ? (
@@ -694,13 +642,27 @@ const Report: React.FC<ReportProps> = ({ onBack }) => {
                     ))}
                   </select>
                 </label>
+                <button
+                  type="button"
+                  className="pl-refresh-icon-button"
+                  onClick={() => void handleRefreshIncomeStatement()}
+                  disabled={plRefreshing || plLoading}
+                  title="Mettre à jour les données Pennylane"
+                  aria-label="Mettre à jour les données Pennylane"
+                >
+                  {plRefreshing ? '⏳' : '↻'}
+                </button>
               </div>
             </div>
 
             {plLoading && (
               <div className="pl-loading">
                 <div className="loading-spinner" />
-                <p>Connexion à Pennylane…</p>
+                <p>
+                  {plRefreshing
+                    ? 'Synchronisation Pennylane en cours…'
+                    : 'Chargement du compte de résultat…'}
+                </p>
               </div>
             )}
             {plError && <p className="pl-error">{plError}</p>}
@@ -752,33 +714,43 @@ const Report: React.FC<ReportProps> = ({ onBack }) => {
                         </td>
                       </tr>
                       {plProduitsDetailOpen &&
-                        PL_PRODUITS_DETAIL_ROWS.map(({ label, prefix, excludePrefix, title }) => (
-                        <tr
-                          key={`${prefix}-${excludePrefix ?? ''}`}
-                          className="pl-cr-detail-row"
-                          id={prefix === PL_PRODUITS_DETAIL_ROWS[0]?.prefix ? 'pl-cr-detail-produits' : undefined}
-                        >
-                          <th
-                            scope="row"
-                            className="report-table-cell pl-cr-rowhead pl-cr-rowhead-detail"
-                            title={title}
-                          >
-                            {label}
-                          </th>
-                          {plData.monthly.map((row) => (
-                            <td key={row.month} className="report-table-cell pl-num">
-                              {formatCurrencyPl(produitsSumByAccountPrefix(row.byAccount, prefix, excludePrefix))}
+                        <>
+                          <tr className="pl-cr-detail-row" id="pl-cr-detail-produits">
+                            <th
+                              scope="row"
+                              className="report-table-cell pl-cr-rowhead pl-cr-rowhead-detail"
+                              title="Produits — CA Anima Néo"
+                            >
+                              CA Anima Néo
+                            </th>
+                            {plData.monthly.map((row) => (
+                              <td key={row.month} className="report-table-cell pl-num">
+                                {formatCurrencyPl(row.caAnimaNeo)}
+                              </td>
+                            ))}
+                            <td className="report-table-cell pl-num pl-cr-total-cell">
+                              <strong>{formatCurrencyPl(plData.totals.caAnimaNeo)}</strong>
                             </td>
-                          ))}
-                          <td className="report-table-cell pl-num pl-cr-total-cell">
-                            <strong>
-                              {formatCurrencyPl(
-                                produitsSumByAccountPrefix(plData.totalsByAccount, prefix, excludePrefix)
-                              )}
-                            </strong>
-                          </td>
-                        </tr>
-                      ))}
+                          </tr>
+                          <tr className="pl-cr-detail-row">
+                            <th
+                              scope="row"
+                              className="report-table-cell pl-cr-rowhead pl-cr-rowhead-detail"
+                              title="Produits — CA Sous-traitance"
+                            >
+                              CA Sous-traitance
+                            </th>
+                            {plData.monthly.map((row) => (
+                              <td key={row.month} className="report-table-cell pl-num">
+                                {formatCurrencyPl(row.caSousTraitance)}
+                              </td>
+                            ))}
+                            <td className="report-table-cell pl-num pl-cr-total-cell">
+                              <strong>{formatCurrencyPl(plData.totals.caSousTraitance)}</strong>
+                            </td>
+                          </tr>
+                        </>
+                      }
                       <tr className="pl-cr-row-total-charges">
                         <th scope="row" className="report-table-cell pl-cr-rowhead">
                           <button
@@ -810,31 +782,60 @@ const Report: React.FC<ReportProps> = ({ onBack }) => {
                         </td>
                       </tr>
                       {plChargesDetailOpen &&
-                        PL_CHARGES_DETAIL_ROWS.map((crow) => (
-                        <tr
-                          key={crow.label}
-                          className="pl-cr-detail-row"
-                          id={crow.label === PL_CHARGES_DETAIL_ROWS[0]?.label ? 'pl-cr-detail-charges' : undefined}
-                        >
-                          <th
-                            scope="row"
-                            className="report-table-cell pl-cr-rowhead pl-cr-rowhead-detail"
-                            title={crow.title}
-                          >
-                            {crow.label}
-                          </th>
-                          {plData.monthly.map((row) => (
-                            <td key={row.month} className="report-table-cell pl-num">
-                              {formatCurrencyPl(chargesForDetailRow(row.byAccount, crow))}
+                        <>
+                          <tr className="pl-cr-detail-row" id="pl-cr-detail-charges">
+                            <th
+                              scope="row"
+                              className="report-table-cell pl-cr-rowhead pl-cr-rowhead-detail"
+                              title="Charges — Salaires"
+                            >
+                              Salaires
+                            </th>
+                            {plData.monthly.map((row) => (
+                              <td key={row.month} className="report-table-cell pl-num">
+                                {formatCurrencyPl(row.salaires)}
+                              </td>
+                            ))}
+                            <td className="report-table-cell pl-num pl-cr-total-cell">
+                              <strong>{formatCurrencyPl(plData.totals.salaires)}</strong>
                             </td>
-                          ))}
-                          <td className="report-table-cell pl-num pl-cr-total-cell">
-                            <strong>
-                              {formatCurrencyPl(chargesForDetailRow(plData.totalsByAccount, crow))}
-                            </strong>
-                          </td>
-                        </tr>
-                      ))}
+                          </tr>
+                          <tr className="pl-cr-detail-row">
+                            <th
+                              scope="row"
+                              className="report-table-cell pl-cr-rowhead pl-cr-rowhead-detail"
+                              title="Charges — Cotisations sociales"
+                            >
+                              Cotisations sociales
+                            </th>
+                            {plData.monthly.map((row) => (
+                              <td key={row.month} className="report-table-cell pl-num">
+                                {formatCurrencyPl(row.cotisationsSociales)}
+                              </td>
+                            ))}
+                            <td className="report-table-cell pl-num pl-cr-total-cell">
+                              <strong>{formatCurrencyPl(plData.totals.cotisationsSociales)}</strong>
+                            </td>
+                          </tr>
+                          <tr className="pl-cr-detail-row">
+                            <th
+                              scope="row"
+                              className="report-table-cell pl-cr-rowhead pl-cr-rowhead-detail"
+                              title="Charges — Autres charges"
+                            >
+                              Autres charges
+                            </th>
+                            {plData.monthly.map((row) => (
+                              <td key={row.month} className="report-table-cell pl-num">
+                                {formatCurrencyPl(row.autresCharges)}
+                              </td>
+                            ))}
+                            <td className="report-table-cell pl-num pl-cr-total-cell">
+                              <strong>{formatCurrencyPl(plData.totals.autresCharges)}</strong>
+                            </td>
+                          </tr>
+                        </>
+                      }
                       <tr className="pl-cr-result-row">
                         <th scope="row" className="report-table-cell pl-cr-rowhead">
                           Résultat
@@ -856,116 +857,14 @@ const Report: React.FC<ReportProps> = ({ onBack }) => {
                     </tbody>
                   </table>
                 </div>
-                {plData.totalsByAccount && Object.keys(plData.totalsByAccount).length > 0 && (
-                  <div className="pl-by-account pl-by-account-compact">
-                    <h4 className="pl-by-account-title">
-                      Détail par compte général (cumul année {plData.year})
-                    </h4>
-                    <div className="report-table-container pl-table-wrap">
-                      <table className="report-table pl-table pl-by-account-table">
-                        <thead>
-                          <tr>
-                            <th className="report-table-header">Compte</th>
-                            <th className="report-table-header">Lignes</th>
-                            <th className="report-table-header">Charges (débit − crédit)</th>
-                            <th className="report-table-header">Produits (crédit − débit)</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr className="pl-ba-group-row">
-                            <td colSpan={4} className="pl-ba-group-cell">
-                              <button
-                                type="button"
-                                className="pl-ba-toggle"
-                                onClick={() => setPlByAccountClasse6Open((v) => !v)}
-                                aria-expanded={plByAccountClasse6Open}
-                                aria-controls="pl-ba-detail-classe6"
-                                aria-label={
-                                  plByAccountClasse6Open
-                                    ? 'Masquer les comptes de classe 6'
-                                    : 'Afficher les comptes de classe 6'
-                                }
-                                id="pl-ba-toggle-classe6"
-                              >
-                                <span className="pl-ba-toggle-icon" aria-hidden>
-                                  {plByAccountClasse6Open ? '▼' : '▶'}
-                                </span>
-                                <strong>Classe 6</strong>
-                                <span className="pl-ba-group-hint">
-                                  {' '}
-                                  — charges ({plByAccountPartition.classe6.length} compte
-                                  {plByAccountPartition.classe6.length > 1 ? 's' : ''})
-                                </span>
-                              </button>
-                            </td>
-                          </tr>
-                          {plByAccountClasse6Open &&
-                            plByAccountPartition.classe6.map(([acc, t], idx) => (
-                              <tr
-                                key={acc}
-                                className="pl-ba-account-row"
-                                id={idx === 0 ? 'pl-ba-detail-classe6' : undefined}
-                              >
-                                <td className="report-table-cell">{acc}</td>
-                                <td className="report-table-cell pl-num">{t.lineCount}</td>
-                                <td className="report-table-cell pl-num">
-                                  {t.charges !== 0 ? formatCurrencyPl(t.charges) : '—'}
-                                </td>
-                                <td className="report-table-cell pl-num">
-                                  {t.produits !== 0 ? formatCurrencyPl(t.produits) : '—'}
-                                </td>
-                              </tr>
-                            ))}
-                          <tr className="pl-ba-group-row">
-                            <td colSpan={4} className="pl-ba-group-cell">
-                              <button
-                                type="button"
-                                className="pl-ba-toggle"
-                                onClick={() => setPlByAccountClasse7Open((v) => !v)}
-                                aria-expanded={plByAccountClasse7Open}
-                                aria-controls="pl-ba-detail-classe7"
-                                aria-label={
-                                  plByAccountClasse7Open
-                                    ? 'Masquer les comptes de classe 7'
-                                    : 'Afficher les comptes de classe 7'
-                                }
-                                id="pl-ba-toggle-classe7"
-                              >
-                                <span className="pl-ba-toggle-icon" aria-hidden>
-                                  {plByAccountClasse7Open ? '▼' : '▶'}
-                                </span>
-                                <strong>Classe 7</strong>
-                                <span className="pl-ba-group-hint">
-                                  {' '}
-                                  — produits ({plByAccountPartition.classe7.length} compte
-                                  {plByAccountPartition.classe7.length > 1 ? 's' : ''})
-                                </span>
-                              </button>
-                            </td>
-                          </tr>
-                          {plByAccountClasse7Open &&
-                            plByAccountPartition.classe7.map(([acc, t], idx) => (
-                              <tr
-                                key={acc}
-                                className="pl-ba-account-row"
-                                id={idx === 0 ? 'pl-ba-detail-classe7' : undefined}
-                              >
-                                <td className="report-table-cell">{acc}</td>
-                                <td className="report-table-cell pl-num">{t.lineCount}</td>
-                                <td className="report-table-cell pl-num">
-                                  {t.charges !== 0 ? formatCurrencyPl(t.charges) : '—'}
-                                </td>
-                                <td className="report-table-cell pl-num">
-                                  {t.produits !== 0 ? formatCurrencyPl(t.produits) : '—'}
-                                </td>
-                              </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-                <p className="pl-footnote">{plData.description}</p>
+                <div className="pl-sync-info">
+                  <p className="pl-footnote">
+                    Dernière mise à jour : {formatDateTimeFr(plData.lastSyncAt)}
+                  </p>
+                  <p className="pl-footnote">
+                    Commentaires : Données issues de ledger_entry_lines (lignes sur la période), charges = débit−crédit sur comptes 6, produits = crédit−débit sur comptes 7
+                  </p>
+                </div>
               </>
             )}
           </>

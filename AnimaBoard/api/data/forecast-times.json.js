@@ -1,5 +1,5 @@
 /**
- * GET /api/data/forecast-times.json - Temps prévisionnels (KV)
+ * GET /api/data/forecast-times.json - Temps prévisionnels (Supabase)
  */
 const kvStorage = require('../../lib/kvStorage');
 const { KV_KEYS } = require('../../lib/constants');

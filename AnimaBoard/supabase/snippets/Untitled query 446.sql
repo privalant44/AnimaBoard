@@ -1,0 +1,1 @@
+select r.nom,a.month, sum(a.days) from resources r, absence a where a.resource_id = r.id group by r.nom,a.month order by a.month desc

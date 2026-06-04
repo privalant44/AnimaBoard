@@ -13,16 +13,19 @@ const { roleHasAnyPermission } = require('./roles');
  */
 function formatError(error, options = {}) {
   const {
-    statusCode = 500,
+    statusCode: defaultStatus = 500,
     message = null,
     includeStack = process.env.NODE_ENV === 'development',
     includeDetails = process.env.NODE_ENV === 'development'
   } = options;
 
+  const httpStatus = error.status || error.response?.status;
+  const statusCode = httpStatus && httpStatus >= 400 && httpStatus < 600 ? httpStatus : defaultStatus;
+  const primaryMessage = message || error.message || 'Une erreur est survenue';
+
   const response = {
     success: false,
-    error: message || error.message || 'Une erreur est survenue',
-    // Toujours inclure la cause réelle pour diagnostic (ex. sur Vercel)
+    error: primaryMessage,
     ...(message && error.message && message !== error.message && { errorDetail: error.message }),
     ...(includeDetails && error.response && {
       details: {
@@ -98,8 +101,11 @@ async function enforceAuthAndAuthorize(req, res) {
         res.status(403).json({
           success: false,
           error: 'Accès refusé',
-          errorDetail: required.length ? `Permission requise : ${required.join(' ou ')}` : undefined,
+          errorDetail: required.length
+            ? `Permission requise (une parmi) : ${required.join(', ')}. Rôle actuel : ${role || 'inconnu'}.`
+            : undefined,
           role: role || null,
+          requiredPermissions: required,
         });
         return false;
       }

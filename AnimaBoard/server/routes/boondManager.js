@@ -1154,3 +1154,5 @@ router.post('/sync/absences', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.fetchBoondOpportunities = fetchBoondOpportunities;
+module.exports.normalizeOpportunityToBesoin = normalizeOpportunityToBesoin;

@@ -406,6 +406,14 @@ class PennylaneService {
         wrapped.status = 404;
         throw wrapped;
       }
+      if (status === 403) {
+        const hint =
+          'Accès Pennylane refusé (403). Vérifiez PENNYLANE_API_KEY sur Vercel et les scopes du token : ledger_entries:readonly et ledger_accounts:readonly.';
+        const wrapped = new Error(hint);
+        wrapped.cause = error;
+        wrapped.status = 403;
+        throw wrapped;
+      }
       if (process.env.NODE_ENV === 'development') return this.getMockData(path);
       throw error;
     }

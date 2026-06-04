@@ -17,7 +17,15 @@ function getRequiredPermissions(method, pathname) {
   if (path.startsWith('/api/auth/users')) return [PERMISSIONS.USERS_MANAGE];
 
   if (path.startsWith('/api/pennylane')) return [PERMISSIONS.DATA_FINANCE];
-  if (path.includes('income-statement')) return [PERMISSIONS.DATA_FINANCE];
+
+  // Compte de résultat Pennylane (lecture + sync)
+  if (path.includes('income-statement')) {
+    if (m === 'POST' && path.includes('sync')) {
+      // Sync : droit opérationnel OU finance (commercial peut synchroniser)
+      return [PERMISSIONS.OPS_SYNC, PERMISSIONS.DATA_FINANCE];
+    }
+    return [PERMISSIONS.DATA_FINANCE];
+  }
 
   if (
     path.includes('timesheets') ||
@@ -34,7 +42,6 @@ function getRequiredPermissions(method, pathname) {
     if (path.includes('/api/init-dictionary')) return [PERMISSIONS.OPS_SYNC];
     if (path.includes('/api/data/forecast-times')) return [PERMISSIONS.DATA_WRITE];
     if (path.includes('/api/data/resources-metadata')) return [PERMISSIONS.DATA_WRITE];
-    if (path.includes('/api/dashboard/income-statement')) return [PERMISSIONS.OPS_SYNC];
   }
 
   return null;

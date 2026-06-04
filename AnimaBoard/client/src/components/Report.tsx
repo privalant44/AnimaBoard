@@ -2,6 +2,9 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import './Report.css';
 import { apiFetch } from '../api';
 import { DATA_REFRESH_EVENT } from '../dataRefresh';
+import { useUserAccess } from '../auth/useUserAccess';
+import { PERMISSIONS } from '../auth/roles';
+import { isAuthEnabled } from '../auth/msalConfig';
 
 interface Project {
   id: string | number;
@@ -81,6 +84,10 @@ const loadReportFiltersFromStorage = () => {
 };
 
 const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
+  const userAccess = useUserAccess(isAuthEnabled());
+  const canViewPennylane =
+    !isAuthEnabled() || userAccess.can(PERMISSIONS.DATA_FINANCE);
+
   // Charger les filtres depuis localStorage au démarrage
   const savedFilters = loadReportFiltersFromStorage();
   
@@ -608,19 +615,27 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
                   Année {new Date().getFullYear()} — par ressource et par mois (jours saisis + prévisionnels)
                 </span>
               </button>
-              <button
-                type="button"
-                className="report-menu-button"
-                onClick={() => setActiveReport('pennylane-pl')}
-              >
-                <span className="report-menu-button-title">Compte de Résultat</span>
-                <span className="report-menu-button-desc">
-                  Produits et charges par mois (Pennylane)
-                </span>
-              </button>
+              {canViewPennylane && (
+                <button
+                  type="button"
+                  className="report-menu-button"
+                  onClick={() => setActiveReport('pennylane-pl')}
+                >
+                  <span className="report-menu-button-title">Compte de Résultat</span>
+                  <span className="report-menu-button-desc">
+                    Produits et charges par mois (Pennylane)
+                  </span>
+                </button>
+              )}
             </div>
           </div>
         ) : activeReport === 'pennylane-pl' ? (
+          !canViewPennylane ? (
+            <p className="pl-error">
+              Accès refusé au compte de résultat Pennylane. Demandez le rôle manager, commercial ou admin
+              (permission finance).
+            </p>
+          ) : (
           <>
             <button
               type="button"
@@ -872,6 +887,7 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
               </>
             )}
           </>
+          )
         ) : (
           <>
             <button

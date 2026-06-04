@@ -37,10 +37,39 @@ module.exports = createVercelHandler(async (req, res) => {
     }
   }
 
+  let pennylaneStatus = '⚪ Non testé';
+  let pennylaneDiagnostics = null;
+  if (process.env.PENNYLANE_API_KEY) {
+    try {
+      const pennylaneService = require('../server/services/pennylaneService');
+      pennylaneDiagnostics = await pennylaneService.probeApiDiagnostics();
+      if (pennylaneDiagnostics.me?.ok && pennylaneDiagnostics.ledgerEntryLines?.ok) {
+        pennylaneStatus = '✅ Token OK (scopes + lecture ledger_entry_lines)';
+      } else if (pennylaneDiagnostics.me?.ok) {
+        pennylaneStatus =
+          '⚠️ /me OK mais lecture écritures en échec — ' +
+          (pennylaneDiagnostics.ledgerEntryLines?.error || 'voir pennylane');
+      } else {
+        pennylaneStatus =
+          '❌ ' + (pennylaneDiagnostics.me?.error || pennylaneDiagnostics.error || 'échec Pennylane');
+      }
+    } catch (e) {
+      pennylaneStatus = '❌ Exception: ' + e.message;
+    }
+  } else {
+    pennylaneStatus = '❌ PENNYLANE_API_KEY manquant';
+  }
+
   res.status(200).json({
     success: true,
     timestamp: new Date().toISOString(),
-    variables: checks,
+    variables: {
+      ...checks,
+      PENNYLANE_API_KEY: process.env.PENNYLANE_API_KEY ? '✅ Configuré' : '❌ Manquant',
+      PENNYLANE_API_URL: process.env.PENNYLANE_API_URL || 'https://app.pennylane.com/api/external/v2 (défaut)',
+    },
     supabaseConnection: supabaseStatus,
+    pennylaneConnection: pennylaneStatus,
+    pennylaneDiagnostics,
   });
 });

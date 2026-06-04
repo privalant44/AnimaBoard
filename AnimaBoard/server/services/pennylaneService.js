@@ -36,6 +36,35 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Scopes Pennylane v2 requis pour le compte de résultat (voir pennylane.readme.io/docs/v2-scopes). */
+const REQUIRED_PL_SCOPES = ['ledger_entries:readonly', 'ledger_accounts:readonly'];
+
+function pennylaneErrorDetail(body) {
+  if (!body) return '';
+  if (typeof body === 'string') return body.slice(0, 500);
+  const msg = body.message || body.error || body.detail;
+  if (typeof msg === 'string' && msg.trim()) return msg.trim();
+  try {
+    return JSON.stringify(body).slice(0, 500);
+  } catch {
+    return '';
+  }
+}
+
+function formatPennylane403(body) {
+  const detail = pennylaneErrorDetail(body);
+  const scopeHint = REQUIRED_PL_SCOPES.join(', ');
+  const legacyNote =
+    ' Si le token n’a que l’ancien scope « ledger », régénérez-le : Pennylane a migré vers des scopes granulaires (ledger_entries:readonly, etc.).';
+  if (detail && /missing scope/i.test(detail)) {
+    return `${detail} — Régénérez le token API V2 dans Pennylane (Paramètres → Connectivité → Développeurs) avec au minimum : ${scopeHint}.${legacyNote}`;
+  }
+  return (
+    `Accès Pennylane refusé (403). ${detail ? `${detail} — ` : ''}` +
+    `Vérifiez PENNYLANE_API_KEY sur Vercel et les scopes du token : ${scopeHint}.${legacyNote}`
+  );
+}
+
 function extractTrialBalanceLines(payload) {
   if (!payload || typeof payload !== 'object') return [];
   const raw =
@@ -407,11 +436,10 @@ class PennylaneService {
         throw wrapped;
       }
       if (status === 403) {
-        const hint =
-          'Accès Pennylane refusé (403). Vérifiez PENNYLANE_API_KEY sur Vercel et les scopes du token : ledger_entries:readonly et ledger_accounts:readonly.';
-        const wrapped = new Error(hint);
+        const wrapped = new Error(formatPennylane403(body));
         wrapped.cause = error;
         wrapped.status = 403;
+        wrapped.pennylaneDetail = pennylaneErrorDetail(body);
         throw wrapped;
       }
       if (process.env.NODE_ENV === 'development') return this.getMockData(path);
@@ -928,6 +956,72 @@ class PennylaneService {
   async probeApi() {
     if (!this.apiKey) throw new Error('PENNYLANE_API_KEY manquant');
     return this.makeRequest('/me', {});
+  }
+
+  /**
+   * Diagnostic token : scopes actifs + test lecture écritures (sans données sensibles).
+   */
+  async probeApiDiagnostics() {
+    if (!this.apiKey) {
+      return {
+        configured: false,
+        error: 'PENNYLANE_API_KEY manquant',
+        requiredScopes: REQUIRED_PL_SCOPES,
+      };
+    }
+
+    const out = {
+      configured: true,
+      baseURL: this.baseURL,
+      requiredScopes: REQUIRED_PL_SCOPES,
+      me: null,
+      ledgerEntryLines: null,
+      missingScopes: [],
+    };
+
+    try {
+      const me = await this.makeRequest('/me', {});
+      const scopes = Array.isArray(me.scopes)
+        ? me.scopes
+        : Array.isArray(me.scope)
+          ? me.scope
+          : typeof me.scope === 'string'
+            ? me.scope.split(/\s+/).filter(Boolean)
+            : [];
+      out.me = {
+        ok: true,
+        companyId: me.company_id ?? me.company?.id ?? null,
+        scopes,
+      };
+      const hasEntries =
+        scopes.includes('ledger_entries:readonly') || scopes.includes('ledger_entries:all');
+      const hasAccounts =
+        scopes.includes('ledger_accounts:readonly') || scopes.includes('ledger_accounts:all');
+      if (!hasEntries) out.missingScopes.push('ledger_entries:readonly');
+      if (!hasAccounts) out.missingScopes.push('ledger_accounts:readonly');
+      if (scopes.includes('ledger') && out.missingScopes.length > 0) {
+        out.legacyLedgerScopeOnly =
+          'Le scope « ledger » seul ne suffit plus sur l’API v2 ; régénérez le token avec ledger_entries:readonly et ledger_accounts:readonly.';
+      }
+    } catch (e) {
+      out.me = { ok: false, status: e.status || e.response?.status, error: e.message };
+    }
+
+    try {
+      const y = new Date().getFullYear();
+      await this.throttle();
+      await this.getLedgerEntryLinesIndex(`${y}-01-01`, `${y}-01-31`, null);
+      out.ledgerEntryLines = { ok: true };
+    } catch (e) {
+      out.ledgerEntryLines = {
+        ok: false,
+        status: e.status || e.response?.status,
+        error: e.message,
+        pennylaneDetail: e.pennylaneDetail || null,
+      };
+    }
+
+    return out;
   }
 
   getMockData(path) {

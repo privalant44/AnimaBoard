@@ -5,6 +5,53 @@
   padding: 0;
 }
 
+.nav-home-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.nav-button--home {
+  order: 1;
+  flex: 1;
+  min-width: 0;
+}
+
+.nav-home-row .nav-button--sidebar-toggle {
+  order: 2;
+  width: auto;
+  flex: 0 0 auto;
+  justify-content: center;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
+.nav-button-icon--sidebar-toggle {
+  transition: transform 0.2s ease;
+}
+
+.nav-button-icon--sidebar-toggle.is-collapsed {
+  transform: rotate(180deg);
+}
+
+.navigation.is-collapsed .nav-home-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.navigation.is-collapsed .nav-button--home,
+.navigation.is-collapsed .nav-button--sidebar-toggle {
+  order: unset;
+  width: 100%;
+  flex: 0 0 auto;
+}
+
+.navigation.is-collapsed .nav-home-row .nav-button--sidebar-toggle {
+  padding-left: 0.45rem;
+  padding-right: 0.45rem;
+}
+
 .nav-button {
   width: 100%;
   display: flex;

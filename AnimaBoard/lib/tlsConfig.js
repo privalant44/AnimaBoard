@@ -1,5 +1,5 @@
 /**
- * TLS pour les appels HTTPS Node (axios → BoondManager, Pennylane, etc.).
+ * TLS pour les appels HTTPS Node (axios, jwks-rsa → Microsoft, BoondManager, Pennylane, etc.).
  *
  * Erreur typique derrière un proxy d’entreprise (inspection SSL) :
  *   UNABLE_TO_VERIFY_LEAF_SIGNATURE / unable to verify the first certificate

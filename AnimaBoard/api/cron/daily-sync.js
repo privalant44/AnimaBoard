@@ -256,5 +256,5 @@ module.exports = createVercelHandler(async (req, res) => {
     durationMs: Date.now() - startedMs,
     steps,
   });
-}, { statusCode: 500, message: 'Erreur lors du batch daily-sync' });
+}, { statusCode: 500, message: 'Erreur lors du batch daily-sync', skipAuth: true });
 

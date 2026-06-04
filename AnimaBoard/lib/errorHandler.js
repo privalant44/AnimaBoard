@@ -1,6 +1,9 @@
 /**
  * Gestionnaire d'erreur standardisé pour les API routes
  */
+const { enforceAuth, isAuthEnabled } = require('./microsoftAuth');
+const { attachUserAccess, getRequiredPermissions } = require('./authorize');
+const { roleHasAnyPermission } = require('./roles');
 
 /**
  * Crée une réponse d'erreur standardisée
@@ -60,9 +63,37 @@ function asyncHandler(handler, options = {}) {
  * @param {Object} options - Options de gestion d'erreur
  * @returns {Function} Handler Vercel
  */
+async function enforceAuthAndAuthorize(req, res) {
+  const authResult = await enforceAuth(req, res);
+  if (!authResult.ok) return false;
+  if (authResult.user) req.auth = authResult.user;
+  if (isAuthEnabled() && req.auth) {
+    await attachUserAccess(req);
+    const path = (req.url || '').split('?')[0];
+    const required = getRequiredPermissions(req.method, path);
+    if (required) {
+      const role = req.access?.role;
+      if (!role || !roleHasAnyPermission(role, required)) {
+        res.status(403).json({
+          success: false,
+          error: 'Accès refusé',
+          errorDetail: required.length ? `Permission requise : ${required.join(' ou ')}` : undefined,
+          role: role || null,
+        });
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 function createVercelHandler(handler, options = {}) {
   return async (req, res) => {
     try {
+      if (!options.skipAuth) {
+        const ok = await enforceAuthAndAuthorize(req, res);
+        if (!ok) return;
+      }
       await handler(req, res);
     } catch (error) {
       const { statusCode, response } = formatError(error, options);

@@ -1,18 +1,34 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-require('dotenv').config();
+const { loadRootEnv } = require('../scripts/loadRootEnv');
+loadRootEnv();
 require('../lib/secretEnv');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const { requireAuthMiddleware } = require('../lib/requireAuth');
+const { isAuthEnabled } = require('../lib/microsoftAuth');
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
+// Health check (public)
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', message: 'Anima Board API is running', auth: isAuthEnabled() });
+});
+
+// Variables d'environnement (public — utilisé par le client avant connexion)
+app.get('/api/env-check', require('../api/env-check'));
+
 // Routes API en premier (avant le static / SPA) pour ne jamais renvoyer index.html sur /api/*
 try {
+  const authRoutes = require('./routes/auth');
+  app.use('/api/auth', authRoutes);
+
+  app.use(requireAuthMiddleware);
+
   const boondManagerRoutes = require('./routes/boondManager');
   const pennylaneRoutes = require('./routes/pennylane');
   const dashboardRoutes = require('./routes/dashboard');
@@ -54,11 +70,6 @@ try {
   console.error('❌ Erreur lors du chargement des routes:', error);
   process.exit(1);
 }
-
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Anima Board API is running' });
-});
 
 // En dev : indiquer où ouvrir le client (React tourne sur un autre port)
 if (process.env.NODE_ENV !== 'production') {

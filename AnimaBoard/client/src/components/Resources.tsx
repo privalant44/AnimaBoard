@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import './Resources.css';
-import { apiUrl } from '../api';
+import { apiFetch } from '../api';
 import { DATA_REFRESH_EVENT } from '../dataRefresh';
 
 interface Resource {
@@ -118,7 +118,7 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
   // Charger les métadonnées des ressources
   const loadResourcesMetadata = async () => {
     try {
-      const response = await fetch(apiUrl('/api/data/resources-metadata'));
+      const response = await apiFetch('/api/data/resources-metadata');
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.data) {
@@ -138,7 +138,7 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
   // Sauvegarder les métadonnées des ressources
   const saveResourcesMetadata = async (metadata: typeof resourcesMetadata) => {
     try {
-      const response = await fetch(apiUrl('/api/data/resources-metadata'), {
+      const response = await apiFetch('/api/data/resources-metadata', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -177,8 +177,8 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
       setLoading(true);
       setError(null);
 
-      // Lire uniquement depuis la base locale (table resources), sans appel direct à l'API Boond.
-      const response = await fetch(apiUrl('/api/data/resources-local'));
+      // Lire uniquement depuis la base locale (table resources), sans appel direct Boond.
+      const response = await apiFetch("/api/data/resources-local");
       const contentType = response.headers.get('content-type') || '';
       const raw = await response.text();
       if (!contentType.includes('application/json')) {
@@ -401,7 +401,7 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
         {resources.length === 0 ? (
           <div className="empty-state">
             <p className="empty-message">Aucune ressource trouvée</p>
-            <p className="empty-details">Vérifiez la connexion à l'API BoondManager ou consultez les logs du serveur.</p>
+            <p className="empty-details">Cette vue lit la table <code>resources</code> via <code>/api/data/resources-local</code>. Vérifiez la connexion Supabase et le contenu de la table en production.</p>
           </div>
         ) : (
           <>

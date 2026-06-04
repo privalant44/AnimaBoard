@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import './Report.css';
-import { apiUrl } from '../api';
+import { apiFetch } from '../api';
 import { DATA_REFRESH_EVENT } from '../dataRefresh';
 
 interface Project {
@@ -129,7 +129,7 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
       setLoading(true);
       setError(null);
 
-      const bootstrapResponse = await fetch(apiUrl('/api/data/forecast-bootstrap'));
+      const bootstrapResponse = await apiFetch('/api/data/forecast-bootstrap');
       const bootstrapBody = await bootstrapResponse.json().catch(() => ({}));
       if (!bootstrapResponse.ok || !bootstrapBody?.success) {
         throw new Error(bootstrapBody?.error || 'Impossible de charger les données Report.');
@@ -247,7 +247,7 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
       setPlError(null);
       try {
         if (forceSync) {
-          const syncResponse = await fetch(apiUrl('/api/dashboard/income-statement/sync'), {
+          const syncResponse = await apiFetch('/api/dashboard/income-statement/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
           });
@@ -256,7 +256,7 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
             throw new Error((syncBody && syncBody.error) || `Erreur ${syncResponse.status}`);
           }
         }
-        const response = await fetch(apiUrl(`/api/dashboard/income-statement?year=${plYear}`));
+        const response = await apiFetch(`/api/dashboard/income-statement?year=${plYear}`);
         const body = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error((body && body.error) || `Erreur ${response.status}`);
         setPlData(body as IncomeStatementResponse);
@@ -289,7 +289,7 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
       setSnapBesoinsError(null);
       setSnapBesoinsStatus('Traitement en cours...');
 
-      const response = await fetch(apiUrl('/api/boondmanager/sync/besoins/snapshot'), {
+      const response = await apiFetch('/api/boondmanager/sync/besoins/snapshot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})

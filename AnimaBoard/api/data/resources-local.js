@@ -10,6 +10,7 @@ try {
 const kvStorage = require(path.join(__dirname, '..', '..', 'lib', 'kvStorage'));
 const { KV_KEYS } = require(path.join(__dirname, '..', '..', 'lib', 'constants'));
 const { getSupabase } = require(path.join(__dirname, '..', '..', 'lib', 'supabaseClient'));
+const { createVercelHandler } = require(path.join(__dirname, '..', '..', 'lib', 'errorHandler'));
 
 function sendJson(res, status, body) {
   res.setHeader('Content-Type', 'application/json');
@@ -17,7 +18,7 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-module.exports = async (req, res) => {
+module.exports = createVercelHandler(async (req, res) => {
   if (req.method !== 'GET') {
     return sendJson(res, 405, { success: false, error: 'Method Not Allowed' });
   }
@@ -72,4 +73,4 @@ module.exports = async (req, res) => {
     console.error('❌ Erreur /api/data/resources-local:', error);
     return sendJson(res, 500, { success: false, error: error.message });
   }
-};
+});

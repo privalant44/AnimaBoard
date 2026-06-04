@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
 import './Settings.css';
-import { apiUrl } from '../api';
+import { apiFetch } from '../api';
 import { dispatchDataRefresh } from '../dataRefresh';
+import RoleManagement from './RoleManagement';
 
 interface SettingsProps {
   onLogoChange: (logoUrl: string) => void;
@@ -88,7 +89,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     setApiTestResult(null);
     
     try {
-      const response = await fetch(apiUrl('/api/boondmanager/test'));
+      const response = await apiFetch('/api/boondmanager/test');
       const data = await response.json();
       
       if (response.ok && data.success) {
@@ -130,7 +131,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     setDictionaryData(null);
     
     try {
-      const response = await fetch(apiUrl('/api/boondmanager/dictionary/resources'));
+      const response = await apiFetch('/api/boondmanager/dictionary/resources');
       const data = await response.json();
       
       if (response.ok && data.success) {
@@ -152,7 +153,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     setOpportunitiesData(null);
 
     try {
-      const response = await fetch(apiUrl('/api/boondmanager/opportunites'));
+      const response = await apiFetch('/api/boondmanager/opportunites');
       const data = await response.json();
 
       if (response.ok && data.success) {
@@ -177,7 +178,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     
     try {
       const endpoint = fileType === 'forecast-report' ? '/api/data/forecast-report' : `/api/data/${fileType}`;
-      const response = await fetch(apiUrl(endpoint));
+      const response = await apiFetch(endpoint);
       const data = await response.json();
       
       setDataFiles(prev => ({ ...prev, [fileType]: data }));
@@ -199,7 +200,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     setSyncResult(null);
 
     try {
-      const response = await fetch(apiUrl('/api/boondmanager/sync/dictionary'), {
+      const response = await apiFetch('/api/boondmanager/sync/dictionary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -233,7 +234,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     setSyncResult(null);
     
     try {
-      const response = await fetch(apiUrl('/api/boondmanager/sync/resources'), {
+      const response = await apiFetch('/api/boondmanager/sync/resources', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -274,7 +275,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     setSyncResult(null);
     
     try {
-      const response = await fetch(apiUrl('/api/boondmanager/sync/deliveries'), {
+      const response = await apiFetch('/api/boondmanager/sync/deliveries', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -320,7 +321,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
       const beginDate = `${currentYear}-01-01`;
       const endDate = `${currentYear}-12-31`;
       
-      const response = await fetch(apiUrl('/api/boondmanager/sync/time-reports'), {
+      const response = await apiFetch('/api/boondmanager/sync/time-reports', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -365,7 +366,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     setSyncResult(null);
     const { startMonth, endMonth } = getLast3MonthsRange();
     try {
-      const response = await fetch(apiUrl('/api/boondmanager/sync/timesheets'), {
+      const response = await apiFetch('/api/boondmanager/sync/timesheets', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -425,7 +426,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     const beginDate = `${y - 1}-01-01`;
     const endDate = `${y}-12-31`;
     try {
-      const response = await fetch(apiUrl('/api/boondmanager/sync/absences'), {
+      const response = await apiFetch('/api/boondmanager/sync/absences', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ beginDate, endDate })
@@ -458,7 +459,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     setSyncingBesoins(true);
     setSyncResult(null);
     try {
-      const response = await fetch(apiUrl('/api/boondmanager/sync/besoins/snapshot?recentMonths=2'), {
+      const response = await apiFetch('/api/boondmanager/sync/besoins/snapshot?recentMonths=2', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ recentMonths: 2 })
@@ -498,9 +499,9 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
       return { response, data };
     };
     try {
-      let response = await fetch(apiUrl(endpoints[0]), { method: 'POST' });
+      let response = await apiFetch(endpoints[0], { method: 'POST' });
       if (response.status === 404 && endpoints.length > 1) {
-        response = await fetch(apiUrl(endpoints[1]), { method: 'POST' });
+        response = await apiFetch(endpoints[1], { method: 'POST' });
       }
       const { response: res, data } = await parseResponse(response);
       if (res.ok && data.success) {
@@ -521,6 +522,8 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     <div className="settings-page">
       <div className="settings-container">
         <h2>Paramètres</h2>
+
+        <RoleManagement />
         
         <div className="sync-buttons-section">
           <button 

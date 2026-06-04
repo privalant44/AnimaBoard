@@ -5,6 +5,8 @@ Référence canonique des variables : [`env.example`](../env.example) (racine) e
 
 > **Sécurité** : ne jamais committer `.env`, `.env.production`, ni les clés `service_role` / mots de passe. Ces fichiers sont listés dans `.gitignore`.
 
+**Authentification** : voir [`docs/AUTH_MICROSOFT.md`](AUTH_MICROSOFT.md) — Microsoft Entra ID (`AUTH_ENABLED`, `AZURE_*`, `REACT_APP_*`) et compte local admin (`LOCAL_ADMIN_*`, `LOCAL_AUTH_JWT_SECRET`).
+
 ---
 
 ## Vue d’ensemble

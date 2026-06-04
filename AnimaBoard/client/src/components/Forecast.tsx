@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import './Forecast.css';
 import { DATA_REFRESH_EVENT } from '../dataRefresh';
-import { apiUrl } from '../api';
+import { apiFetch, apiUrl } from '../api';
 import {
   countWorkdaysInMonth,
   countWorkdaysInYear,
@@ -249,13 +249,14 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
   const fetchForecast = useCallback(async (period?: ForecastPeriodOverride) => {
     const filterStart = period?.startDate ?? startDate;
     const filterEnd = period?.endDate ?? endDate;
-    const bootstrapEndpoint = apiUrl(`/api/data/forecast-bootstrap?from=${new Date().getFullYear() - 1}&years=12`);
     try {
       setLoading(true);
       setError(null);
 
       // Bootstrap unique pour limiter la latence (évite les appels API multiples).
-      const bootstrapResponse = await fetch(bootstrapEndpoint);
+      const bootstrapResponse = await apiFetch(
+        `/api/data/forecast-bootstrap?from=${new Date().getFullYear() - 1}&years=12`
+      );
       const bootstrapBody = await safeParseJson(bootstrapResponse);
       if (!bootstrapResponse.ok || !bootstrapBody?.success) {
         const msg = bootstrapBody?.error || 'Impossible de charger les données Forecast.';
@@ -408,7 +409,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
 
       setResources(resourcesWithProjects);
     } catch (err) {
-      const errorMessage = normalizeApiError(err, bootstrapEndpoint);
+      const errorMessage = normalizeApiError(err, '/api/data/forecast-bootstrap');
       setError(errorMessage);
       console.error('❌ Error fetching forecast:', err);
       setAbsenceByResource({});
@@ -676,7 +677,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
   // Sauvegarder un temps prévisionnel (en jours)
   const saveForecastTime = useCallback(async (deliveryId: string | number, month: string, days: number) => {
     try {
-      const response = await fetch(apiUrl('/api/data/forecast-times'), {
+      const response = await apiFetch('/api/data/forecast-times', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

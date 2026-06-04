@@ -1,14 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
-import { apiUrl } from './api';
+import { apiFetch } from './api';
+import { useAuth } from './auth/AuthProvider';
+import { isAuthEnabled } from './auth/msalConfig';
+import type { AppTab } from './auth/roles';
+import { PERMISSIONS } from './auth/roles';
 import Navigation from './components/Navigation';
+import UserAccountMenu from './components/UserAccountMenu';
 import Resources from './components/Resources';
 import Forecast from './components/Forecast';
 import Report from './components/Report';
 import Settings from './components/Settings';
 import HomeMonthlyRecap from './components/HomeMonthlyRecap';
 
-type Tab = 'home' | 'resources' | 'forecast' | 'report' | 'settings';
+type Tab = AppTab;
 
 /** Retourne startMonth et endMonth pour les 3 derniers mois (format YYYY-MM). */
 function getLast3MonthsRange(): { startMonth: string; endMonth: string } {
@@ -24,6 +29,7 @@ function getLast3MonthsRange(): { startMonth: string; endMonth: string } {
 }
 
 function App() {
+  const auth = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
@@ -33,33 +39,47 @@ function App() {
 
   // Vérifier que l'API répond (évite "Failed to fetch" sans explication)
   useEffect(() => {
-    fetch(apiUrl('/api/env-check'))
+    apiFetch('/api/env-check')
       .then((res) => setApiReachable(res.ok))
       .catch(() => setApiReachable(false));
   }, []);
 
-  // À la connexion au portail : sync automatique ressources + prestations + feuilles de temps + besoins + compte de résultat.
+  const canSync =
+    !isAuthEnabled() || !auth || auth.can(PERMISSIONS.OPS_SYNC);
+
+  // Rediriger si l'onglet actif n'est pas autorisé pour le rôle
   useEffect(() => {
-    if (apiReachable !== true || autoSyncRan.current) return;
+    if (!isAuthEnabled() || !auth || auth.accessLoading) return;
+    if (!auth.canTab(activeTab)) {
+      const fallback: Tab[] = ['home', 'resources', 'forecast', 'report', 'settings'];
+      const allowed = fallback.find((t) => auth.canTab(t));
+      if (allowed) setActiveTab(allowed);
+    }
+  }, [auth, activeTab]);
+
+  // À la connexion : sync automatique (admin / manager uniquement)
+  useEffect(() => {
+    if (apiReachable !== true || autoSyncRan.current || !canSync) return;
+    if (isAuthEnabled() && auth?.accessLoading) return;
     autoSyncRan.current = true;
     setAutoSyncStatus('running');
 
     const run = async () => {
       try {
-        await fetch(apiUrl('/api/boondmanager/sync/resources'), { method: 'POST' });
-        await fetch(apiUrl('/api/boondmanager/sync/deliveries'), { method: 'POST' });
+        await apiFetch('/api/boondmanager/sync/resources', { method: 'POST' });
+        await apiFetch('/api/boondmanager/sync/deliveries', { method: 'POST' });
         const { startMonth, endMonth } = getLast3MonthsRange();
-        await fetch(apiUrl('/api/boondmanager/sync/timesheets'), {
+        await apiFetch('/api/boondmanager/sync/timesheets', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ startMonth, endMonth })
         });
-        await fetch(apiUrl('/api/boondmanager/sync/besoins/snapshot?recentMonths=2'), {
+        await apiFetch('/api/boondmanager/sync/besoins/snapshot?recentMonths=2', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ recentMonths: 2 })
         });
-        await fetch(apiUrl('/api/dashboard/income-statement/sync'), {
+        await apiFetch('/api/dashboard/income-statement/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
@@ -69,7 +89,7 @@ function App() {
       }
     };
     run();
-  }, [apiReachable]);
+  }, [apiReachable, canSync, auth?.accessLoading]);
 
   // Masquer les bandeaux "done" / "error" après quelques secondes
   useEffect(() => {
@@ -135,7 +155,7 @@ function App() {
       )}
       <div className={`app-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
         <aside className="app-sidebar">
-          <div className="app-sidebar-logo-row">
+          <div className="app-sidebar-header">
             <div className="logo-container app-sidebar-logo">
               {logoUrl ? (
                 <img src={logoUrl} alt="Logo Anima Néo" className="uploaded-logo" />
@@ -146,27 +166,25 @@ function App() {
                 </>
               )}
             </div>
-            <button
-              type="button"
-              className="sidebar-toggle-button"
-              onClick={() => setSidebarCollapsed((v) => !v)}
-              aria-label={sidebarCollapsed ? 'Déplier la barre latérale' : 'Plier la barre latérale'}
-              title={sidebarCollapsed ? 'Déplier la barre' : 'Plier la barre'}
-            >
-              <svg
-                className={`sidebar-toggle-icon ${sidebarCollapsed ? 'is-collapsed' : 'is-expanded'}`}
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path d="M15.78 6.97a.75.75 0 0 1 0 1.06L11.81 12l3.97 3.97a.75.75 0 1 1-1.06 1.06l-4.5-4.5a.75.75 0 0 1 0-1.06l4.5-4.5a.75.75 0 0 1 1.06 0Z" />
-                <path d="M12.78 6.97a.75.75 0 0 1 0 1.06L8.81 12l3.97 3.97a.75.75 0 1 1-1.06 1.06l-4.5-4.5a.75.75 0 0 1 0-1.06l4.5-4.5a.75.75 0 0 1 1.06 0Z" />
-              </svg>
-            </button>
+            {isAuthEnabled() && auth && (
+              <div className="app-sidebar-user">
+                <UserAccountMenu
+                  compact={sidebarCollapsed}
+                  displayName={auth.displayName}
+                  email={auth.email}
+                  roleLabel={auth.roleLabel}
+                  onLogout={() => auth.logout()}
+                />
+              </div>
+            )}
           </div>
           <Navigation
             activeTab={activeTab}
             onTabChange={setActiveTab}
             isCollapsed={sidebarCollapsed}
+            sidebarCollapsed={sidebarCollapsed}
+            onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
+            canTab={auth?.canTab}
           />
         </aside>
         <section className="app-content">{renderContent()}</section>

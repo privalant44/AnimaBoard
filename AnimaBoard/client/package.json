@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
+    "@azure/msal-browser": "^4.30.0",
+    "@azure/msal-react": "^3.0.29",
     "@supabase/supabase-js": "^2.101.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",

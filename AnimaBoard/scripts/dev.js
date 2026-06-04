@@ -4,8 +4,9 @@
  */
 const { spawn } = require('child_process');
 const path = require('path');
+const { loadRootEnv, root } = require('./loadRootEnv');
 
-const root = path.join(__dirname, '..');
+loadRootEnv();
 
 const server = spawn('node', ['server/index.js'], {
   cwd: root,

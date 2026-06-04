@@ -3,6 +3,7 @@
  * Sur Vercel : charger secretEnv pour déchiffrer BOOND_PASSWORD_ENC avant d'utiliser sync.
  */
 const path = require('path');
+const { createVercelHandler } = require(path.join(__dirname, '..', '..', '..', 'lib', 'errorHandler'));
 
 function loadSecretEnv() {
   try {
@@ -13,7 +14,7 @@ function loadSecretEnv() {
   }
 }
 
-module.exports = async function handler(req, res) {
+module.exports = createVercelHandler(async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   try {
     if (req.method !== 'POST') {
@@ -50,4 +51,4 @@ module.exports = async function handler(req, res) {
       errorDetail: detail || message
     });
   }
-};
+});

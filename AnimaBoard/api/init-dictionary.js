@@ -8,6 +8,7 @@ try {
 
 const { getSupabase } = require(path.join(__dirname, '..', 'lib', 'supabaseClient'));
 const boondManagerService = require(path.join(__dirname, '..', 'server', 'services', 'boondManagerService'));
+const { createVercelHandler } = require(path.join(__dirname, '..', 'lib', 'errorHandler'));
 
 function sendJson(res, status, body) {
   res.setHeader('Content-Type', 'application/json');
@@ -15,7 +16,7 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-module.exports = async (req, res) => {
+module.exports = createVercelHandler(async (req, res) => {
   if (req.method !== 'POST' && req.method !== 'GET') {
     return sendJson(res, 405, { success: false, error: 'Method Not Allowed' });
   }
@@ -97,4 +98,4 @@ module.exports = async (req, res) => {
     console.error('❌ Erreur init-dictionary:', error);
     return sendJson(res, 500, { success: false, error: error.message });
   }
-};
+});

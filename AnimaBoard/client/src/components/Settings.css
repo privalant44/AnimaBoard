@@ -428,3 +428,59 @@
 .sync-result-message {
   flex: 1;
 }
+
+.role-management-section {
+  margin-bottom: 2rem;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.role-management-section h3 {
+  color: #2c5f5d;
+  margin-bottom: 0.5rem;
+}
+
+.role-management-hint {
+  color: #555;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.role-management-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.role-management-form input,
+.role-management-form select {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  min-width: 160px;
+}
+
+.role-management-error {
+  color: #b91c1c;
+}
+
+.role-management-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.role-management-table th,
+.role-management-table td {
+  text-align: left;
+  padding: 0.5rem;
+  border-bottom: 1px solid #eee;
+}
+
+.user-account-dropdown-role {
+  display: block;
+  font-size: 0.75rem;
+  color: #2c5f5d;
+  font-weight: 600;
+}

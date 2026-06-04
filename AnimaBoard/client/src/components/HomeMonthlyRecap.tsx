@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { apiUrl } from '../api';
+import { apiFetch } from '../api';
 import './HomeMonthlyRecap.css';
 
 interface HomeMonthlyRow {
@@ -49,7 +49,7 @@ const HomeMonthlyRecap: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(apiUrl(`/api/dashboard/home-monthly-recap?year=${selectedYear}`));
+        const response = await apiFetch(`/api/dashboard/home-monthly-recap?year=${selectedYear}`);
         const body = await response.json().catch(() => ({}));
         if (!response.ok) {
           throw new Error(body?.error || `Erreur ${response.status}`);

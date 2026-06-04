@@ -1,14 +1,20 @@
 .App {
   min-height: 100vh;
   background-color: #A6C9C8;
+  display: flex;
+  flex-direction: column;
 }
 
 .app-layout {
-  min-height: 100vh;
+  flex: 1;
+  min-height: 0;
   display: flex;
 }
 
 .app-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
   width: 270px;
   background: rgba(255, 255, 255, 0.96);
   border-right: 1px solid rgba(123, 168, 166, 0.35);
@@ -22,6 +28,59 @@
   transition: width 0.25s ease, padding 0.25s ease;
 }
 
+.app-sidebar-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  flex-shrink: 0;
+}
+
+.app-sidebar-user {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.app-sidebar-user .user-account-menu {
+  width: 100%;
+}
+
+.app-sidebar-user .user-account-trigger {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.sidebar-collapsed .app-sidebar-user .user-account-menu,
+.sidebar-collapsed .app-sidebar-user .user-account-trigger {
+  width: auto;
+  justify-content: center;
+}
+
+.sidebar-collapsed .app-sidebar-header {
+  gap: 0.65rem;
+}
+
+.sidebar-collapsed .app-sidebar-logo {
+  flex-direction: column;
+  gap: 0;
+}
+
+.sidebar-collapsed .app-sidebar-logo .logo-text {
+  display: none;
+}
+
+.sidebar-collapsed .app-sidebar-logo .logo {
+  width: 44px;
+  height: 44px;
+  font-size: 1.25rem;
+}
+
+.sidebar-collapsed .app-sidebar-logo .uploaded-logo {
+  max-height: 44px;
+  max-width: 44px;
+}
+
 .sidebar-collapsed .app-sidebar {
   width: 64px;
   padding-left: 0.5rem;
@@ -31,39 +90,6 @@
 .app-content {
   flex: 1;
   min-width: 0;
-}
-
-.sidebar-toggle-button {
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
-  padding: 0;
-  border: 1px solid #7BA8A6;
-  border-radius: 10px;
-  background: #f2f8f7;
-  color: #2C5F5D;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.sidebar-toggle-button:hover {
-  background: #e4f1ef;
-  border-color: #6e9a97;
-  box-shadow: 0 2px 8px rgba(44, 95, 93, 0.14);
-}
-
-.sidebar-toggle-icon {
-  width: 18px;
-  height: 18px;
-  fill: currentColor;
-  transition: transform 0.2s ease;
-}
-
-.sidebar-toggle-icon.is-collapsed {
-  transform: rotate(180deg);
 }
 
 .app-header {
@@ -83,33 +109,12 @@
 
 .app-sidebar-logo {
   margin-bottom: 0;
+  width: 100%;
 }
 
-.app-sidebar-logo-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.6rem;
-  margin-bottom: 1.5rem;
-}
-
-.sidebar-collapsed .logo-text,
-.sidebar-collapsed .uploaded-logo {
-  display: none;
-}
-
-.sidebar-collapsed .logo-container {
-  justify-content: center;
-}
-
-.sidebar-collapsed .app-sidebar-logo-row {
-  justify-content: center;
-}
-
-.sidebar-collapsed .logo {
-  width: 44px;
-  height: 44px;
-  font-size: 1.35rem;
+.sidebar-collapsed .user-account-dropdown {
+  right: auto;
+  left: 0;
 }
 
 .sidebar-collapsed .nav-button {
@@ -117,6 +122,18 @@
   padding-left: 0.45rem;
   padding-right: 0.45rem;
   font-size: 0.72rem;
+}
+
+.sidebar-collapsed .nav-home-row {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.sidebar-collapsed .nav-home-row .nav-button--home,
+.sidebar-collapsed .nav-home-row .nav-button--sidebar-toggle {
+  order: unset;
+  width: 100%;
+  flex: 0 0 auto;
 }
 
 .logo {
@@ -157,3 +174,4 @@
   flex: 1;
   padding: 0;
 }
+

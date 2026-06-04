@@ -6,6 +6,7 @@
   "framework": null,
   "functions": {
     "api/cron/daily-sync.js": { "maxDuration": 300 },
+    "api/dashboard/income-statement/sync.js": { "maxDuration": 60 },
     "api/**/*.js": { "maxDuration": 60 }
   },
   "crons": [

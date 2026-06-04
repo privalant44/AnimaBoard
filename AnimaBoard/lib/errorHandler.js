@@ -63,13 +63,34 @@ function asyncHandler(handler, options = {}) {
  * @param {Object} options - Options de gestion d'erreur
  * @returns {Function} Handler Vercel
  */
+function getEffectiveApiPath(req) {
+  const pathOnly = (req.url || '').split('?')[0];
+  const route = req.query?.route;
+  if (route) {
+    const sub = Array.isArray(route) ? route.filter(Boolean).join('/') : String(route);
+    const normalized = sub.replace(/,/g, '/').replace(/^\//, '');
+    if (normalized) {
+      if (pathOnly === '/api/dashboard' || pathOnly.endsWith('/api/dashboard')) {
+        return `/api/dashboard/${normalized}`;
+      }
+      if (pathOnly === '/api/auth' || pathOnly.endsWith('/api/auth')) {
+        return `/api/auth/${normalized}`;
+      }
+      if (pathOnly.includes('/api/boondmanager/sync')) {
+        return `/api/boondmanager/sync/${normalized}`;
+      }
+    }
+  }
+  return pathOnly;
+}
+
 async function enforceAuthAndAuthorize(req, res) {
   const authResult = await enforceAuth(req, res);
   if (!authResult.ok) return false;
   if (authResult.user) req.auth = authResult.user;
   if (isAuthEnabled() && req.auth) {
     await attachUserAccess(req);
-    const path = (req.url || '').split('?')[0];
+    const path = getEffectiveApiPath(req);
     const required = getRequiredPermissions(req.method, path);
     if (required) {
       const role = req.access?.role;

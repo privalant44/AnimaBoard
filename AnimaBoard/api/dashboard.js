@@ -21,11 +21,18 @@ function sendJson(res, status, body) {
 }
 
 /** Route après /api/dashboard/ (rewrites passent ?route= ou URL d'origine). */
+function normalizeRoute(route) {
+  return String(route || '')
+    .trim()
+    .replace(/\/$/, '')
+    .replace(/,/g, '/');
+}
+
 function getRoutePath(req) {
   const fromQuery = req.query.route;
-  if (Array.isArray(fromQuery)) return fromQuery.filter(Boolean).join('/');
+  if (Array.isArray(fromQuery)) return normalizeRoute(fromQuery.filter(Boolean).join('/'));
   if (typeof fromQuery === 'string' && fromQuery.trim()) {
-    return decodeURIComponent(fromQuery.trim()).replace(/\/$/, '');
+    return normalizeRoute(decodeURIComponent(fromQuery.trim()));
   }
 
   const raw = req.query.path;
@@ -64,11 +71,6 @@ module.exports = createVercelHandler(async (req, res) => {
     return sendJson(res, 200, data);
   }
 
-  if (route === 'income-statement/sync' && req.method === 'POST') {
-    const data = await dashboardService.syncPennylaneIncomeStatement();
-    return sendJson(res, 200, data);
-  }
-
   if (route === 'income-statement/init' && req.method === 'POST') {
     const body = await readJsonBody(req);
     const years = Array.isArray(body.years) && body.years.length > 0 ? body.years : [2025, 2026];
@@ -80,4 +82,4 @@ module.exports = createVercelHandler(async (req, res) => {
     success: false,
     error: `Route dashboard inconnue: ${route || '(vide)'}`,
   });
-}, { statusCode: 500, message: 'Erreur dashboard' });
+}, { statusCode: 500 });

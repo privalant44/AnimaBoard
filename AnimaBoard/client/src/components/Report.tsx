@@ -253,12 +253,16 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
           });
           const syncBody = await syncResponse.json().catch(() => ({}));
           if (!syncResponse.ok) {
-            throw new Error((syncBody && syncBody.error) || `Erreur ${syncResponse.status}`);
+            const detail =
+              (syncBody && (syncBody.errorDetail || syncBody.error)) || `Erreur ${syncResponse.status}`;
+            throw new Error(detail);
           }
         }
         const response = await apiFetch(`/api/dashboard/income-statement?year=${plYear}`);
         const body = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error((body && body.error) || `Erreur ${response.status}`);
+        if (!response.ok) {
+          throw new Error((body && (body.errorDetail || body.error)) || `Erreur ${response.status}`);
+        }
         setPlData(body as IncomeStatementResponse);
       } catch (e) {
         setPlData(null);

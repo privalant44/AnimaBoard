@@ -15,6 +15,9 @@
     }
   ],
   "rewrites": [
+    { "source": "/api/dashboard/:path*", "destination": "/api/dashboard?route=:path*" },
+    { "source": "/api/auth/:path*", "destination": "/api/auth?route=:path*" },
+    { "source": "/api/boondmanager/sync/:path*", "destination": "/api/boondmanager/sync?route=:path*" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

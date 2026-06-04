@@ -1,28 +1,34 @@
 /**
- * Auth routes for Vercel (catch-all, 1 serverless function).
+ * Auth routes for Vercel (single function + rewrites in vercel.json).
  *
  * GET  /api/auth/me
  * POST /api/auth/local/login
  */
 const path = require('path');
-const { createVercelHandler } = require(path.join(__dirname, '..', '..', 'lib', 'errorHandler'));
-const { isAuthEnabled } = require(path.join(__dirname, '..', '..', 'lib', 'microsoftAuth'));
-const { getDisplayNameFromAuth } = require(path.join(__dirname, '..', '..', 'lib', 'authUser'));
-const { resolveUserAccess } = require(path.join(__dirname, '..', '..', 'lib', 'userRoles'));
+const { createVercelHandler } = require(path.join(__dirname, '..', 'lib', 'errorHandler'));
+const { isAuthEnabled } = require(path.join(__dirname, '..', 'lib', 'microsoftAuth'));
+const { getDisplayNameFromAuth } = require(path.join(__dirname, '..', 'lib', 'authUser'));
+const { resolveUserAccess } = require(path.join(__dirname, '..', 'lib', 'userRoles'));
 const {
   authenticateLocal,
   signLocalToken,
   isLocalAuthConfigured,
-} = require(path.join(__dirname, '..', '..', 'lib', 'localAuth'));
+} = require(path.join(__dirname, '..', 'lib', 'localAuth'));
 
 function getRoutePath(req) {
+  const fromQuery = req.query.route;
+  if (Array.isArray(fromQuery)) return fromQuery.filter(Boolean).join('/');
+  if (typeof fromQuery === 'string' && fromQuery.trim()) {
+    return decodeURIComponent(fromQuery.trim()).replace(/\/$/, '');
+  }
+
   const raw = req.query.path;
   if (Array.isArray(raw)) return raw.filter(Boolean).join('/');
   if (typeof raw === 'string' && raw.trim()) return raw.trim();
 
   const url = String(req.url || '');
-  const match = url.match(/\/api\/auth\/([^?]+)/);
-  return match ? decodeURIComponent(match[1]) : '';
+  const match = url.match(/\/api\/auth\/([^?]*)/);
+  return match ? decodeURIComponent(match[1]).replace(/\/$/, '') : '';
 }
 
 function readJsonBody(req) {

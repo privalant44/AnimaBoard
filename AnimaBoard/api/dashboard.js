@@ -1,5 +1,5 @@
 /**
- * Dashboard routes for Vercel (catch-all, 1 serverless function).
+ * Dashboard routes for Vercel (single function + rewrites in vercel.json).
  *
  * GET  /api/dashboard/home-monthly-recap
  * GET  /api/dashboard/income-statement
@@ -9,25 +9,32 @@
 const path = require('path');
 
 try {
-  require(path.join(__dirname, '..', '..', 'lib', 'secretEnv'));
+  require(path.join(__dirname, '..', 'lib', 'secretEnv'));
 } catch (e) {}
 
-const dashboardService = require(path.join(__dirname, '..', '..', 'server', 'services', 'dashboardService'));
-const { createVercelHandler } = require(path.join(__dirname, '..', '..', 'lib', 'errorHandler'));
+const dashboardService = require(path.join(__dirname, '..', 'server', 'services', 'dashboardService'));
+const { createVercelHandler } = require(path.join(__dirname, '..', 'lib', 'errorHandler'));
 
 function sendJson(res, status, body) {
   res.setHeader('Content-Type', 'application/json');
   res.status(status).json(body);
 }
 
+/** Route après /api/dashboard/ (rewrites passent ?route= ou URL d'origine). */
 function getRoutePath(req) {
+  const fromQuery = req.query.route;
+  if (Array.isArray(fromQuery)) return fromQuery.filter(Boolean).join('/');
+  if (typeof fromQuery === 'string' && fromQuery.trim()) {
+    return decodeURIComponent(fromQuery.trim()).replace(/\/$/, '');
+  }
+
   const raw = req.query.path;
   if (Array.isArray(raw)) return raw.filter(Boolean).join('/');
   if (typeof raw === 'string' && raw.trim()) return raw.trim();
 
   const url = String(req.url || '');
-  const match = url.match(/\/api\/dashboard\/([^?]+)/);
-  return match ? decodeURIComponent(match[1]) : '';
+  const match = url.match(/\/api\/dashboard\/([^?]*)/);
+  return match ? decodeURIComponent(match[1]).replace(/\/$/, '') : '';
 }
 
 async function readJsonBody(req) {

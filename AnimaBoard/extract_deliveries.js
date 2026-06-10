@@ -3,7 +3,7 @@ const path = require('path');
 require('dotenv').config();
 require('./lib/secretEnv');
 const kvStorage = require('./lib/kvStorage');
-const { KV_KEYS } = require('./lib/constants');
+const { KV_KEYS, DELIVERIES_START_ID, DELIVERIES_END_ID } = require('./lib/constants');
 
 const baseURL = process.env.BOOND_API_URL || 'https://ui.boondmanager.com/api';
 
@@ -34,8 +34,8 @@ async function extractDeliveries() {
   
   const allDeliveries = [];
   const projectsMap = {}; // Pour collecter les projets uniques
-  const startId = 1;
-  const endId = 500; // Ajuster selon vos besoins
+  const startId = DELIVERIES_START_ID || 1;
+  const endId = DELIVERIES_END_ID || 500;
   let successCount = 0;
   let notFoundCount = 0;
   let errorCount = 0;
@@ -111,9 +111,13 @@ async function extractDeliveries() {
             tjm: attributes.averageDailyPriceExcludingTax !== undefined 
               ? attributes.averageDailyPriceExcludingTax 
               : null,
-            averageDailyCost: attributes.averageDailyCost !== undefined 
-              ? attributes.averageDailyCost 
-              : null,
+            averageDailyCost:
+              attributes.averageDailyCost !== undefined && attributes.averageDailyCost !== null
+                ? attributes.averageDailyCost
+                : attributes.averageDailyContractCost !== undefined &&
+                    attributes.averageDailyContractCost !== null
+                  ? attributes.averageDailyContractCost
+                  : null,
             resourceId: resourceId,
             projectId: projectId,
             orderedDays: orderedDays !== null && !isNaN(orderedDays) ? orderedDays : null

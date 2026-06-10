@@ -65,6 +65,11 @@
   font-variant-numeric: tabular-nums;
 }
 
+.home-recap-table td.home-recap-margin-pct {
+  cursor: help;
+  font-weight: 600;
+}
+
 .home-recap-table .total-row td {
   background: #f1f7f6;
   font-weight: 700;

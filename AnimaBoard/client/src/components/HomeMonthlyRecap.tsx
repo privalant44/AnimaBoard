@@ -141,6 +141,14 @@ const HomeMonthlyRecap: React.FC = () => {
 
   const formatPct = (value: number) => `${(value || 0).toFixed(1)} %`;
   const formatDays = (value: number) => `${(value || 0).toFixed(1)} j`;
+
+  const marginPctOfCa = (margin: number, ca: number) =>
+    ca > 0 ? (margin / ca) * 100 : null;
+
+  const formatMarginPctCell = (margin: number, ca: number) => {
+    const pct = marginPctOfCa(margin, ca);
+    return pct != null ? formatPct(pct) : '—';
+  };
   const financialMonthClass = (row: HomeMonthlyRow) =>
     row.taceIsClosedMonth ? 'financial-month-closed' : 'financial-month-forecast';
   const financialResultClass = (row: HomeMonthlyRow) =>
@@ -223,31 +231,43 @@ const HomeMonthlyRecap: React.FC = () => {
                 <td className="num financial-month-forecast">{formatCurrency(totals.caSousTraitance)}</td>
               </tr>
               <tr className="metric-sign-highlight">
-                <td>Marge brute Anima Néo</td>
+                <td title="Marge brute en % du CA Anima Néo — survoler une cellule pour le montant">
+                  Marge brute Anima Néo
+                </td>
                 {(data?.monthly || []).map((row) => (
                   <td
                     key={`mb-anima-${row.month}`}
-                    className={`num ${row.margeBruteAnimaNeo >= 0 ? 'pos' : 'neg'}`}
+                    className={`num home-recap-margin-pct ${row.margeBruteAnimaNeo >= 0 ? 'pos' : 'neg'}`}
+                    title={formatCurrency(row.margeBruteAnimaNeo)}
                   >
-                    {formatCurrency(row.margeBruteAnimaNeo)}
+                    {formatMarginPctCell(row.margeBruteAnimaNeo, row.caAnimaNeo)}
                   </td>
                 ))}
-                <td className={`num ${totals.margeBruteAnimaNeo >= 0 ? 'pos' : 'neg'}`}>
-                  {formatCurrency(totals.margeBruteAnimaNeo)}
+                <td
+                  className={`num home-recap-margin-pct ${totals.margeBruteAnimaNeo >= 0 ? 'pos' : 'neg'}`}
+                  title={formatCurrency(totals.margeBruteAnimaNeo)}
+                >
+                  {formatMarginPctCell(totals.margeBruteAnimaNeo, totals.caAnimaNeo)}
                 </td>
               </tr>
               <tr>
-                <td>Marge brute Sous-traitance</td>
+                <td title="Marge brute en % du CA sous-traitance — survoler une cellule pour le montant">
+                  Marge brute Sous-traitance
+                </td>
                 {(data?.monthly || []).map((row) => (
                   <td
                     key={`mb-st-${row.month}`}
-                    className={`num ${row.margeBruteSousTraitance >= 0 ? 'pos' : 'neg'}`}
+                    className={`num home-recap-margin-pct ${row.margeBruteSousTraitance >= 0 ? 'pos' : 'neg'}`}
+                    title={formatCurrency(row.margeBruteSousTraitance)}
                   >
-                    {formatCurrency(row.margeBruteSousTraitance)}
+                    {formatMarginPctCell(row.margeBruteSousTraitance, row.caSousTraitance)}
                   </td>
                 ))}
-                <td className={`num ${totals.margeBruteSousTraitance >= 0 ? 'pos' : 'neg'}`}>
-                  {formatCurrency(totals.margeBruteSousTraitance)}
+                <td
+                  className={`num home-recap-margin-pct ${totals.margeBruteSousTraitance >= 0 ? 'pos' : 'neg'}`}
+                  title={formatCurrency(totals.margeBruteSousTraitance)}
+                >
+                  {formatMarginPctCell(totals.margeBruteSousTraitance, totals.caSousTraitance)}
                 </td>
               </tr>
               <tr className="metric-sign-highlight">

@@ -732,6 +732,18 @@
   font-size: 0.88rem;
 }
 
+.pl-cr-table .pl-cr-rowhead-subdetail {
+  padding-left: 2.1rem;
+  font-weight: 500;
+  color: #5a8582;
+  font-style: italic;
+}
+
+.pl-cr-table tr.pl-cr-subdetail-row .pl-num {
+  font-size: 0.82rem;
+  color: #4a6563;
+}
+
 .pl-cr-table .pl-cr-total-cell {
   background: #f0f7f6;
 }

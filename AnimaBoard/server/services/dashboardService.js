@@ -61,6 +61,22 @@ function chargesSumByAccountPrefix(byAccount, prefix) {
   return Math.round(sum * 100) / 100;
 }
 
+/**
+ * Charges sur un compte Pennylane (ex. 6110000), y compris si agrégé sous un numéro parent (ex. 611).
+ */
+function chargesSumByLedgerAccountRef(byAccount, accountRef) {
+  if (!byAccount || typeof byAccount !== 'object') return 0;
+  const ref = normalizeLedgerAccountNumber(accountRef);
+  let sum = 0;
+  Object.keys(byAccount).forEach((acc) => {
+    const nk = normalizeLedgerAccountNumber(acc);
+    const matches = nk === ref || nk.startsWith(ref) || ref.startsWith(nk);
+    if (!matches) return;
+    sum += Number(byAccount[acc]?.charges) || 0;
+  });
+  return Math.round(sum * 100) / 100;
+}
+
 function chargesSumByAnyAccountPrefix(byAccount, prefixes) {
   if (!byAccount || typeof byAccount !== 'object') return 0;
   const ps = (Array.isArray(prefixes) ? prefixes : []).map((p) => normalizeLedgerAccountNumber(p));
@@ -88,10 +104,14 @@ function chargesSumAutresClasse6(byAccount, excludePrefixes) {
   return Math.round(sum * 100) / 100;
 }
 
+/** Compte Pennylane des achats sous-traitance (charges à déduire du CA 70612). */
+const SOUS_TRAITANCE_CHARGE_ACCOUNT = '6110000';
+
 function buildPlCategoryBreakdownFromByAccount(byAccount) {
   return {
     caAnimaNeo: produitsSumByAccountPrefix(byAccount, '706', '70612'),
     caSousTraitance: produitsSumByAccountPrefix(byAccount, '70612'),
+    sousTraitanceCharges611: chargesSumByLedgerAccountRef(byAccount, SOUS_TRAITANCE_CHARGE_ACCOUNT),
     salaires: chargesSumByAccountPrefix(byAccount, '641'),
     cotisationsSociales: chargesSumByAnyAccountPrefix(byAccount, ['645', '647', '649']),
     autresCharges: chargesSumAutresClasse6(byAccount, ['641', '645', '647', '649']),
@@ -166,6 +186,39 @@ function round2(value) {
   return Math.round((Number(value) || 0) * 100) / 100;
 }
 
+/** Coût journalier Boond (averageDailyCost) depuis deliveries. */
+function deliveryAverageDailyCost(row) {
+  if (!row) return null;
+  if (row.average_daily_cost != null && row.average_daily_cost !== '') {
+    const n = Number(row.average_daily_cost);
+    return Number.isFinite(n) ? n : null;
+  }
+  const raw = row.raw;
+  if (raw && typeof raw === 'object') {
+    for (const key of ['averageDailyCost', 'averageDailyContractCost']) {
+      if (raw[key] != null && raw[key] !== '') {
+        const n = Number(raw[key]);
+        if (Number.isFinite(n)) return n;
+      }
+    }
+  }
+  return null;
+}
+
+function deliveryTjm(row) {
+  if (!row) return null;
+  if (row.tjm != null && row.tjm !== '') {
+    const n = Number(row.tjm);
+    return Number.isFinite(n) ? n : null;
+  }
+  const raw = row.raw;
+  if (raw && typeof raw === 'object' && raw.tjm != null) {
+    const n = Number(raw.tjm);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
 function countWorkdaysInMonth(year, month, holidaySet) {
   let count = 0;
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -200,6 +253,7 @@ class DashboardService {
         salaires: 0,
         cotisationsSociales: 0,
         autresCharges: 0,
+        dontSousTraitance: 0,
       },
       counts: { months: 0, ledgerLinesClass6Or7: 0 },
       lastSyncAt: null,
@@ -469,6 +523,10 @@ class DashboardService {
         salaires: Number(row.salaires) || 0,
         cotisationsSociales: Number(row.cotisations_sociales) || 0,
         autresCharges: Number(row.autres_charges) || 0,
+        dontSousTraitance:
+          Object.keys(byAccount).length > 0
+            ? chargesSumByLedgerAccountRef(byAccount, SOUS_TRAITANCE_CHARGE_ACCOUNT)
+            : Number(row.sous_traitance_charges) || 0,
       });
     });
 
@@ -484,6 +542,7 @@ class DashboardService {
         salaires: acc.salaires + (Number(row.salaires) || 0),
         cotisationsSociales: acc.cotisationsSociales + (Number(row.cotisationsSociales) || 0),
         autresCharges: acc.autresCharges + (Number(row.autresCharges) || 0),
+        dontSousTraitance: acc.dontSousTraitance + (Number(row.dontSousTraitance) || 0),
       }),
       {
         produits: 0,
@@ -494,6 +553,7 @@ class DashboardService {
         salaires: 0,
         cotisationsSociales: 0,
         autresCharges: 0,
+        dontSousTraitance: 0,
       }
     );
 
@@ -543,6 +603,7 @@ class DashboardService {
         salaires: breakdown.salaires,
         cotisations_sociales: breakdown.cotisationsSociales,
         autres_charges: breakdown.autresCharges,
+        sous_traitance_charges: breakdown.sousTraitanceCharges611,
         method: data.method || 'ledger_entry_lines',
         filter_accounts: data.filterAccounts || '',
         synced_at: nowIso,
@@ -604,6 +665,7 @@ class DashboardService {
           salaires: breakdown.salaires,
           cotisations_sociales: breakdown.cotisationsSociales,
           autres_charges: breakdown.autresCharges,
+          sous_traitance_charges: breakdown.sousTraitanceCharges611,
           method: data.method || 'ledger_entry_lines',
           filter_accounts: data.filterAccounts || '',
           synced_at: nowIso,
@@ -642,7 +704,7 @@ class DashboardService {
     const { data: rows, error } = await supabase
       .from('pennylane_income_statement_monthly')
       .select(
-        'year, month, produits, charges, resultat, entries_count, lines_count, by_account, ca_anima_neo, ca_sous_traitance, salaires, cotisations_sociales, autres_charges, method, filter_accounts, synced_at'
+        'year, month, produits, charges, resultat, entries_count, lines_count, by_account, ca_anima_neo, ca_sous_traitance, salaires, cotisations_sociales, autres_charges, sous_traitance_charges, method, filter_accounts, synced_at'
       )
       .eq('year', y)
       .order('month', { ascending: true });
@@ -692,7 +754,7 @@ class DashboardService {
     const { data: incomeRows, error: incomeError } = await supabase
       .from('pennylane_income_statement_monthly')
       .select(
-        'month, ca_anima_neo, ca_sous_traitance, salaires, cotisations_sociales, autres_charges, resultat'
+        'month, ca_anima_neo, ca_sous_traitance, salaires, cotisations_sociales, autres_charges, resultat, by_account'
       )
       .eq('year', y)
       .order('month', { ascending: true });
@@ -704,13 +766,13 @@ class DashboardService {
       bucket.caAnimaNeo = Number(row.ca_anima_neo) || 0;
       bucket.caSousTraitance = Number(row.ca_sous_traitance) || 0;
       bucket.resultat = Number(row.resultat) || 0;
-      const salaires = Number(row.salaires) || 0;
-      const cotisations = Number(row.cotisations_sociales) || 0;
-      const autres = Number(row.autres_charges) || 0;
-      // Hypothèse actuelle: charges d'exploitation affectées au pôle Anima Néo.
-      bucket.margeBruteAnimaNeo = round2(bucket.caAnimaNeo - salaires - cotisations - autres);
-      // Hypothèse actuelle: pas de coût sous-traitance dédié stocké dans cette table.
-      bucket.margeBruteSousTraitance = round2(bucket.caSousTraitance);
+      // margeBruteAnimaNeo : voir section timesheets ci-dessous
+      const byAccount =
+        row.by_account && typeof row.by_account === 'object' && !Array.isArray(row.by_account)
+          ? row.by_account
+          : {};
+      const charges611 = chargesSumByLedgerAccountRef(byAccount, SOUS_TRAITANCE_CHARGE_ACCOUNT);
+      bucket.margeBruteSousTraitance = round2(bucket.caSousTraitance - charges611);
     });
 
     // 2) TACE constaté mensuel:
@@ -728,7 +790,7 @@ class DashboardService {
         .select('delivery_id,month,value')
         .gte('month', `${y}-01`)
         .lte('month', `${y}-12`),
-      supabase.from('deliveries').select('id,resource_id'),
+      supabase.from('deliveries').select('id, resource_id, tjm, average_daily_cost, raw'),
       supabase
         .from('french_public_holiday')
         .select('holiday_date')
@@ -783,11 +845,36 @@ class DashboardService {
     });
 
     const deliveryToResourceId = new Map();
+    const deliveryById = new Map();
     (deliveriesRes.data || []).forEach((d) => {
       const deliveryId = String(d.id || '');
       const resourceId = String(d.resource_id || '');
+      if (deliveryId) deliveryById.set(deliveryId, d);
       if (!deliveryId || !resourceId) return;
       deliveryToResourceId.set(deliveryId, resourceId);
+    });
+
+    // Marge brute Anima Néo = CA Anima Néo − Σ (total_days_prod × averageDailyCost) par prestation
+    const prodCostByMonth = new Map();
+    (timesheetsRes.data || []).forEach((r) => {
+      const month = String(r.month || '');
+      const resourceId = String(r.resource_id || '');
+      const deliveryId = String(r.delivery_id || '');
+      if (!monthMap.has(month) || !eligibleResourceIds.has(resourceId)) return;
+      if (!deliveryId || deliveryId === '0') return;
+
+      const days = Number(r.total_days_prod) || 0;
+      if (days <= 0) return;
+
+      const delivery = deliveryById.get(deliveryId);
+      const dailyCost = deliveryAverageDailyCost(delivery);
+      if (dailyCost == null) return;
+
+      prodCostByMonth.set(month, (prodCostByMonth.get(month) || 0) + days * dailyCost);
+    });
+    months.forEach((m) => {
+      const cost = prodCostByMonth.get(m.month) || 0;
+      m.margeBruteAnimaNeo = round2(m.caAnimaNeo - cost);
     });
 
     const forecastByMonthResource = new Map();
@@ -912,6 +999,10 @@ class DashboardService {
           'Mois clôturés: ressources 0/3/10 avec timesheet; mois non clôturés: ressources 0/3/10 avec forecast',
         taceFormula:
           'Mois clôturés: somme(total_days_prod) depuis timesheets_detail. Mois non clôturés: somme(value) depuis forecast_times. TACE(%) = base / ((jours_ouvres * nb_ressources_eligibles_du_mois) - conges_du_mois) * 100',
+        margeBruteAnimaNeoFormula:
+          'CA Anima Néo (Pennylane) − Σ total_days_prod × averageDailyCost prestation (timesheets_detail, ressources type 0/3/10)',
+        margeBruteSousTraitanceFormula:
+          'CA sous-traitance (compte 70612) − charges compte 6110000 (Pennylane by_account)',
       },
     };
   }

@@ -48,7 +48,7 @@ async function getTable(key, defaultValue = null) {
         // Lire depuis la table 'deliveries' - sélection des colonnes nécessaires uniquement
         const { data: rows, error } = await supabase
           .from('deliveries')
-          .select('id, reference, title, tjm, start_date, end_date, project_id, resource_id, state, ordered_days, synced_at')
+          .select('id, reference, title, tjm, average_daily_cost, start_date, end_date, project_id, resource_id, state, ordered_days, synced_at')
           .order('id');
         if (error) throw error;
         if (!rows || rows.length === 0) return defaultValue;
@@ -59,6 +59,7 @@ async function getTable(key, defaultValue = null) {
           reference: r.reference,
           title: r.title,
           tjm: r.tjm,
+          averageDailyCost: r.average_daily_cost,
           startDate: r.start_date,
           endDate: r.end_date,
           projectId: r.project_id,
@@ -257,6 +258,12 @@ async function setTable(key, value) {
           reference: d.reference || null,
           title: d.title || '',
           tjm: d.tjm != null ? Number(d.tjm) : null,
+          average_daily_cost:
+            d.averageDailyCost != null
+              ? Number(d.averageDailyCost)
+              : d.average_daily_cost != null
+                ? Number(d.average_daily_cost)
+                : null,
           start_date: d.startDate || null,
           end_date: d.endDate || null,
           project_id: d.projectId ? Number(d.projectId) : null,

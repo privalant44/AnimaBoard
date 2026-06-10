@@ -49,6 +49,7 @@ interface IncomeStatementRow {
   salaires: number;
   cotisationsSociales: number;
   autresCharges: number;
+  dontSousTraitance: number;
 }
 
 interface IncomeStatementResponse {
@@ -851,6 +852,23 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
                             ))}
                             <td className="report-table-cell pl-num pl-cr-total-cell">
                               <strong>{formatCurrencyPl(plData.totals.autresCharges)}</strong>
+                            </td>
+                          </tr>
+                          <tr className="pl-cr-detail-row pl-cr-subdetail-row">
+                            <th
+                              scope="row"
+                              className="report-table-cell pl-cr-rowhead pl-cr-rowhead-detail pl-cr-rowhead-subdetail"
+                              title="Dont sous-traitance (compte 6110000)"
+                            >
+                              Dont sous-traitance
+                            </th>
+                            {plData.monthly.map((row) => (
+                              <td key={`st-${row.month}`} className="report-table-cell pl-num">
+                                {formatCurrencyPl(row.dontSousTraitance)}
+                              </td>
+                            ))}
+                            <td className="report-table-cell pl-num pl-cr-total-cell">
+                              <strong>{formatCurrencyPl(plData.totals.dontSousTraitance)}</strong>
                             </td>
                           </tr>
                         </>

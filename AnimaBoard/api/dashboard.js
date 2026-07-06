@@ -78,6 +78,11 @@ module.exports = createVercelHandler(async (req, res) => {
     return sendJson(res, 200, { ok: true, years: result });
   }
 
+  if (route === 'income-statement/sync' && req.method === 'POST') {
+    const data = await dashboardService.syncPennylaneIncomeStatement();
+    return sendJson(res, 200, data);
+  }
+
   return sendJson(res, 404, {
     success: false,
     error: `Route dashboard inconnue: ${route || '(vide)'}`,

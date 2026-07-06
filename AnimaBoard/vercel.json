@@ -6,9 +6,8 @@
   "framework": null,
   "functions": {
     "api/cron/daily-sync.js": { "maxDuration": 300 },
-    "api/batch-sync/run.js": { "maxDuration": 300 },
+    "api/batch-sync.js": { "maxDuration": 300 },
     "api/boondmanager/sync.js": { "maxDuration": 300 },
-    "api/dashboard/income-statement/sync.js": { "maxDuration": 60 },
     "api/**/*.js": { "maxDuration": 60 }
   },
   "crons": [
@@ -20,7 +19,9 @@
   "rewrites": [
     { "source": "/api/dashboard/:path*", "destination": "/api/dashboard?route=:path*" },
     { "source": "/api/auth/:path*", "destination": "/api/auth?route=:path*" },
+    { "source": "/api/batch-sync/:path*", "destination": "/api/batch-sync?route=:path*" },
     { "source": "/api/boondmanager/sync/:path*", "destination": "/api/boondmanager/sync?route=:path*" },
+    { "source": "/api/data/forecast-times", "destination": "/api/data/forecast-times.json" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import { PERMISSIONS } from '../auth/roles';
 import SettingsDataSyncPanel from './settings/SettingsDataSyncPanel';

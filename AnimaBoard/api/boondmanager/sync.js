@@ -6,7 +6,6 @@
  * POST /api/boondmanager/sync/dictionary
  * POST /api/boondmanager/sync/timesheets
  * POST /api/boondmanager/sync/absences
- * POST /api/boondmanager/sync/time-reports
  * POST /api/boondmanager/sync/besoins/snapshot
  */
 const path = require('path');
@@ -215,23 +214,6 @@ async function handleAbsencesSync(req, res) {
   });
 }
 
-async function handleTimeReportsSync(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ success: false, error: 'Method Not Allowed' });
-  }
-  const body = readJsonBody(req);
-  const extractTimeReports = require(path.join(__dirname, '..', '..', 'extract_time_reports'));
-  const result = await extractTimeReports(body.beginDate, body.endDate);
-  const count = result?.data?.length || 0;
-  res.setHeader('Content-Type', 'application/json');
-  return res.status(200).json({
-    success: true,
-    message: `Extraction réussie: ${count} enregistrements de temps`,
-    count,
-    metadata: result?.metadata,
-  });
-}
-
 async function handleBesoinsSnapshotSync(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method Not Allowed' });
@@ -306,7 +288,6 @@ const ROUTES = {
   dictionary: handleDictionarySync,
   timesheets: handleTimesheetsSync,
   absences: handleAbsencesSync,
-  'time-reports': handleTimeReportsSync,
   'besoins/snapshot': handleBesoinsSnapshotSync,
 };
 

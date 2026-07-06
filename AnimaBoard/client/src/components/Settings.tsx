@@ -31,13 +31,12 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
   const [dataFiles, setDataFiles] = useState<{ [key: string]: any }>({});
   const [syncingResources, setSyncingResources] = useState(false);
   const [syncingDeliveries, setSyncingDeliveries] = useState(false);
-  const [syncingTimeReports, setSyncingTimeReports] = useState(false);
   const [syncingTimesheets, setSyncingTimesheets] = useState(false);
   const [syncingAbsences, setSyncingAbsences] = useState(false);
   const [syncingBesoins, setSyncingBesoins] = useState(false);
   const [syncingDictionary, setSyncingDictionary] = useState(false);
   const [resettingTimesheets, setResettingTimesheets] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ type: 'resources' | 'deliveries' | 'time-reports' | 'timesheets' | 'timesheets-reset' | 'absences' | 'dictionary' | 'besoins' | null; success: boolean; message: string } | null>(null);
+  const [syncResult, setSyncResult] = useState<{ type: 'resources' | 'deliveries' | 'timesheets' | 'timesheets-reset' | 'absences' | 'dictionary' | 'besoins' | null; success: boolean; message: string } | null>(null);
 
   /** Période des 3 derniers mois (YYYY-MM). */
   const getLast3MonthsRange = () => {
@@ -311,56 +310,6 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     }
   };
 
-  const syncTimeReports = async () => {
-    setSyncingTimeReports(true);
-    setSyncResult(null);
-    
-    try {
-      // Utiliser l'année en cours par défaut
-      const currentYear = new Date().getFullYear();
-      const beginDate = `${currentYear}-01-01`;
-      const endDate = `${currentYear}-12-31`;
-      
-      const response = await apiFetch('/api/boondmanager/sync/time-reports', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          beginDate,
-          endDate
-        })
-      });
-      
-      const data = await response.json();
-      
-      if (response.ok && data.success) {
-        setSyncResult({
-          type: 'time-reports',
-          success: true,
-          message: data.message || 'Extraction des temps saisis réussie'
-        });
-        dispatchDataRefresh();
-      } else {
-        const msg = (data.error || data.message) || 'Erreur lors de l\'extraction des temps saisis';
-        const detail = data.errorDetail ? ` — ${data.errorDetail}` : '';
-        setSyncResult({
-          type: 'time-reports',
-          success: false,
-          message: msg + detail
-        });
-      }
-    } catch (err) {
-      setSyncResult({
-        type: 'time-reports',
-        success: false,
-        message: err instanceof Error ? err.message : 'Erreur inconnue'
-      });
-    } finally {
-      setSyncingTimeReports(false);
-    }
-  };
-
   const syncTimesheets = async () => {
     setSyncingTimesheets(true);
     setSyncResult(null);
@@ -529,7 +478,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           <button 
             className="sync-button sync-resources-button" 
             onClick={syncResources}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary}
+            disabled={syncingResources || syncingDeliveries || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary}
           >
             {syncingResources ? '⏳ Actualisation en cours...' : '🔄 Actualiser les ressources'}
           </button>
@@ -537,7 +486,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           <button
             className="sync-button sync-dictionary-button"
             onClick={syncDictionary}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary}
+            disabled={syncingResources || syncingDeliveries || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary}
           >
             {syncingDictionary ? '⏳ Synchronisation en cours...' : '📖 Synchroniser le dictionnaire (libellés type / statut)'}
           </button>
@@ -545,23 +494,15 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           <button 
             className="sync-button sync-deliveries-button" 
             onClick={syncDeliveries}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary}
+            disabled={syncingResources || syncingDeliveries || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary}
           >
             {syncingDeliveries ? '⏳ Extraction en cours...' : '📋 Actualiser les prestations (extract)'}
           </button>
           
           <button 
-            className="sync-button sync-time-reports-button" 
-            onClick={syncTimeReports}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary}
-          >
-            {syncingTimeReports ? '⏳ Extraction en cours...' : '⏰ Actualiser les temps saisis'}
-          </button>
-          
-          <button 
             className="sync-button sync-timesheets-button" 
             onClick={syncTimesheets}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary || resettingTimesheets}
+            disabled={syncingResources || syncingDeliveries || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary || resettingTimesheets}
           >
             {syncingTimesheets ? '⏳ Synchronisation en cours...' : '📅 Synchroniser les feuilles de temps (prod + interne, 3 derniers mois)'}
           </button>
@@ -569,7 +510,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           <button
             className="sync-button sync-absences-button"
             onClick={syncAbsences}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary || resettingTimesheets}
+            disabled={syncingResources || syncingDeliveries || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary || resettingTimesheets}
           >
             {syncingAbsences ? '⏳ Synchronisation en cours...' : '🏖️ Synchroniser les absences (N-1 et année en cours)'}
           </button>
@@ -577,7 +518,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           <button
             className="sync-button sync-besoins-button"
             onClick={syncBesoinsRecentMonths}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary || resettingTimesheets}
+            disabled={syncingResources || syncingDeliveries || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary || resettingTimesheets}
           >
             {syncingBesoins ? '⏳ Actualisation en cours...' : '🎯 Actualiser les besoins/opportunités (2 derniers mois)'}
           </button>
@@ -585,7 +526,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           <button 
             className="sync-button sync-timesheets-reset-button" 
             onClick={resetTimesheets}
-            disabled={syncingResources || syncingDeliveries || syncingTimeReports || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary || resettingTimesheets}
+            disabled={syncingResources || syncingDeliveries || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary || resettingTimesheets}
           >
             {resettingTimesheets ? '⏳ Réinitialisation...' : '🗑️ Réinitialiser les feuilles de temps (année n-1 et n)'}
           </button>

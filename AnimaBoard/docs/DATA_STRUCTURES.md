@@ -211,33 +211,7 @@ C’est la structure lue par Forecast et Report pour afficher les temps saisis p
 
 ---
 
-## 8. Temps missions (extraction CSV) — clé `temps_missions`
-
-**Écrit par :** `extract_time_reports.js` (extraction temps saisis via API BoondManager en CSV).
-
-**Type :** objet avec `metadata` et `data`.
-
-**Structure :**
-
-```json
-{
-  "metadata": {
-    "extractedAt": "ISO8601",
-    "method": "POST",
-    "endpoint": "...",
-    "period": { "beginDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD" },
-    "totalRecords": 0,
-    "columns": ["Ressource", "Projet", "Prestation", "Mois", "Nombre de jours"]
-  },
-  "data": [
-    { "Ressource": "...", "Projet": "...", "Prestation": "...", "Mois": "...", "Nombre de jours": "..." }
-  ]
-}
-```
-
----
-
-## 9. Métadonnées ressources — clé `resources_metadata`
+## 8. Métadonnées ressources — clé `resources_metadata`
 
 **Écrit par :**  
 - API `POST /api/data/resources-metadata` (server/routes/data.js) avec le body comme valeur.
@@ -257,7 +231,6 @@ C’est la structure lue par Forecast et Report pour afficher les temps saisis p
 | `timesheets_aggregate` | Agrégat par ressource / mois / prestation (totalDays, totalHours) |
 | `forecast_times` | Temps prévisionnels par prestation et mois |
 | `forecast_report` | Rapport synthèse : tableau `[{ nom, prenom, reference, titre, dateDebut, dateFin, tjm }]` |
-| `temps_missions` | Extraction CSV temps : `{ metadata, data: [{ Ressource, Projet, Prestation, Mois, Nombre de jours }] }` |
 | `resources_metadata` | Métadonnées libres (optionnel) |
 
 Ces structures sont celles attendues par les routes `/api/data/*` et par les écrans Forecast, Report et Paramètres.

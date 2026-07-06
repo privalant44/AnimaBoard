@@ -1052,36 +1052,6 @@ router.post('/sync/deliveries', async (req, res) => {
   }
 });
 
-// Extraire les temps saisis (time reports)
-router.post('/sync/time-reports', async (req, res) => {
-  try {
-    console.log('🔄 Extraction des temps saisis demandée...');
-    const { beginDate, endDate } = req.body;
-    
-    const extractTimeReports = require('../../extract_time_reports');
-    
-    const result = await extractTimeReports(beginDate, endDate);
-    
-    const count = result?.data?.length || 0;
-    console.log(`✅ Extraction des temps saisis terminée: ${count} enregistrements`);
-    
-    res.json({
-      success: true,
-      message: `Extraction réussie: ${count} enregistrements de temps extraits`,
-      count: count,
-      metadata: result?.metadata
-    });
-  } catch (error) {
-    console.error('❌ Erreur lors de l\'extraction des temps saisis:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erreur lors de l\'extraction des temps saisis',
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
-  }
-});
-
 // Synchroniser les feuilles de temps (timesheets)
 router.post('/sync/timesheets', async (req, res) => {
   try {

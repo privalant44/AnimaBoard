@@ -169,21 +169,6 @@ router.post('/forecast-times', async (req, res) => {
   }
 });
 
-// --- Temps missions (KV)
-router.get('/temps_missions.json', async (req, res) => {
-  try {
-    const stored = await kvStorage.get(KV_KEYS.TEMPS_MISSIONS, null);
-    if (!stored) {
-      return res.status(404).json({ success: false, error: 'Données temps_missions non disponibles. Lancez l\'extraction depuis Paramètres.', file: 'temps_missions' });
-    }
-    const data = stored.data || stored;
-    const count = Array.isArray(data) ? data.length : (data.data ? data.data.length : 0);
-    return okData(res, data, 'temps_missions', count);
-  } catch (error) {
-    return res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 // --- Timesheets data (KV)
 router.get('/timesheets_data.json', async (req, res) => {
   try {

@@ -14,7 +14,6 @@ const TABLE_KEYS = new Set([
   KV_KEYS.TIMESHEETS_AGGREGATE,
   KV_KEYS.FORECAST_TIMES,
   KV_KEYS.FORECAST_REPORT,
-  KV_KEYS.TEMPS_MISSIONS,
   KV_KEYS.RESOURCES_METADATA,
   KV_KEYS.ABSENCE_MONTHLY
 ]);
@@ -175,20 +174,6 @@ async function getTable(key, defaultValue = null) {
           dateFin: r.date_fin,
           tjm: r.tjm
         }));
-      }
-      case KV_KEYS.TEMPS_MISSIONS: {
-        const { data: meta } = await supabase.from('app_metadata').select('value').eq('key', 'temps_missions').maybeSingle();
-        const { data: rows, error } = await supabase.from('temps_missions').select('ressource, projet, prestation, mois, nombre_de_jours').order('id');
-        if (error) throw error;
-        const metadata = (meta && meta.value) ? meta.value : {};
-        const data = (rows || []).map((r) => ({
-          Ressource: r.ressource,
-          Projet: r.projet,
-          Prestation: r.prestation,
-          Mois: r.mois,
-          'Nombre de jours': r.nombre_de_jours
-        }));
-        return { metadata, data };
       }
       case KV_KEYS.RESOURCES_METADATA: {
         const { data: row, error } = await supabase.from('resources_metadata').select('value').eq('key', 'resources_metadata').maybeSingle();
@@ -395,23 +380,6 @@ async function setTable(key, value) {
         }
         break;
       }
-      case KV_KEYS.TEMPS_MISSIONS: {
-        const metadata = (value && value.metadata) ? value.metadata : {};
-        await supabase.from('app_metadata').upsert({ key: 'temps_missions', value: metadata, updated_at: new Date().toISOString() }, { onConflict: 'key' });
-        const list = (value && value.data && Array.isArray(value.data)) ? value.data : [];
-        await supabase.from('temps_missions').delete().neq('id', 0);
-        if (list.length > 0) {
-          const rows = list.map((r) => ({
-            ressource: r.Ressource ?? r.ressource,
-            projet: r.Projet ?? r.projet,
-            prestation: r.Prestation ?? r.prestation,
-            mois: r.Mois ?? r.mois,
-            nombre_de_jours: r['Nombre de jours'] ?? r.nombre_de_jours
-          }));
-          await supabase.from('temps_missions').insert(rows);
-        }
-        break;
-      }
       case KV_KEYS.RESOURCES_METADATA: {
         const val = value && typeof value === 'object' ? value : {};
         await supabase.from('resources_metadata').upsert({ key: 'resources_metadata', value: val, updated_at: new Date().toISOString() }, { onConflict: 'key' });
@@ -478,10 +446,6 @@ async function delTable(key) {
         break;
       case KV_KEYS.FORECAST_REPORT:
         await supabase.from('forecast_report').delete().neq('id', 0);
-        break;
-      case KV_KEYS.TEMPS_MISSIONS:
-        await supabase.from('app_metadata').delete().eq('key', 'temps_missions');
-        await supabase.from('temps_missions').delete().neq('id', 0);
         break;
       case KV_KEYS.RESOURCES_METADATA:
         await supabase.from('resources_metadata').delete().eq('key', 'resources_metadata');

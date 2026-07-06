@@ -27,11 +27,7 @@ function getRequiredPermissions(method, pathname) {
     return [PERMISSIONS.DATA_FINANCE];
   }
 
-  if (
-    path.includes('timesheets') ||
-    path.includes('absence-monthly') ||
-    path.includes('temps_missions')
-  ) {
+  if (path.includes('timesheets') || path.includes('absence-monthly')) {
     return [PERMISSIONS.DATA_TIMESHEETS];
   }
 

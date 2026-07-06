@@ -34,7 +34,6 @@ module.exports = {
     PROJECTS: 'projects',
     RESOURCES: 'resources',
     FORECAST_REPORT: 'forecast_report',
-    TEMPS_MISSIONS: 'temps_missions',
     /** Agrégat absences Boond : { metadata, data: [{ resourceId, month, days }] } */
     ABSENCE_MONTHLY: 'absence_monthly'
   }

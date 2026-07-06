@@ -20,7 +20,6 @@
     "install-all": "npm install && cd client && npm install",
     "sync": "node sync.js",
     "report": "node report.js",
-    "extract-times": "node extract_time_reports.js",
     "sync-timesheets": "node sync_timesheets.js",
     "sync-absences": "node sync_absences.js",
     "sync-timesheets-2years": "node scripts/sync-timesheets-2years.js",

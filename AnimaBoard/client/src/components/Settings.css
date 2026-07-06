@@ -374,14 +374,6 @@
   background: #4a6270;
 }
 
-.sync-time-reports-button {
-  background: #8B6F47;
-}
-
-.sync-time-reports-button:hover:not(:disabled) {
-  background: #6d5636;
-}
-
 .sync-timesheets-button {
   background: #6B8E23;
 }

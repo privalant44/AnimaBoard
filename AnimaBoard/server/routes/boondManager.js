@@ -880,100 +880,27 @@ router.get('/dictionary', async (req, res) => {
 router.post('/sync/dictionary', async (req, res) => {
   try {
     console.log('🔄 Synchronisation du dictionnaire demandée...');
-    const { getSupabase } = require('../../lib/supabaseClient');
-    const supabase = getSupabase();
-    if (!supabase) {
-      return res.status(500).json({ success: false, error: 'Supabase non configuré (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).' });
-    }
+    const { syncDictionaryFromBoond } = require('../../lib/dictionarySync');
+    const result = await syncDictionaryFromBoond();
 
-    // Un seul appel dictionnaire pour éviter les allers-retours API Boond.
-    const dictionary = await boondManagerService.getDictionary();
-    const dict = dictionary?.data?.data || dictionary?.data || dictionary || {};
-    const typeOfList = dict?.setting?.typeOf?.resource || [];
-    // Pour les opportunités, Boond expose les types via typeOf.project sur cette instance.
-    const opportunityTypeOfList = dict?.setting?.typeOf?.project || dict?.setting?.typeOf?.opportunity || [];
-    const resourceStateList = dict?.setting?.state?.resource || [];
-    const opportunityStateList = dict?.setting?.state?.opportunity || [];
-
-    const rows = [];
-    (Array.isArray(typeOfList) ? typeOfList : []).forEach((item) => {
-      if (item?.id !== undefined && item?.id !== null && item?.value !== undefined) {
-        rows.push({
-          table_name: 'resources',
-          column_name: 'type_of',
-          code: String(item.id),
-          label: String(item.value)
-        });
-      }
-    });
-    (Array.isArray(resourceStateList) ? resourceStateList : []).forEach((item) => {
-      if (item?.id !== undefined && item?.id !== null && item?.value !== undefined) {
-        rows.push({
-          table_name: 'resources',
-          column_name: 'state',
-          code: String(item.id),
-          label: String(item.value)
-        });
-      }
-    });
-    (Array.isArray(opportunityTypeOfList) ? opportunityTypeOfList : []).forEach((item) => {
-      if (item?.id !== undefined && item?.id !== null && item?.value !== undefined) {
-        rows.push({
-          table_name: 'opportunities',
-          column_name: 'type_of',
-          code: String(item.id),
-          label: String(item.value)
-        });
-      }
-    });
-    (Array.isArray(opportunityStateList) ? opportunityStateList : []).forEach((item) => {
-      if (item?.id !== undefined && item?.id !== null && item?.value !== undefined) {
-        rows.push({
-          table_name: 'opportunities',
-          column_name: 'state',
-          code: String(item.id),
-          label: String(item.value)
-        });
-      }
-    });
-
-    // Dédoublonnage défensif (même code mappé sous forme numérique et chaîne par le service).
-    const seen = new Set();
-    const uniqueRows = rows.filter((r) => {
-      const key = `${r.table_name}|${r.column_name}|${r.code}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-
-    for (let i = 0; i < uniqueRows.length; i += 100) {
-      const chunk = uniqueRows.slice(i, i + 100);
-      const { error } = await supabase
-        .from('dictionnaire')
-        .upsert(chunk, { onConflict: 'table_name,column_name,code' });
-      if (error) throw error;
-    }
-
-    const typesCount = uniqueRows.filter((r) => r.table_name === 'resources' && r.column_name === 'type_of').length;
-    const resourceStatesCount = uniqueRows.filter((r) => r.table_name === 'resources' && r.column_name === 'state').length;
-    const opportunityTypesCount = uniqueRows.filter((r) => r.table_name === 'opportunities' && r.column_name === 'type_of').length;
-    const opportunityStatesCount = uniqueRows.filter((r) => r.table_name === 'opportunities' && r.column_name === 'state').length;
-    console.log(`✅ Dictionnaire synchronisé: ${typesCount} types ressources + ${resourceStatesCount} statuts ressources + ${opportunityTypesCount} types opportunités + ${opportunityStatesCount} statuts opportunités`);
+    console.log(
+      `✅ Dictionnaire synchronisé: ${result.resourcesTypeOf} types ressources + ${result.resourcesState} statuts ressources + ${result.opportunitiesTypeOf} types opportunités + ${result.opportunitiesState} statuts opportunités`
+    );
 
     res.json({
       success: true,
-      message: `Dictionnaire synchronisé : ${typesCount} types ressources, ${resourceStatesCount} statuts ressources, ${opportunityTypesCount} types opportunités, ${opportunityStatesCount} statuts opportunités.`,
-      count: uniqueRows.length,
+      message: `Dictionnaire synchronisé : ${result.resourcesTypeOf} types ressources, ${result.resourcesState} statuts ressources, ${result.opportunitiesTypeOf} types opportunités, ${result.opportunitiesState} statuts opportunités.`,
+      count: result.count,
       details: {
         resources: {
-          typeOf: typesCount,
-          state: resourceStatesCount
+          typeOf: result.resourcesTypeOf,
+          state: result.resourcesState,
         },
         opportunities: {
-          typeOf: opportunityTypesCount,
-          state: opportunityStatesCount
-        }
-      }
+          typeOf: result.opportunitiesTypeOf,
+          state: result.opportunitiesState,
+        },
+      },
     });
   } catch (error) {
     console.error('❌ Erreur lors de la synchronisation du dictionnaire:', error);
@@ -1046,36 +973,6 @@ router.post('/sync/deliveries', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Erreur lors de l\'extraction des prestations',
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
-  }
-});
-
-// Extraire les temps saisis (time reports)
-router.post('/sync/time-reports', async (req, res) => {
-  try {
-    console.log('🔄 Extraction des temps saisis demandée...');
-    const { beginDate, endDate } = req.body;
-    
-    const extractTimeReports = require('../../extract_time_reports');
-    
-    const result = await extractTimeReports(beginDate, endDate);
-    
-    const count = result?.data?.length || 0;
-    console.log(`✅ Extraction des temps saisis terminée: ${count} enregistrements`);
-    
-    res.json({
-      success: true,
-      message: `Extraction réussie: ${count} enregistrements de temps extraits`,
-      count: count,
-      metadata: result?.metadata
-    });
-  } catch (error) {
-    console.error('❌ Erreur lors de l\'extraction des temps saisis:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erreur lors de l\'extraction des temps saisis',
       error: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });

@@ -4,6 +4,8 @@
  */
 
 const { getSupabase } = require('./supabaseClient');
+const { parseBoondDateTime } = require('./boondDates');
+const { hasTableColumn } = require('./supabaseSchema');
 const { KV_KEYS } = require('./constants');
 
 const TABLE_KEYS = new Set([
@@ -14,7 +16,6 @@ const TABLE_KEYS = new Set([
   KV_KEYS.TIMESHEETS_AGGREGATE,
   KV_KEYS.FORECAST_TIMES,
   KV_KEYS.FORECAST_REPORT,
-  KV_KEYS.TEMPS_MISSIONS,
   KV_KEYS.RESOURCES_METADATA,
   KV_KEYS.ABSENCE_MONTHLY
 ]);
@@ -45,10 +46,13 @@ async function getTable(key, defaultValue = null) {
         }));
       }
       case KV_KEYS.DELIVERIES: {
-        // Lire depuis la table 'deliveries' - sélection des colonnes nécessaires uniquement
+        const hasBoondDates = await hasTableColumn('deliveries', 'creation_date');
+        const selectCols = hasBoondDates
+          ? 'id, reference, title, tjm, average_daily_cost, start_date, end_date, project_id, resource_id, state, ordered_days, creation_date, update_date, synced_at'
+          : 'id, reference, title, tjm, average_daily_cost, start_date, end_date, project_id, resource_id, state, ordered_days, synced_at';
         const { data: rows, error } = await supabase
           .from('deliveries')
-          .select('id, reference, title, tjm, average_daily_cost, start_date, end_date, project_id, resource_id, state, ordered_days, synced_at')
+          .select(selectCols)
           .order('id');
         if (error) throw error;
         if (!rows || rows.length === 0) return defaultValue;
@@ -60,6 +64,8 @@ async function getTable(key, defaultValue = null) {
           title: r.title,
           tjm: r.tjm,
           averageDailyCost: r.average_daily_cost,
+          creationDate: r.creation_date || null,
+          updateDate: r.update_date || null,
           startDate: r.start_date,
           endDate: r.end_date,
           projectId: r.project_id,
@@ -96,6 +102,8 @@ async function getTable(key, defaultValue = null) {
             reference: d.reference,
             title: d.title,
             tjm: d.tjm,
+            creationDate: d.creation_date || null,
+            updateDate: d.update_date || null,
             startDate: d.start_date,
             endDate: d.end_date
           });
@@ -106,6 +114,8 @@ async function getTable(key, defaultValue = null) {
           reference: r.reference,
           name: r.name,
           state: r.state,
+          creationDate: r.creation_date || null,
+          updateDate: r.update_date || null,
           startDate: r.start_date,
           endDate: r.end_date,
           clientName: r.client_name,
@@ -176,20 +186,6 @@ async function getTable(key, defaultValue = null) {
           tjm: r.tjm
         }));
       }
-      case KV_KEYS.TEMPS_MISSIONS: {
-        const { data: meta } = await supabase.from('app_metadata').select('value').eq('key', 'temps_missions').maybeSingle();
-        const { data: rows, error } = await supabase.from('temps_missions').select('ressource, projet, prestation, mois, nombre_de_jours').order('id');
-        if (error) throw error;
-        const metadata = (meta && meta.value) ? meta.value : {};
-        const data = (rows || []).map((r) => ({
-          Ressource: r.ressource,
-          Projet: r.projet,
-          Prestation: r.prestation,
-          Mois: r.mois,
-          'Nombre de jours': r.nombre_de_jours
-        }));
-        return { metadata, data };
-      }
       case KV_KEYS.RESOURCES_METADATA: {
         const { data: row, error } = await supabase.from('resources_metadata').select('value').eq('key', 'resources_metadata').maybeSingle();
         if (error) throw error;
@@ -252,29 +248,37 @@ async function setTable(key, value) {
       case KV_KEYS.DELIVERIES: {
         const list = (value && value.data) ? value.data : (Array.isArray(value) ? value : []);
         if (list.length === 0) return;
-        
-        const rows = list.map((d) => ({
-          id: Number(d.id),
-          reference: d.reference || null,
-          title: d.title || '',
-          tjm: d.tjm != null ? Number(d.tjm) : null,
-          average_daily_cost:
-            d.averageDailyCost != null
-              ? Number(d.averageDailyCost)
-              : d.average_daily_cost != null
-                ? Number(d.average_daily_cost)
-                : null,
-          start_date: d.startDate || null,
-          end_date: d.endDate || null,
-          project_id: d.projectId ? Number(d.projectId) : null,
-          resource_id: d.resourceId ? Number(d.resourceId) : null,
-          resource_first_name: d.resourceFirstName || null,
-          resource_last_name: d.resourceLastName || null,
-          state: d.state ?? null,
-          ordered_days: d.orderedDays != null ? Number(d.orderedDays) : null,
-          raw: d.raw || {},
-          synced_at: new Date().toISOString()
-        }));
+        const hasBoondDates = await hasTableColumn('deliveries', 'creation_date');
+
+        const rows = list.map((d) => {
+          const row = {
+            id: Number(d.id),
+            reference: d.reference || null,
+            title: d.title || '',
+            tjm: d.tjm != null ? Number(d.tjm) : null,
+            average_daily_cost:
+              d.averageDailyCost != null
+                ? Number(d.averageDailyCost)
+                : d.average_daily_cost != null
+                  ? Number(d.average_daily_cost)
+                  : null,
+            start_date: d.startDate || null,
+            end_date: d.endDate || null,
+            project_id: d.projectId ? Number(d.projectId) : null,
+            resource_id: d.resourceId ? Number(d.resourceId) : null,
+            resource_first_name: d.resourceFirstName || null,
+            resource_last_name: d.resourceLastName || null,
+            state: d.state ?? null,
+            ordered_days: d.orderedDays != null ? Number(d.orderedDays) : null,
+            raw: d.raw || {},
+            synced_at: new Date().toISOString(),
+          };
+          if (hasBoondDates) {
+            row.creation_date = parseBoondDateTime(d.creationDate) || null;
+            row.update_date = parseBoondDateTime(d.updateDate) || null;
+          }
+          return row;
+        });
         
         // Upsert toutes les prestations
         const chunkSize = 500;
@@ -288,22 +292,27 @@ async function setTable(key, value) {
       case KV_KEYS.PROJECTS: {
         const list = Array.isArray(value) ? value : [];
         if (list.length === 0) return;
-        
-        // Extraire les projets
+        const hasBoondDates = await hasTableColumn('projects', 'creation_date');
+
         const projectRows = list.map((p) => {
           const proj = p.project || p;
           const attrs = proj.attributes || proj;
-          return {
+          const row = {
             id: Number(p.id || proj.id),
-            reference: attrs.reference || null,
-            name: attrs.name || attrs.title || null,
-            state: attrs.state ?? null,
-            start_date: attrs.startDate || null,
-            end_date: attrs.endDate || null,
-            client_name: attrs.companyName || null,
+            reference: p.reference ?? attrs.reference ?? null,
+            name: p.name ?? attrs.name ?? attrs.title ?? null,
+            state: p.state ?? attrs.state ?? null,
+            start_date: p.startDate ?? attrs.startDate ?? null,
+            end_date: p.endDate ?? attrs.endDate ?? null,
+            client_name: p.clientName ?? attrs.companyName ?? null,
             raw: proj,
-            synced_at: new Date().toISOString()
+            synced_at: new Date().toISOString(),
           };
+          if (hasBoondDates) {
+            row.creation_date = parseBoondDateTime(p.creationDate ?? attrs.creationDate) || null;
+            row.update_date = parseBoondDateTime(p.updateDate ?? attrs.updateDate) || null;
+          }
+          return row;
         });
         
         // Upsert les projets
@@ -312,6 +321,7 @@ async function setTable(key, value) {
         
         // Extraire et sauvegarder les prestations associées aux projets
         const deliveryRows = [];
+        const hasDeliveryDates = await hasTableColumn('deliveries', 'creation_date');
         for (const p of list) {
           const projectId = Number(p.id);
           const deliveries = p.deliveries || [];
@@ -319,7 +329,7 @@ async function setTable(key, value) {
             const attrs = d.attributes || d;
             const resource = d._embedded?.resource || {};
             const resourceAttrs = resource.attributes || resource;
-            deliveryRows.push({
+            const deliveryRow = {
               id: Number(d.id || attrs.id),
               reference: attrs.reference || null,
               title: attrs.title || '',
@@ -332,8 +342,13 @@ async function setTable(key, value) {
               resource_last_name: resourceAttrs.lastName || null,
               state: attrs.state ?? null,
               raw: d,
-              synced_at: new Date().toISOString()
-            });
+              synced_at: new Date().toISOString(),
+            };
+            if (hasDeliveryDates) {
+              deliveryRow.creation_date = parseBoondDateTime(attrs.creationDate) || null;
+              deliveryRow.update_date = parseBoondDateTime(attrs.updateDate) || null;
+            }
+            deliveryRows.push(deliveryRow);
           }
         }
         
@@ -392,23 +407,6 @@ async function setTable(key, value) {
             tjm: r.tjm != null ? Number(r.tjm) : null
           }));
           await supabase.from('forecast_report').insert(rows);
-        }
-        break;
-      }
-      case KV_KEYS.TEMPS_MISSIONS: {
-        const metadata = (value && value.metadata) ? value.metadata : {};
-        await supabase.from('app_metadata').upsert({ key: 'temps_missions', value: metadata, updated_at: new Date().toISOString() }, { onConflict: 'key' });
-        const list = (value && value.data && Array.isArray(value.data)) ? value.data : [];
-        await supabase.from('temps_missions').delete().neq('id', 0);
-        if (list.length > 0) {
-          const rows = list.map((r) => ({
-            ressource: r.Ressource ?? r.ressource,
-            projet: r.Projet ?? r.projet,
-            prestation: r.Prestation ?? r.prestation,
-            mois: r.Mois ?? r.mois,
-            nombre_de_jours: r['Nombre de jours'] ?? r.nombre_de_jours
-          }));
-          await supabase.from('temps_missions').insert(rows);
         }
         break;
       }
@@ -478,10 +476,6 @@ async function delTable(key) {
         break;
       case KV_KEYS.FORECAST_REPORT:
         await supabase.from('forecast_report').delete().neq('id', 0);
-        break;
-      case KV_KEYS.TEMPS_MISSIONS:
-        await supabase.from('app_metadata').delete().eq('key', 'temps_missions');
-        await supabase.from('temps_missions').delete().neq('id', 0);
         break;
       case KV_KEYS.RESOURCES_METADATA:
         await supabase.from('resources_metadata').delete().eq('key', 'resources_metadata');

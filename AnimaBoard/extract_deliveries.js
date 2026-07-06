@@ -1,207 +1,126 @@
-const axios = require('axios');
-const path = require('path');
 require('dotenv').config();
 require('./lib/secretEnv');
 const kvStorage = require('./lib/kvStorage');
 const { KV_KEYS, DELIVERIES_START_ID, DELIVERIES_END_ID } = require('./lib/constants');
+const {
+  DEFAULT_BASE_URL,
+  getBoondAuthConfig,
+  fetchDelivery,
+} = require('./lib/deliveryBoond');
 
-const baseURL = process.env.BOOND_API_URL || 'https://ui.boondmanager.com/api';
-
-let email = process.env.BOOND_EMAIL;
-let password = process.env.BOOND_PASSWORD;
-
-console.log('🚀 Extraction des prestations via /api/deliveries/{id} (JSON)\n');
-console.log('='.repeat(80));
-if (!email || !password) {
-  console.error('❌ Erreur: BOOND_EMAIL et BOOND_PASSWORD (ou BOOND_PASSWORD_ENC) requis');
-  process.exit(1);
+function getBoondCredentials() {
+  const email = process.env.BOOND_EMAIL;
+  const password = process.env.BOOND_PASSWORD;
+  if (!email || !password) {
+    throw new Error('BOOND_EMAIL et BOOND_PASSWORD (ou BOOND_PASSWORD_ENC) requis');
+  }
+  return { email, password };
 }
-console.log(`🔑 Authentification: Basic Auth avec ${email}\n`);
 
 async function extractDeliveries() {
-  // Config avec les headers spécifiés
-  const config = {
-    auth: {
-      username: email,
-      password: password
-    },
-    headers: {
-      'Accept': 'application/hal+json',
-      'X-Requested-With': 'XMLHttpRequest'
-    },
-    timeout: 60000
-  };
-  
+  console.log('🚀 Extraction des prestations via /api/deliveries/{id} (JSON)\n');
+  console.log('='.repeat(80));
+  const { email, password } = getBoondCredentials();
+  console.log(`🔑 Authentification: Basic Auth avec ${email}\n`);
+
+  const config = getBoondAuthConfig(email, password);
+  const baseURL = DEFAULT_BASE_URL;
+
   const allDeliveries = [];
-  const projectsMap = {}; // Pour collecter les projets uniques
+  const projectsMap = {};
   const startId = DELIVERIES_START_ID || 1;
   const endId = DELIVERIES_END_ID || 500;
   let successCount = 0;
   let notFoundCount = 0;
   let errorCount = 0;
-  
+
   console.log(`📡 Début de la récupération des prestations (IDs ${startId} à ${endId})...\n`);
-  
+
   for (let id = startId; id <= endId; id++) {
-    const url = `${baseURL}/deliveries/${id}`;
-    
     try {
-      const response = await axios.get(url, config);
-      
-      // Extraire et filtrer les données
-      if (response.data && response.data.data) {
-        const deliveryData = response.data.data;
-        
-        // Vérifier que c'est bien du type "delivery"
-        if (deliveryData.type === 'delivery') {
-          const attributes = deliveryData.attributes || {};
-          const relationships = deliveryData.relationships || {};
-          
-          // Extraire l'ID de la ressource depuis les relations
-          let resourceId = null;
-          if (relationships.dependsOn && relationships.dependsOn.data) {
-            resourceId = relationships.dependsOn.data.id;
-          }
-          
-          // Extraire l'ID du projet depuis les relations
-          let projectId = null;
-          if (relationships.project && relationships.project.data) {
-            projectId = relationships.project.data.id;
-            
-            // Chercher les infos du projet dans included
-            const included = response.data.included || [];
-            const projectData = included.find(item => item.type === 'project' && String(item.id) === String(projectId));
-            if (projectData && !projectsMap[projectId]) {
-              const projAttrs = projectData.attributes || {};
-              projectsMap[projectId] = {
-                id: projectId,
-                reference: projAttrs.reference || null,
-                name: projAttrs.name || projAttrs.title || null,
-                state: projAttrs.state ?? null,
-                startDate: projAttrs.startDate || null,
-                endDate: projAttrs.endDate || null,
-                clientName: projAttrs.companyName || null,
-                raw: projectData
-              };
-            }
-          }
-          
-          // Extraire les jours commandés - utiliser numberOfDaysInvoicedOrQuantity
-          let orderedDays = null;
-          if (attributes.numberOfDaysInvoicedOrQuantity !== undefined && attributes.numberOfDaysInvoicedOrQuantity !== null) {
-            orderedDays = parseFloat(attributes.numberOfDaysInvoicedOrQuantity);
-          } else if (attributes.orderedDays !== undefined && attributes.orderedDays !== null) {
-            orderedDays = parseFloat(attributes.orderedDays);
-          } else if (attributes.orderedQuantity !== undefined && attributes.orderedQuantity !== null) {
-            orderedDays = parseFloat(attributes.orderedQuantity);
-          } else if (attributes.quantity !== undefined && attributes.quantity !== null) {
-            orderedDays = parseFloat(attributes.quantity);
-          } else if (attributes.duration !== undefined && attributes.duration !== null) {
-            orderedDays = parseFloat(attributes.duration);
-          }
-          
-          // Créer l'objet avec seulement les champs demandés
-          const filteredDelivery = {
-            id: deliveryData.id,
-            type: deliveryData.type,
-            startDate: attributes.startDate || null,
-            endDate: attributes.endDate || null,
-            title: attributes.title || null,
-            state: attributes.state !== undefined ? attributes.state : null,
-            tjm: attributes.averageDailyPriceExcludingTax !== undefined 
-              ? attributes.averageDailyPriceExcludingTax 
-              : null,
-            averageDailyCost:
-              attributes.averageDailyCost !== undefined && attributes.averageDailyCost !== null
-                ? attributes.averageDailyCost
-                : attributes.averageDailyContractCost !== undefined &&
-                    attributes.averageDailyContractCost !== null
-                  ? attributes.averageDailyContractCost
-                  : null,
-            resourceId: resourceId,
-            projectId: projectId,
-            orderedDays: orderedDays !== null && !isNaN(orderedDays) ? orderedDays : null
-          };
-          
-          allDeliveries.push(filteredDelivery);
-          successCount++;
-          
-          // Afficher un message tous les 50 IDs
-          if (successCount % 50 === 0) {
-            console.log(`   ✅ ${successCount} prestations récupérées (ID ${id})...`);
-          }
+      const result = await fetchDelivery(config, baseURL, id);
+
+      if (result.status === 404) {
+        notFoundCount++;
+      } else if (result.delivery) {
+        allDeliveries.push(result.delivery);
+        successCount++;
+        if (result.project && !projectsMap[result.project.id]) {
+          projectsMap[result.project.id] = result.project;
+        }
+
+        if (successCount % 50 === 0) {
+          console.log(`   ✅ ${successCount} prestations récupérées (ID ${id})...`);
         }
       }
-      
-      // Petite pause pour éviter de surcharger l'API
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
     } catch (error) {
-      if (error.response && error.response.status === 404) {
-        notFoundCount++;
-        // Ne pas afficher les 404 pour ne pas surcharger la console
-      } else {
-        errorCount++;
-        if (errorCount <= 5) { // Afficher seulement les 5 premières erreurs
-          console.error(`   ❌ Erreur pour ID ${id}: ${error.response?.status || error.message}`);
-        }
+      errorCount++;
+      if (errorCount <= 5) {
+        console.error(`   ❌ Erreur pour ID ${id}: ${error.response?.status || error.message}`);
       }
     }
   }
-  
+
   console.log(`\n📊 Récupération terminée !`);
   console.log(`   - Prestations trouvées: ${successCount}`);
   console.log(`   - IDs non trouvés (404): ${notFoundCount}`);
   console.log(`   - Erreurs: ${errorCount}`);
   console.log(`   - Total dans le tableau: ${allDeliveries.length}`);
-  
-  // Préparer les données pour la sauvegarde
+
   const outputData = {
     metadata: {
       extractedAt: new Date().toISOString(),
       method: 'GET',
       baseURL: `${baseURL}/deliveries/{id}`,
       idRange: `${startId}-${endId}`,
-      successCount: successCount,
-      notFoundCount: notFoundCount,
-      errorCount: errorCount,
-      totalRecords: allDeliveries.length
+      successCount,
+      notFoundCount,
+      errorCount,
+      totalRecords: allDeliveries.length,
     },
-    data: allDeliveries
+    data: allDeliveries,
   };
-  
+
   try {
     console.log(`\n💾 Sauvegarde en KV...`);
-    
-    // Sauvegarder les prestations
+
     await kvStorage.set(KV_KEYS.DELIVERIES, outputData);
     console.log(`✅ Données prestations sauvegardées.`);
-    
-    // Sauvegarder les projets
+
     const projectsList = Object.values(projectsMap);
     if (projectsList.length > 0) {
-      // Construire le format attendu par setTable(PROJECTS)
-      const projectsForSave = projectsList.map(p => ({
+      const projectsForSave = projectsList.map((p) => ({
         id: p.id,
         project: p.raw || p,
-        deliveries: [] // Les prestations sont déjà sauvegardées séparément
+        deliveries: [],
+        creationDate: p.creationDate,
+        updateDate: p.updateDate,
+        reference: p.reference,
+        name: p.name,
+        state: p.state,
+        startDate: p.startDate,
+        endDate: p.endDate,
+        clientName: p.clientName,
       }));
       await kvStorage.set(KV_KEYS.PROJECTS, projectsForSave);
       console.log(`✅ ${projectsList.length} projets sauvegardés.`);
     }
-    
+
     console.log(`\n📊 Statistiques:`);
     console.log(`   - Total prestations: ${allDeliveries.length}`);
     console.log(`   - Total projets: ${projectsList.length}`);
     console.log(`   - Taille du fichier JSON: ${(JSON.stringify(outputData).length / 1024).toFixed(2)} KB`);
-    
-    // Afficher un aperçu du premier enregistrement
+
     if (allDeliveries.length > 0) {
       console.log(`\n📋 Aperçu du premier enregistrement:`);
       const firstRecord = allDeliveries[0];
       console.log(`   - ID: ${firstRecord.id || 'N/A'}`);
       console.log(`   - Type: ${firstRecord.type || 'N/A'}`);
       console.log(`   - Titre: ${firstRecord.title || 'N/A'}`);
+      console.log(`   - Création Boond: ${firstRecord.creationDate || 'N/A'}`);
+      console.log(`   - Mise à jour Boond: ${firstRecord.updateDate || 'N/A'}`);
       console.log(`   - Date début: ${firstRecord.startDate || 'N/A'}`);
       console.log(`   - Date fin: ${firstRecord.endDate || 'N/A'}`);
       console.log(`   - State: ${firstRecord.state !== null ? firstRecord.state : 'N/A'}`);
@@ -211,26 +130,23 @@ async function extractDeliveries() {
       console.log(`   - Project ID: ${firstRecord.projectId || 'N/A'}`);
       console.log(`   - Jours commandés: ${firstRecord.orderedDays !== null ? firstRecord.orderedDays : 'N/A'}`);
     }
-    
+
     return outputData;
-    
   } catch (error) {
     console.error(`\n❌ Erreur lors de l'écriture du fichier: ${error.message}`);
     throw error;
   }
 }
 
-// Exporter la fonction pour pouvoir l'utiliser depuis d'autres modules
 module.exports = extractDeliveries;
 
-// Exécuter l'extraction si le script est appelé directement
 if (require.main === module) {
   extractDeliveries()
     .then(() => {
       console.log('\n✅ Extraction terminée avec succès !');
       process.exit(0);
     })
-    .catch(error => {
+    .catch((error) => {
       console.error('\n❌ Erreur fatale:', error.message);
       if (error.stack) {
         console.error('Stack:', error.stack);

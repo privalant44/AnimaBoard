@@ -34,6 +34,7 @@ try {
   const dashboardRoutes = require('./routes/dashboard');
   const testRoutes = require('./routes/test');
   const dataRoutes = require('./routes/data');
+  const batchSyncRoutes = require('./routes/batchSync');
   const kvStorage = require('../lib/kvStorage');
   const { KV_KEYS } = require('../lib/constants');
 
@@ -42,6 +43,7 @@ try {
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/test', testRoutes);
   app.use('/api/data', dataRoutes);
+  app.use('/api/batch-sync', batchSyncRoutes);
 
   // POST /api/timesheets-reset : vide KV puis recharge périodes n-1 et n
   app.post('/api/timesheets-reset', async (req, res) => {

@@ -27,16 +27,23 @@ function getRequiredPermissions(method, pathname) {
     return [PERMISSIONS.DATA_FINANCE];
   }
 
-  if (
-    path.includes('timesheets') ||
-    path.includes('absence-monthly') ||
-    path.includes('temps_missions')
-  ) {
+  if (path.includes('timesheets') || path.includes('absence-monthly')) {
     return [PERMISSIONS.DATA_TIMESHEETS];
+  }
+
+  if (path === '/api/batch-sync/logs' || path.endsWith('/batch-sync/logs')) {
+    return [PERMISSIONS.TAB_SETTINGS];
+  }
+
+  if (path === '/api/batch-sync/status' || path.endsWith('/batch-sync/status') || path === '/status') {
+    return [PERMISSIONS.TAB_HOME];
   }
 
   if (m === 'POST' || m === 'PUT' || m === 'PATCH' || m === 'DELETE') {
     if (path.includes('/sync') || path === '/api/timesheets-reset' || path.includes('timesheets-reset')) {
+      return [PERMISSIONS.OPS_SYNC];
+    }
+    if (path === '/api/batch-sync/run' || path.endsWith('/batch-sync/run')) {
       return [PERMISSIONS.OPS_SYNC];
     }
     if (path.includes('/api/init-dictionary')) return [PERMISSIONS.OPS_SYNC];

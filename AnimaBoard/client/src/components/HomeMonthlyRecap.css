@@ -166,3 +166,27 @@
 .home-recap-state--error {
   color: #aa2424;
 }
+
+.home-batch-status {
+  position: fixed;
+  bottom: 1rem;
+  left: calc(var(--app-sidebar-width, 270px) + 1rem);
+  z-index: 100;
+  pointer-events: none;
+}
+
+.home-batch-status-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: block;
+  box-shadow: 0 0 0 2px #fff, 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+.home-batch-status-dot--ok {
+  background: #10b981;
+}
+
+.home-batch-status-dot--ko {
+  background: #ef4444;
+}

@@ -190,6 +190,8 @@ function whatExtractDeliveriesKeeps(attributes, relationships) {
   return {
     id: '(from data.id)',
     type: 'delivery',
+    creationDate: attributes.creationDate ?? null,
+    updateDate: attributes.updateDate ?? null,
     startDate: attributes.startDate ?? null,
     endDate: attributes.endDate ?? null,
     title: attributes.title ?? null,

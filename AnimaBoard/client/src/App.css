@@ -9,6 +9,11 @@
   flex: 1;
   min-height: 0;
   display: flex;
+  --app-sidebar-width: 270px;
+}
+
+.sidebar-collapsed {
+  --app-sidebar-width: 64px;
 }
 
 .app-sidebar {
@@ -173,5 +178,7 @@
 .app-main {
   flex: 1;
   padding: 0;
+  position: relative;
+  min-height: 100%;
 }
 

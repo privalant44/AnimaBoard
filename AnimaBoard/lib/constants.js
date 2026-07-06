@@ -16,6 +16,10 @@ module.exports = {
   DELIVERIES_END_ID: 500,
   DELIVERIES_BATCH_SIZE: 50,
 
+  // Projects
+  PROJECTS_START_ID: 1,
+  PROJECTS_END_ID: 150,
+
   // Timesheets (max élevé pour récupérer toutes les feuilles 2025-2026)
   TIMESHEETS_MAX_RESULTS: 5000,
   TIMESHEETS_MAX_FOR_VERCEL: 500,
@@ -34,7 +38,6 @@ module.exports = {
     PROJECTS: 'projects',
     RESOURCES: 'resources',
     FORECAST_REPORT: 'forecast_report',
-    TEMPS_MISSIONS: 'temps_missions',
     /** Agrégat absences Boond : { metadata, data: [{ resourceId, month, days }] } */
     ABSENCE_MONTHLY: 'absence_monthly'
   }

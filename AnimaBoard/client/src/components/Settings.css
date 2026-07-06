@@ -1,6 +1,6 @@
 .settings-page {
   padding: 2rem;
-  max-width: 800px;
+  max-width: 960px;
   margin: 0 auto;
 }
 
@@ -15,6 +15,65 @@
   color: #2C5F5D;
   margin-bottom: 2rem;
   font-size: 2rem;
+}
+
+.settings-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.settings-hub-card {
+  background: #f0f7f6;
+  border: 1px solid #a6c9c8;
+  color: #174a48;
+  padding: 1.25rem;
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.settings-hub-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(12, 74, 71, 0.15);
+  border-color: #2c5f5d;
+  background: #e6f2f1;
+}
+
+.settings-hub-card-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.settings-hub-card-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.settings-back-button {
+  border: 1px solid #a6c9c8;
+  background: #f8faf9;
+  color: #2c5f5d;
+  border-radius: 8px;
+  padding: 0.55rem 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 0.75rem;
+}
+
+.settings-back-button:hover {
+  background: #eef6f5;
+}
+
+.settings-panel-title {
+  color: #2c5f5d;
+  margin-bottom: 0.75rem;
+  font-size: 1.5rem;
 }
 
 .settings-section {
@@ -358,6 +417,15 @@
   opacity: 0.6;
 }
 
+.batch-sync-run-button {
+  background: #0f766e;
+  margin-bottom: 1rem;
+}
+
+.batch-sync-run-button:hover:not(:disabled) {
+  background: #0d5f58;
+}
+
 .sync-resources-button {
   background: #2C5F5D;
 }
@@ -372,14 +440,6 @@
 
 .sync-deliveries-button:hover:not(:disabled) {
   background: #4a6270;
-}
-
-.sync-time-reports-button {
-  background: #8B6F47;
-}
-
-.sync-time-reports-button:hover:not(:disabled) {
-  background: #6d5636;
 }
 
 .sync-timesheets-button {
@@ -427,6 +487,23 @@
 
 .sync-result-message {
   flex: 1;
+}
+
+.batch-sync-run-result-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.batch-sync-run-failures {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: 0.9rem;
+}
+
+.batch-sync-run-failures li {
+  margin-bottom: 0.25rem;
 }
 
 .role-management-section {

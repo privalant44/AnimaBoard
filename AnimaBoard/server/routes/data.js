@@ -46,51 +46,8 @@ router.get('/resources', handleResources);
 router.get('/resources.json', handleResources);
 
 async function getResourcesLocalEnriched() {
-  // Lire les ressources persistées (table resources via kvStorage -> db)
-  const stored = await kvStorage.get(KV_KEYS.RESOURCES, []);
-  const baseList = Array.isArray(stored) ? stored : (stored?.data || []);
-
-  // Lire le dictionnaire pour resources.type_of et resources.state
-  const { getSupabase } = require('../../lib/supabaseClient');
-  const supabase = getSupabase();
-  const dictType = {};
-  const dictState = {};
-
-  if (supabase) {
-    const { data: dictRows, error } = await supabase
-      .from('dictionnaire')
-      .select('table_name, column_name, code, label')
-      .eq('table_name', 'resources');
-
-    if (error) {
-      console.error('❌ Erreur lecture dictionnaire:', error.message || error);
-    } else {
-      (dictRows || []).forEach((row) => {
-        if (row.column_name === 'type_of') {
-          dictType[String(row.code)] = row.label;
-        } else if (row.column_name === 'state') {
-          dictState[String(row.code)] = row.label;
-        }
-      });
-    }
-  }
-
-  return baseList.map((r) => {
-    const typeCode = r.typeOf ?? r.type_of ?? null;
-    const stateCode = r.state ?? null;
-    const typeLabel = typeCode !== null && typeCode !== undefined
-      ? (dictType[String(typeCode)] || String(typeCode))
-      : 'N/A';
-    const stateLabel = stateCode !== null && stateCode !== undefined
-      ? (dictState[String(stateCode)] || String(stateCode))
-      : undefined;
-
-    return {
-      ...r,
-      typeLabel,
-      stateLabel,
-    };
-  });
+  const { getResourcesLocalEnriched: enrich } = require('../../lib/dictionarySync');
+  return enrich();
 }
 
 // --- Resources locales (lecture uniquement base, sans appel API) - pour la vue Ressources
@@ -164,21 +121,6 @@ router.post('/forecast-times', async (req, res) => {
     stored.data = data;
     await kvStorage.set(KV_KEYS.FORECAST_TIMES, stored);
     return res.json({ success: true, message: 'Temps prévisionnel sauvegardé', data: data[deliveryId] });
-  } catch (error) {
-    return res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// --- Temps missions (KV)
-router.get('/temps_missions.json', async (req, res) => {
-  try {
-    const stored = await kvStorage.get(KV_KEYS.TEMPS_MISSIONS, null);
-    if (!stored) {
-      return res.status(404).json({ success: false, error: 'Données temps_missions non disponibles. Lancez l\'extraction depuis Paramètres.', file: 'temps_missions' });
-    }
-    const data = stored.data || stored;
-    const count = Array.isArray(data) ? data.length : (data.data ? data.data.length : 0);
-    return okData(res, data, 'temps_missions', count);
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
   }

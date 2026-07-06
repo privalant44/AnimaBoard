@@ -2,6 +2,11 @@
  * GET /api/data/forecast-bootstrap
  * Endpoint bootstrap unique pour la vue Forecast/Report en environnement Vercel.
  */
+const path = require('path');
+try {
+  require(path.join(__dirname, '..', '..', 'lib', 'secretEnv'));
+} catch (e) {}
+
 const kvStorage = require('../../lib/kvStorage');
 const { KV_KEYS } = require('../../lib/constants');
 const { getSupabase } = require('../../lib/supabaseClient');
@@ -9,48 +14,7 @@ const { getHolidayRowsForYearRange } = require('../../lib/frenchHolidays');
 const { toHolidayYmdString } = require('../../lib/holidayDate');
 const { createVercelHandler } = require('../../lib/errorHandler');
 
-async function getResourcesLocalEnriched() {
-  const stored = await kvStorage.get(KV_KEYS.RESOURCES, []);
-  const baseList = Array.isArray(stored) ? stored : (stored?.data || []);
-
-  const dictType = {};
-  const dictState = {};
-  const supabase = getSupabase();
-
-  if (supabase) {
-    const { data: dictRows, error } = await supabase
-      .from('dictionnaire')
-      .select('table_name, column_name, code, label')
-      .eq('table_name', 'resources');
-
-    if (!error && Array.isArray(dictRows)) {
-      dictRows.forEach((row) => {
-        if (row.column_name === 'type_of') {
-          dictType[String(row.code)] = row.label;
-        } else if (row.column_name === 'state') {
-          dictState[String(row.code)] = row.label;
-        }
-      });
-    }
-  }
-
-  return baseList.map((r) => {
-    const typeCode = r.typeOf ?? r.type_of ?? null;
-    const stateCode = r.state ?? null;
-    const typeLabel = typeCode !== null && typeCode !== undefined
-      ? (dictType[String(typeCode)] || String(typeCode))
-      : 'N/A';
-    const stateLabel = stateCode !== null && stateCode !== undefined
-      ? (dictState[String(stateCode)] || String(stateCode))
-      : undefined;
-
-    return {
-      ...r,
-      typeLabel,
-      stateLabel,
-    };
-  });
-}
+const { getResourcesLocalEnriched } = require('../../lib/dictionarySync');
 
 module.exports = createVercelHandler(async (req, res) => {
   if (req.method !== 'GET') {

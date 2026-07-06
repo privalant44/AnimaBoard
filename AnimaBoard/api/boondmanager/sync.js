@@ -6,7 +6,6 @@
  * POST /api/boondmanager/sync/dictionary
  * POST /api/boondmanager/sync/timesheets
  * POST /api/boondmanager/sync/absences
- * POST /api/boondmanager/sync/time-reports
  * POST /api/boondmanager/sync/besoins/snapshot
  */
 const path = require('path');
@@ -97,13 +96,16 @@ async function handleDeliveriesSync(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method Not Allowed' });
   }
-  const extractDeliveries = require(path.join(__dirname, '..', '..', 'extract_deliveries'));
-  const result = await extractDeliveries();
-  const count = result?.data?.length || 0;
+  if (!assertBoondPasswordReady(res)) return;
+
+  const syncDeliveriesYear = require(path.join(__dirname, '..', '..', 'scripts', 'sync-deliveries-year'));
+  const year = new Date().getFullYear();
+  const result = await syncDeliveriesYear({ year, delayMs: 150 });
+  const count = result?.metadata?.savedCount ?? result?.data?.length ?? 0;
   res.setHeader('Content-Type', 'application/json');
   return res.status(200).json({
     success: true,
-    message: `Extraction réussie: ${count} prestations extraites`,
+    message: `Synchronisation réussie: ${count} prestation(s) pour ${year}`,
     count,
     metadata: result?.metadata,
   });
@@ -113,59 +115,16 @@ async function handleDictionarySync(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method Not Allowed' });
   }
-  const supabase = getSupabase();
-  if (!supabase) {
-    return res.status(500).json({ success: false, error: 'Supabase non configuré' });
-  }
 
-  const dictionary = await boondManagerService.getDictionary();
-  const dict = dictionary?.data?.data || dictionary?.data || dictionary || {};
-  const typeOfList = dict?.setting?.typeOf?.resource || [];
-  const opportunityTypeOfList = dict?.setting?.typeOf?.project || dict?.setting?.typeOf?.opportunity || [];
-  const resourceStateList = dict?.setting?.state?.resource || [];
-  const opportunityStateList = dict?.setting?.state?.opportunity || [];
-
-  const rows = [];
-  (Array.isArray(typeOfList) ? typeOfList : []).forEach((item) => {
-    if (item?.id != null && item?.value != null) {
-      rows.push({ table_name: 'resources', column_name: 'type_of', code: String(item.id), label: String(item.value) });
-    }
-  });
-  (Array.isArray(resourceStateList) ? resourceStateList : []).forEach((item) => {
-    if (item?.id != null && item?.value != null) {
-      rows.push({ table_name: 'resources', column_name: 'state', code: String(item.id), label: String(item.value) });
-    }
-  });
-  (Array.isArray(opportunityTypeOfList) ? opportunityTypeOfList : []).forEach((item) => {
-    if (item?.id != null && item?.value != null) {
-      rows.push({ table_name: 'opportunities', column_name: 'type_of', code: String(item.id), label: String(item.value) });
-    }
-  });
-  (Array.isArray(opportunityStateList) ? opportunityStateList : []).forEach((item) => {
-    if (item?.id != null && item?.value != null) {
-      rows.push({ table_name: 'opportunities', column_name: 'state', code: String(item.id), label: String(item.value) });
-    }
-  });
-
-  const seen = new Set();
-  const uniqueRows = rows.filter((r) => {
-    const key = `${r.table_name}|${r.column_name}|${r.code}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-
-  for (let i = 0; i < uniqueRows.length; i += 100) {
-    const chunk = uniqueRows.slice(i, i + 100);
-    const { error } = await supabase.from('dictionnaire').upsert(chunk, { onConflict: 'table_name,column_name,code' });
-    if (error) throw error;
-  }
+  const { syncDictionaryFromBoond } = require(path.join(__dirname, '..', '..', 'lib', 'dictionarySync'));
+  const result = await syncDictionaryFromBoond();
 
   res.setHeader('Content-Type', 'application/json');
   return res.status(200).json({
     success: true,
-    message: `Dictionnaire synchronisé : ${uniqueRows.length} entrées`,
-    count: uniqueRows.length,
+    message: `Dictionnaire synchronisé : ${result.count} entrées`,
+    count: result.count,
+    details: result,
   });
 }
 
@@ -215,27 +174,33 @@ async function handleAbsencesSync(req, res) {
   });
 }
 
-async function handleTimeReportsSync(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ success: false, error: 'Method Not Allowed' });
+function formatBesoinsSyncError(err) {
+  const message = err?.message || 'Erreur lors de la synchronisation des besoins';
+  let hint;
+  if (err?.code === '42P01') {
+    hint = 'La table besoins est absente. Appliquez la migration Supabase ou réexécutez fix_public_schema_grants.sql.';
+  } else if (/permission denied/i.test(message)) {
+    hint = 'Droits Supabase manquants sur public. Exécutez supabase/snippets/fix_public_schema_grants.sql en prod.';
+  } else if (/BOOND_EMAIL|BOOND_PASSWORD|requis/i.test(message)) {
+    hint = 'Vérifiez BOOND_EMAIL, BOOND_PASSWORD (ou BOOND_PASSWORD_ENC + ANIMA_SECRET_KEY) sur Vercel.';
+  } else if (/column.*state|state.*column/i.test(message)) {
+    hint = 'Colonne state absente. Appliquez la migration 20260601192000_besoins_add_state.sql.';
+  } else if (/timeout|timed out|FUNCTION_INVOCATION_TIMEOUT/i.test(message)) {
+    hint = 'Délai Vercel dépassé pendant la pagination Boond. Réessayez ou lancez le batch via /api/batch-sync/run.';
   }
-  const body = readJsonBody(req);
-  const extractTimeReports = require(path.join(__dirname, '..', '..', 'extract_time_reports'));
-  const result = await extractTimeReports(body.beginDate, body.endDate);
-  const count = result?.data?.length || 0;
-  res.setHeader('Content-Type', 'application/json');
-  return res.status(200).json({
-    success: true,
-    message: `Extraction réussie: ${count} enregistrements de temps`,
-    count,
-    metadata: result?.metadata,
-  });
+  return {
+    success: false,
+    error: message,
+    hint,
+    errorDetail: err?.response?.data ? JSON.stringify(err.response.data).slice(0, 500) : err?.details || undefined,
+  };
 }
 
 async function handleBesoinsSnapshotSync(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method Not Allowed' });
   }
+  if (!assertBoondPasswordReady(res)) return;
   const supabase = getSupabase();
   if (!supabase) {
     return res.status(500).json({
@@ -306,7 +271,6 @@ const ROUTES = {
   dictionary: handleDictionarySync,
   timesheets: handleTimesheetsSync,
   absences: handleAbsencesSync,
-  'time-reports': handleTimeReportsSync,
   'besoins/snapshot': handleBesoinsSnapshotSync,
 };
 
@@ -326,9 +290,9 @@ module.exports = createVercelHandler(async (req, res) => {
   try {
     return await handler(req, res);
   } catch (err) {
-    if (route === 'resources') {
-      console.error('sync/resources error:', err);
-      let message = err.message || 'Erreur lors de la synchronisation des ressources';
+    console.error(`sync/${route || '?'} error:`, err);
+    if (route === 'resources' || route === 'deliveries') {
+      let message = err.message || `Erreur lors de la synchronisation (${route})`;
       let detail = err.response?.data ? JSON.stringify(err.response.data).slice(0, 500) : undefined;
       if (/BOOND_EMAIL|BOOND_PASSWORD|requis/.test(message)) {
         detail =
@@ -337,6 +301,9 @@ module.exports = createVercelHandler(async (req, res) => {
       }
       return res.status(500).json({ success: false, error: message, errorDetail: detail || message });
     }
+    if (route === 'besoins/snapshot') {
+      return res.status(500).json(formatBesoinsSyncError(err));
+    }
     throw err;
   }
-}, { statusCode: 500, message: 'Erreur sync Boond' });
+}, { statusCode: 500 });

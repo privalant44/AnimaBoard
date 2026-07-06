@@ -19,8 +19,10 @@
     "serve": "npm run build && npm run start:prod",
     "install-all": "npm install && cd client && npm install",
     "sync": "node sync.js",
+    "sync-deliveries-year": "node scripts/sync-deliveries-year.js",
+    "sync-projects-year": "node scripts/sync-projects-year.js",
+    "extract-projects": "node extract_projects.js",
     "report": "node report.js",
-    "extract-times": "node extract_time_reports.js",
     "sync-timesheets": "node sync_timesheets.js",
     "sync-absences": "node sync_absences.js",
     "sync-timesheets-2years": "node scripts/sync-timesheets-2years.js",
@@ -28,7 +30,10 @@
     "view-db": "node scripts/view-kv.js",
     "encrypt-env": "node scripts/encrypt-env.js",
     "seed-french-holidays": "node scripts/seed-french-holidays.js",
-    "dump-ledger-month": "node scripts/dump-pennylane-ledger-month.js"
+    "dump-ledger-month": "node scripts/dump-pennylane-ledger-month.js",
+    "db:export-dev": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-dev-to-prod.ps1 -Action Export",
+    "db:import-prod": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-dev-to-prod.ps1 -Action Import",
+    "db:clone-dev-to-prod": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-dev-to-prod.ps1 -Action Clone"
   },
   "keywords": [
     "dashboard",

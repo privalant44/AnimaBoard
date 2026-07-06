@@ -3,24 +3,26 @@ const axios = require('axios');
 class BoondManagerService {
   constructor() {
     this.baseURL = process.env.BOOND_API_URL || 'https://ui.boondmanager.com/api';
-    this.email = process.env.BOOND_EMAIL;
-    this.password = process.env.BOOND_PASSWORD;
+  }
 
-    if (!this.email || !this.password) {
-      console.warn('⚠️  BoondManager: configurez BOOND_EMAIL et BOOND_PASSWORD (ou BOOND_PASSWORD_ENC + ANIMA_SECRET_KEY)');
-    }
+  getCredentials() {
+    return {
+      email: process.env.BOOND_EMAIL,
+      password: process.env.BOOND_PASSWORD,
+    };
   }
 
   async makeRequest(endpoint, params = {}) {
-    if (!this.email || !this.password) {
+    const { email, password } = this.getCredentials();
+    if (!email || !password) {
       throw new Error('BoondManager: BOOND_EMAIL et BOOND_PASSWORD (ou mot de passe chiffré BOOND_PASSWORD_ENC) requis');
     }
 
     const config = {
       params,
       auth: {
-        username: this.email,
-        password: this.password
+        username: email,
+        password
       },
       headers: {
         'Content-Type': 'application/json',

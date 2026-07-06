@@ -1,0 +1,233 @@
+{
+  "application": {
+    "nom": "Anima Board",
+    "description_courte": "Tableau de bord Anima Néo — intégration BoondManager et Pennylane pour le pilotage (CA, marges, TACE, besoins, ressources, forecast).",
+    "repository_url": "https://github.com/privalant44/AnimaBoard.git",
+    "version": "1.0.0",
+    "derniere_analyse": "2026-07-06"
+  },
+  "vision_fonctionnelle": {
+    "modules": [
+      {
+        "nom": "Accueil",
+        "description": "Récapitulatif mensuel des indicateurs de pilotage et statut de la dernière synchronisation batch.",
+        "fonctionnalites_cles": [
+          "CA Anima Néo et sous-traitance par mois",
+          "Marges brutes, résultat et TACE",
+          "Indicateurs besoins (créés, stock, gagnés, perdus, abandonnés, stand-by, délai moyen de réponse)",
+          "Affichage du statut de la dernière exécution batch (HomeBatchStatus)"
+        ],
+        "statut": "en_production",
+        "fichiers_ou_dossiers_associes": [
+          "client/src/components/HomeMonthlyRecap.tsx",
+          "client/src/components/HomeBatchStatus.tsx",
+          "server/routes/dashboard.js",
+          "api/dashboard.js"
+        ]
+      },
+      {
+        "nom": "Ressources",
+        "description": "Consultation et gestion des collaborateurs synchronisés depuis BoondManager.",
+        "fonctionnalites_cles": [
+          "Liste des ressources (nom, prénom, type, statut)",
+          "Feu tricolore et commentaires par ressource",
+          "Tri et pagination",
+          "Métadonnées locales (temps de travail, statut feu)"
+        ],
+        "statut": "en_production",
+        "fichiers_ou_dossiers_associes": [
+          "client/src/components/Resources.tsx",
+          "api/data/resources-local.js",
+          "api/data/resources-metadata.js",
+          "lib/db.js"
+        ]
+      },
+      {
+        "nom": "Forecast",
+        "description": "Prévisionnel et temps saisis par prestation et par ressource.",
+        "fonctionnalites_cles": [
+          "Vue par ressource et par prestation (projets / deliveries)",
+          "Saisie et consultation des jours forecast par mois",
+          "Calculs CA et agrégations par période",
+          "Prise en compte des jours ouvrés et jours fériés"
+        ],
+        "statut": "en_production",
+        "fichiers_ou_dossiers_associes": [
+          "client/src/components/Forecast.tsx",
+          "api/data/forecast-bootstrap.js",
+          "api/data/forecast-times.json.js",
+          "api/data/deliveries.json.js"
+        ]
+      },
+      {
+        "nom": "Rapports",
+        "description": "Rapports financiers et exports basés sur les données synchronisées.",
+        "fonctionnalites_cles": [
+          "Compte de résultat Pennylane (P&L)",
+          "Rapport forecast annuel",
+          "Exports et visualisations (recharts)"
+        ],
+        "statut": "en_production",
+        "fichiers_ou_dossiers_associes": [
+          "client/src/components/Report.tsx",
+          "server/routes/pennylane.js",
+          "api/dashboard/income-statement/sync.js"
+        ]
+      },
+      {
+        "nom": "Paramètres",
+        "description": "Administration de l'application : synchronisations manuelles, diagnostics, logs batch et gestion des utilisateurs.",
+        "fonctionnalites_cles": [
+          "Synchronisation manuelle Boond (ressources, prestations, timesheets, absences, besoins, dictionnaire)",
+          "Lancement batch complet et consultation des logs",
+          "Tests de connexion API et personnalisation du logo",
+          "Gestion des rôles utilisateurs (admin)"
+        ],
+        "statut": "en_production",
+        "fichiers_ou_dossiers_associes": [
+          "client/src/components/Settings.tsx",
+          "client/src/components/settings/",
+          "server/routes/batchSync.js",
+          "api/batch-sync/"
+        ]
+      },
+      {
+        "nom": "Authentification et contrôle d'accès",
+        "description": "Connexion optionnelle via Microsoft Entra ID ou compte administrateur local, avec rôles et permissions par onglet.",
+        "fonctionnalites_cles": [
+          "Microsoft Entra ID (MSAL) et compte local admin",
+          "Rôles : admin, manager, commercial, consultation",
+          "Permissions par onglet et opérations (sync, finance, gestion utilisateurs)",
+          "Table app_user_roles en base Supabase"
+        ],
+        "statut": "en_production",
+        "fichiers_ou_dossiers_associes": [
+          "client/src/auth/",
+          "client/src/components/Login.tsx",
+          "client/src/components/RoleManagement.tsx",
+          "server/routes/auth.js",
+          "api/auth.js",
+          "lib/microsoftAuth.js",
+          "lib/authorize.js",
+          "supabase/migrations/20260604100000_app_user_roles.sql"
+        ]
+      },
+      {
+        "nom": "Synchronisation des données",
+        "description": "Ingestion et mise à jour des données métier depuis BoondManager et Pennylane vers Supabase/Postgres.",
+        "fonctionnalites_cles": [
+          "Sync ressources, prestations, projets, timesheets, absences, besoins, dictionnaire Boond",
+          "Sync compte de résultat Pennylane",
+          "Cron journalier Vercel (daily-sync)",
+          "Scripts npm de synchronisation et batch quotidien"
+        ],
+        "statut": "en_production",
+        "fichiers_ou_dossiers_associes": [
+          "api/boondmanager/",
+          "api/cron/daily-sync.js",
+          "lib/boondApi.js",
+          "lib/dailyBatchSync.js",
+          "lib/dictionarySync.js",
+          "server/routes/boondManager.js",
+          "scripts/sync-deliveries-year.js",
+          "scripts/sync-projects-year.js",
+          "sync_timesheets.js",
+          "sync_absences.js"
+        ]
+      }
+    ]
+  },
+  "architecture_technique": {
+    "frontend": {
+      "framework": "React 18 (Create React App / react-scripts 5)",
+      "langage": "TypeScript",
+      "gestionnaire_paquets": "npm",
+      "styling": "CSS vanilla (fichiers .css par composant)",
+      "dependances_cles": [
+        "react",
+        "react-dom",
+        "react-scripts",
+        "typescript",
+        "@azure/msal-browser",
+        "@azure/msal-react",
+        "@supabase/supabase-js",
+        "axios",
+        "date-fns",
+        "recharts"
+      ]
+    },
+    "backend": {
+      "framework": "Express 4 (dev et prod locale) + fonctions serverless Vercel (prod cloud)",
+      "langage": "JavaScript (Node.js 24.x)",
+      "type": "API REST",
+      "dependances_cles": [
+        "express",
+        "@supabase/supabase-js",
+        "axios",
+        "cors",
+        "dotenv",
+        "jsonwebtoken",
+        "jwks-rsa",
+        "date-fns",
+        "csv-parse"
+      ]
+    },
+    "base_de_donnees": {
+      "type": "PostgreSQL hébergé via Supabase",
+      "moteur": "PostgreSQL 17",
+      "orm_ou_client": "@supabase/supabase-js (lib/supabaseClient.js, lib/db.js)",
+      "migrations": "supabase/migrations"
+    },
+    "infrastructure": {
+      "hebergement_frontend": "Vercel (build statique client/build, CDN)",
+      "hebergement_backend": "Vercel serverless (api/**/*.js) en production cloud ; Express sur port 3000 en développement",
+      "ci_cd": "Vercel (intégration Git, build et déploiement via vercel.json ; crons déclarés dans vercel.json)",
+      "conteneurisation": ""
+    },
+    "integrations_externes": [
+      {
+        "nom": "BoondManager",
+        "usage": "Synchronisation des ressources, prestations, projets, feuilles de temps, absences, besoins et dictionnaire (API REST, Basic Auth)"
+      },
+      {
+        "nom": "Pennylane",
+        "usage": "Récupération du compte de résultat (API external v2, token Bearer)"
+      },
+      {
+        "nom": "Microsoft Entra ID",
+        "usage": "Authentification utilisateurs optionnelle (MSAL côté client, validation JWT côté serveur)"
+      },
+      {
+        "nom": "Supabase",
+        "usage": "Stockage métier PostgreSQL, API locale en dev (Supabase CLI), projet cloud en production"
+      }
+    ]
+  },
+  "acces_environnement_dev": [
+    {
+      "service": "frontend",
+      "url": "http://localhost:3001",
+      "port": "3001",
+      "notes": "React CRA (npm run dev ou npm run client). Proxy /api/* vers Express via client/src/setupProxy.js. PORT défini dans scripts/dev.js et client/.env.local."
+    },
+    {
+      "service": "backend",
+      "url": "http://localhost:3000",
+      "port": "3000",
+      "notes": "API Express (npm run dev ou npm run server). Health check : GET /api/health. PORT par défaut dans server/index.js (process.env.PORT || 3000)."
+    },
+    {
+      "service": "base_de_donnees",
+      "url": "http://127.0.0.1:55221",
+      "port": "55221",
+      "notes": "Supabase API locale (npx supabase start). Postgres direct : 127.0.0.1:55222. Supabase Studio : http://127.0.0.1:55223. Ports définis dans supabase/config.toml ([api] port=55221, [db] port=55222, [studio] port=55223)."
+    }
+  ],
+  "a_completer_manuellement": [
+    "URL de déploiement production Vercel (non versionnée dans le dépôt)",
+    "Secrets et clés API (BOOND_*, PENNYLANE_*, SUPABASE_SERVICE_ROLE_KEY, CRON_SECRET, AZURE_*, LOCAL_AUTH_JWT_SECRET)",
+    "Pipeline CI/CD GitHub Actions / GitLab CI : aucun fichier détecté dans le dépôt (déploiement géré par Vercel uniquement)",
+    "Conteneurisation : aucun Dockerfile ni docker-compose.yml détecté",
+    "Le README mentionne un cron mensuel /api/cron/monthly-sync mais seul api/cron/daily-sync.js existe et vercel.json ne déclare qu'un cron journalier — à clarifier ou mettre à jour la doc"
+  ]
+}

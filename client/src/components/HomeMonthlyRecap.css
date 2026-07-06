@@ -1,0 +1,192 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@600&display=swap');
+
+.home-dashboard-title {
+  margin: 1.25rem 1.25rem 1.1rem;
+  font-family: "Montserrat", sans-serif;
+  font-size: 1.6rem;
+  font-weight: 600;
+  text-align: center;
+  color: #2c5f5d;
+}
+
+.home-recap-filters {
+  margin: 0 1.25rem 0.8rem;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.45rem;
+  color: #2c5f5d;
+  font-size: 0.9rem;
+}
+
+.home-recap-filters select {
+  border: 1px solid #c6d8d6;
+  border-radius: 8px;
+  padding: 0.25rem 0.45rem;
+  background: #fff;
+  color: #2c5f5d;
+  font-size: 0.9rem;
+}
+
+.home-recap-panel {
+  margin: 0 1.25rem 1.25rem;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+  padding: 1rem 1rem 1.25rem;
+}
+
+.home-recap-table-wrap {
+  overflow-x: auto;
+}
+
+.home-recap-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 1450px;
+}
+
+.home-recap-table th,
+.home-recap-table td {
+  border: 1px solid #dde8e7;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.83rem;
+}
+
+.home-recap-table th {
+  background: #a6c9c8;
+  color: #fff;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.home-recap-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.home-recap-table td.home-recap-margin-pct {
+  cursor: help;
+  font-weight: 600;
+}
+
+.home-recap-table .total-row td {
+  background: #f1f7f6;
+  font-weight: 700;
+}
+
+.home-recap-table .section-row td {
+  background: #e0efed;
+  color: #1f4d4a;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.section-title-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 2px solid #4f7f7c;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem 0.2rem 0.35rem;
+  background: #dff0ee;
+  color: #1f4d4a;
+  font: inherit;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(31, 77, 74, 0.2);
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.section-title-toggle-btn:hover {
+  background: #cde8e4;
+  border-color: #3f6f6c;
+  box-shadow: 0 3px 10px rgba(31, 77, 74, 0.26);
+}
+
+.section-title-toggle-btn:focus-visible {
+  outline: none;
+  border-color: #2f615e;
+  box-shadow: 0 0 0 3px rgba(166, 201, 200, 0.9), 0 3px 10px rgba(31, 77, 74, 0.26);
+}
+
+.section-title-toggle-arrow {
+  width: 1.05rem;
+  height: 1.05rem;
+  fill: currentColor;
+  transition: transform 0.2s ease;
+}
+
+.section-title-toggle-arrow.is-open {
+  transform: rotate(180deg);
+}
+
+.home-recap-table td.pos {
+  color: #176b49;
+}
+
+.home-recap-table td.neg {
+  color: #aa2424;
+}
+
+.home-recap-table tr.metric-sign-highlight td.num {
+  font-weight: 700;
+}
+
+.home-recap-table td.financial-month-closed {
+  background: #BBD0E5;
+}
+
+.home-recap-table td.financial-month-forecast {
+  background: #edf5ff;
+}
+
+.home-recap-table td.financial-highlight-closed {
+  background: #FFE3A7;
+}
+
+.home-recap-table td.financial-highlight-forecast {
+  background: #fff7dc;
+}
+
+.home-recap-state {
+  margin: 0;
+  color: #2c5f5d;
+}
+
+.home-recap-state--error {
+  color: #aa2424;
+}
+
+.home-batch-status {
+  position: fixed;
+  bottom: 1rem;
+  left: calc(var(--app-sidebar-width, 270px) + 1rem);
+  z-index: 100;
+  pointer-events: none;
+}
+
+.home-batch-status-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: block;
+  box-shadow: 0 0 0 2px #fff, 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+.home-batch-status-dot--ok {
+  background: #10b981;
+}
+
+.home-batch-status-dot--ko {
+  background: #ef4444;
+}

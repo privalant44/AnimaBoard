@@ -1,0 +1,1467 @@
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import './Forecast.css';
+import { DATA_REFRESH_EVENT } from '../dataRefresh';
+import { apiFetch, apiUrl } from '../api';
+import {
+  countWorkdaysInMonth,
+  countWorkdaysInYear,
+  holidaySetFromApiRows
+} from '../utils/workdays';
+
+interface Project {
+  id: string | number;
+  reference: string;
+  title: string;
+  startDate: string;
+  endDate: string;
+  tjm: number | null;
+  orderedDays?: number | null;
+}
+
+interface ResourceWithProjects {
+  id: number;
+  nom: string;
+  prenom: string;
+  type?: string;
+  statut?: string;
+  /** Prestations visibles (filtre période). */
+  projects: Project[];
+  /** Toutes les prestations de la ressource : base du CA par année (hors filtre période). */
+  allProjectsForCA: Project[];
+}
+
+interface ForecastProps {
+  onBack: () => void;
+}
+
+type ForecastPeriodOverride = { startDate: string; endDate: string };
+
+/** Évite "JSON.parse: unexpected character" quand l'API renvoie du HTML (erreur Vercel). */
+async function safeParseJson(res: Response): Promise<any> {
+  const text = await res.text();
+  if (!text.trim()) return {};
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    const friendly = `Réponse invalide du serveur (${res.status}): JSON attendu. Vérifiez les logs Vercel.`;
+    throw new Error(friendly);
+  }
+}
+
+function normalizeApiError(err: unknown, endpointHint?: string): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/failed to fetch|networkerror|load failed|fetch failed/i.test(msg)) {
+    return [
+      'Impossible de joindre l’API (erreur réseau).',
+      endpointHint ? `Endpoint: ${endpointHint}.` : '',
+      'Vérifiez que le serveur API est démarré et que la route existe (notamment en déploiement Vercel).'
+    ]
+      .filter(Boolean)
+      .join(' ');
+  }
+  if (/JSON\.parse|unexpected character|SyntaxError/i.test(msg)) {
+    return 'Réponse invalide du serveur: l\'API n\'a pas renvoyé de JSON (erreur ou timeout Vercel). Vérifiez les logs du déploiement.';
+  }
+  return msg;
+}
+
+function safeParseLocalStorage<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback;
+  try { return JSON.parse(raw) as T; } catch { return fallback; }
+}
+
+/** Carte mois → jours d'absence (clés resourceId en string). */
+function getAbsenceMapForResource(
+  absenceByResource: Record<string, Record<string, number>>,
+  resourceId: number
+): Record<string, number> {
+  const keys = [String(resourceId), String(Number(resourceId)), Number(resourceId).toString()];
+  for (const k of keys) {
+    if (absenceByResource[k]) return absenceByResource[k];
+  }
+  return {};
+}
+
+function sumAbsencesForYear(monthMap: Record<string, number>, year: number): number {
+  let s = 0;
+  for (const [month, days] of Object.entries(monthMap)) {
+    if (month.startsWith(`${year}-`)) s += Number(days) || 0;
+  }
+  return s;
+}
+
+/** Mois calendaire YYYY-MM au plus tard le mois courant (inclus). */
+function isMonthCurrentOrPast(ym: string): boolean {
+  const parts = ym.split('-');
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  if (Number.isNaN(y) || Number.isNaN(m)) return false;
+  const now = new Date();
+  const cy = now.getFullYear();
+  const cm = now.getMonth() + 1;
+  if (y < cy) return true;
+  if (y > cy) return false;
+  return m <= cm;
+}
+
+/** Fond cellule : base #F8E4A7, plus intense quand les jours augmentent ; vide ≈ blanc cassé. */
+function absenceCellBackground(days: number, maxDays: number): string {
+  if (days <= 0) return '#FFFCF3';
+  const t = Math.min(1, maxDays > 0 ? days / maxDays : 1);
+  const base = { r: 248, g: 228, b: 167 };
+  const empty = { r: 255, g: 252, b: 243 };
+  const r = Math.round(empty.r + (base.r - empty.r) * t);
+  const g = Math.round(empty.g + (base.g - empty.g) * t);
+  const b = Math.round(empty.b + (base.b - empty.b) * t);
+  return `rgb(${r},${g},${b})`;
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function isValidYmd(y: number, m: number, d: number): boolean {
+  if (m < 1 || m > 12 || d < 1) return false;
+  const dt = new Date(y, m - 1, d, 12, 0, 0, 0);
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
+}
+
+/** yyyy-mm-dd → jj/mm/aaaa */
+function formatYmdToFr(ymd: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd.trim());
+  if (!m) return ymd;
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+/** jj/mm/aaaa (j et m sur 1 ou 2 chiffres), ou aaaa-mm-jj — → yyyy-mm-dd */
+function parseFrDateToYmd(raw: string): string | null {
+  const s = raw.trim().replace(/\s/g, '');
+  if (!s) return null;
+  let m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (m) {
+    const y = parseInt(m[1], 10);
+    const mo = parseInt(m[2], 10);
+    const d = parseInt(m[3], 10);
+    if (isValidYmd(y, mo, d)) return `${y}-${pad2(mo)}-${pad2(d)}`;
+    return null;
+  }
+  m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+  if (m) {
+    const d = parseInt(m[1], 10);
+    const mo = parseInt(m[2], 10);
+    const y = parseInt(m[3], 10);
+    if (isValidYmd(y, mo, d)) return `${y}-${pad2(mo)}-${pad2(d)}`;
+  }
+  return null;
+}
+
+// Fonction pour charger les filtres depuis localStorage
+const loadForecastFiltersFromStorage = () => {
+  try {
+    const savedStartDate = localStorage.getItem('forecast_startDate');
+    const savedEndDate = localStorage.getItem('forecast_endDate');
+    const savedTypeFilter = localStorage.getItem('forecast_typeFilter');
+    const savedStatutFilter = localStorage.getItem('forecast_statutFilter');
+    
+    // Calculer les dates par défaut (mois en cours)
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const defaultStartDate = firstDay.toISOString().split('T')[0];
+    const defaultEndDate = lastDay.toISOString().split('T')[0];
+    
+    return {
+      startDate: savedStartDate || defaultStartDate,
+      endDate: savedEndDate || defaultEndDate,
+      typeFilter: safeParseLocalStorage(savedTypeFilter, []),
+      statutFilter: safeParseLocalStorage(savedStatutFilter, [])
+    };
+  } catch (error) {
+    console.error('Erreur lors du chargement des filtres depuis localStorage:', error);
+    // Valeurs par défaut en cas d'erreur
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return {
+      startDate: firstDay.toISOString().split('T')[0],
+      endDate: lastDay.toISOString().split('T')[0],
+      typeFilter: [],
+      statutFilter: []
+    };
+  }
+};
+
+const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
+  // Charger les filtres depuis localStorage au démarrage
+  const savedFilters = loadForecastFiltersFromStorage();
+  
+  const [resources, setResources] = useState<ResourceWithProjects[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [startDate, setStartDate] = useState<string>(savedFilters.startDate);
+  const [endDate, setEndDate] = useState<string>(savedFilters.endDate);
+  const [startDateInput, setStartDateInput] = useState<string>(() =>
+    formatYmdToFr(savedFilters.startDate)
+  );
+  const [endDateInput, setEndDateInput] = useState<string>(() =>
+    formatYmdToFr(savedFilters.endDate)
+  );
+
+  const startDatePickerRef = useRef<HTMLInputElement>(null);
+  const endDatePickerRef = useRef<HTMLInputElement>(null);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+  
+  // États pour les filtres
+  const [typeFilter, setTypeFilter] = useState<string[]>(savedFilters.typeFilter);
+  const [statutFilter, setStatutFilter] = useState<string[]>(savedFilters.statutFilter);
+  const [typeDropdownOpen, setTypeDropdownOpen] = useState<boolean>(false);
+  const [statutDropdownOpen, setStatutDropdownOpen] = useState<boolean>(false);
+  
+  // États pour le pliage/dépliage des prestations
+  const [expandedResources, setExpandedResources] = useState<Set<number>>(new Set());
+  const [expandedDeliveries, setExpandedDeliveries] = useState<Set<string>>(new Set());
+  
+  // Données prévisionnelles et jours commandés indexés par prestation
+  const [forecastByDeliveryId, setForecastByDeliveryId] = useState<Record<string, Record<string, number>>>({});
+  const [orderedDaysByDeliveryId, setOrderedDaysByDeliveryId] = useState<Record<string, number>>({});
+  const [editingMonth, setEditingMonth] = useState<{ deliveryId: string | number; month: string } | null>(null);
+  
+  // État pour l'agrégat des timesheets
+  const [timesheetsAggregate, setTimesheetsAggregate] = useState<{
+    [resourceId: string]: {
+      [deliveryId: string]: {
+        [month: string]: { days: number; hours: number };
+      };
+    };
+  }>({});
+
+  // États pour toutes les options de filtres (depuis toutes les ressources)
+  const [allTypeOptions, setAllTypeOptions] = useState<string[]>([]);
+  const [allStatutOptions, setAllStatutOptions] = useState<string[]>([]);
+
+  const [absenceByResource, setAbsenceByResource] = useState<Record<string, Record<string, number>>>({});
+  /** Dates fériées YYYY-MM-DD (table french_public_holiday via API). */
+  const [frenchHolidayDates, setFrenchHolidayDates] = useState<string[]>([]);
+  const holidayYmdSet = useMemo(() => new Set(frenchHolidayDates), [frenchHolidayDates]);
+
+  const fetchForecast = useCallback(async (period?: ForecastPeriodOverride) => {
+    const filterStart = period?.startDate ?? startDate;
+    const filterEnd = period?.endDate ?? endDate;
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Bootstrap unique pour limiter la latence (évite les appels API multiples).
+      const bootstrapResponse = await apiFetch(
+        `/api/data/forecast-bootstrap?from=${new Date().getFullYear() - 1}&years=12`
+      );
+      const bootstrapBody = await safeParseJson(bootstrapResponse);
+      if (!bootstrapResponse.ok || !bootstrapBody?.success) {
+        const msg = bootstrapBody?.error || 'Impossible de charger les données Forecast.';
+        throw new Error(msg);
+      }
+      const payload = bootstrapBody.data || {};
+      const deliveries = Array.isArray(payload.deliveries) ? payload.deliveries : [];
+      const resourcesList = Array.isArray(payload.resourcesLocal) ? payload.resourcesLocal : [];
+      setOrderedDaysByDeliveryId(payload.orderedDaysByDeliveryId || {});
+      setForecastByDeliveryId(payload.forecastByDeliveryId || {});
+      setTimesheetsAggregate(payload.timesheetsAggregate || {});
+      setAbsenceByResource(payload.absenceByResource || {});
+      const holidayDateList = Array.from(
+        holidaySetFromApiRows(Array.isArray(payload.holidays) ? payload.holidays : [])
+      );
+      setFrenchHolidayDates(holidayDateList);
+
+      // Extraire tous les types et statuts pour les options de filtres
+      const typeSet = new Set<string>();
+      const statutSet = new Set<string>();
+      resourcesList.forEach((r: any) => {
+        const type = r.typeLabel || '';
+        const statut = r.stateLabel || '';
+        if (type) typeSet.add(type);
+        if (statut) statutSet.add(statut);
+      });
+      setAllTypeOptions(Array.from(typeSet).sort());
+      setAllStatutOptions(Array.from(statutSet).sort());
+      console.log(`📊 Options filtres: ${typeSet.size} types, ${statutSet.size} statuts`);
+
+      // Créer un map des ressources par ID pour accès rapide
+      // Les typeLabel et stateLabel sont déjà résolus par /resources-local
+      const resourcesMap: { [key: string]: { nom: string; prenom: string; type?: string; statut?: string } } = {};
+      resourcesList.forEach((resource: any) => {
+        const resourceId = String(resource.id || '');
+        const firstName = resource.prenom || resource.firstName || '';
+        const lastName = resource.nom || resource.lastName || '';
+        
+        // Utiliser typeLabel et stateLabel déjà résolus par le backend
+        const type = resource.typeLabel || '';
+        const statut = resource.stateLabel || '';
+        
+        if (resourceId) {
+          resourcesMap[resourceId] = { nom: lastName, prenom: firstName, type, statut };
+        }
+      });
+
+      // Grouper les prestations par ressource (vue filtrée + liste complète pour le CA annuel)
+      const deliveriesByResource: { [key: string]: Project[] } = {};
+      const deliveriesByResourceAll: { [key: string]: Project[] } = {};
+
+      deliveries.forEach((delivery: any) => {
+        // Récupérer l'ID de la ressource (camelCase ou snake_case selon la source)
+        const resourceId = String(delivery.resourceId || delivery.resource_id || '');
+        if (!resourceId) {
+          return;
+        }
+
+        // Créer l'objet Project avec les jours commandés
+        const project: Project = {
+          id: delivery.id,
+          reference: delivery.id || 'N/A',
+          title: delivery.title || 'Sans titre',
+          startDate: delivery.startDate || '',
+          endDate: delivery.endDate || '',
+          tjm: delivery.tjm !== null && delivery.tjm !== undefined
+            ? Number(delivery.tjm)
+            : (delivery.averageDailyPriceExcludingTax !== null && delivery.averageDailyPriceExcludingTax !== undefined
+              ? Number(delivery.averageDailyPriceExcludingTax)
+              : null),
+          orderedDays: delivery.orderedDays !== null && delivery.orderedDays !== undefined && !isNaN(Number(delivery.orderedDays))
+            ? Number(delivery.orderedDays)
+            : null
+        };
+
+        if (!deliveriesByResourceAll[resourceId]) {
+          deliveriesByResourceAll[resourceId] = [];
+        }
+        deliveriesByResourceAll[resourceId].push(project);
+
+        // Filtrer par période si spécifiée (affichage uniquement)
+        if (filterStart && filterEnd) {
+          const start = new Date(filterStart);
+          const end = new Date(filterEnd);
+          const deliveryStart = delivery.startDate ? new Date(delivery.startDate) : null;
+          const deliveryEnd = delivery.endDate ? new Date(delivery.endDate) : null;
+
+          if (deliveryStart && deliveryEnd) {
+            const overlaps = deliveryStart <= end && deliveryEnd >= start;
+            if (!overlaps) {
+              return;
+            }
+          } else {
+            return;
+          }
+        }
+
+        if (!deliveriesByResource[resourceId]) {
+          deliveriesByResource[resourceId] = [];
+        }
+        deliveriesByResource[resourceId].push(project);
+      });
+
+      const sortProjectsByEndDesc = (list: Project[]) =>
+        [...list].sort((a, b) => {
+          const dateA = a.endDate ? new Date(a.endDate).getTime() : 0;
+          const dateB = b.endDate ? new Date(b.endDate).getTime() : 0;
+          return dateB - dateA;
+        });
+
+      // Créer la liste des ressources avec leurs prestations
+      const resourcesWithProjects: ResourceWithProjects[] = [];
+      
+      Object.keys(deliveriesByResource).forEach((resourceId) => {
+        const resourceInfo = resourcesMap[resourceId] || { nom: 'N/A', prenom: 'N/A', type: '', statut: '' };
+        const sortedProjects = sortProjectsByEndDesc(deliveriesByResource[resourceId]);
+        const sortedAllForCA = sortProjectsByEndDesc(
+          deliveriesByResourceAll[resourceId] || []
+        );
+        resourcesWithProjects.push({
+          id: Number(resourceId),
+          nom: resourceInfo.nom,
+          prenom: resourceInfo.prenom,
+          type: resourceInfo.type,
+          statut: resourceInfo.statut,
+          projects: sortedProjects,
+          allProjectsForCA: sortedAllForCA
+        });
+      });
+
+      // Trier par nom de famille puis prénom
+      resourcesWithProjects.sort((a, b) => {
+        if (a.nom !== b.nom) {
+          return a.nom.localeCompare(b.nom);
+        }
+        return a.prenom.localeCompare(b.prenom);
+      });
+
+      console.log(`✅ ${resourcesWithProjects.length} ressources avec prestations trouvées`);
+      // Vérifier que les libellés sont bien mappés
+      const sampleResource = resourcesWithProjects[0];
+      if (sampleResource) {
+        console.log(`📋 Exemple de ressource mappée:`, {
+          nom: sampleResource.nom,
+          prenom: sampleResource.prenom,
+          type: sampleResource.type,
+          statut: sampleResource.statut
+        });
+      }
+
+      setResources(resourcesWithProjects);
+    } catch (err) {
+      const errorMessage = normalizeApiError(err, '/api/data/forecast-bootstrap');
+      setError(errorMessage);
+      console.error('❌ Error fetching forecast:', err);
+      setAbsenceByResource({});
+      setFrenchHolidayDates([]);
+      setResources([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [startDate, endDate]);
+
+  const handleActualiser = useCallback(() => {
+    const s = parseFrDateToYmd(startDateInput.trim());
+    const e = parseFrDateToYmd(endDateInput.trim());
+    if (!s || !e) {
+      alert(
+        'Indiquez une date de début et une date de fin au format jj/mm/aaaa (ex. 15/03/2026).'
+      );
+      return;
+    }
+    if (s > e) {
+      alert('La date de début doit être antérieure ou égale à la date de fin.');
+      return;
+    }
+    setStartDate(s);
+    setEndDate(e);
+    setStartDateInput(formatYmdToFr(s));
+    setEndDateInput(formatYmdToFr(e));
+    void fetchForecast({ startDate: s, endDate: e });
+  }, [startDateInput, endDateInput, fetchForecast]);
+
+  const openStartDatePicker = () => {
+    const el = startDatePickerRef.current;
+    if (!el) return;
+    const parsed = parseFrDateToYmd(startDateInput.trim()) || startDate;
+    el.value = parsed;
+    el.showPicker?.();
+  };
+
+  const openEndDatePicker = () => {
+    const el = endDatePickerRef.current;
+    if (!el) return;
+    const parsed = parseFrDateToYmd(endDateInput.trim()) || endDate;
+    el.value = parsed;
+    el.showPicker?.();
+  };
+
+  const fetchForecastRef = useRef(fetchForecast);
+  fetchForecastRef.current = fetchForecast;
+
+  useEffect(() => {
+    const onRefresh = () => {
+      void fetchForecastRef.current();
+    };
+    window.addEventListener(DATA_REFRESH_EVENT, onRefresh);
+    return () => window.removeEventListener(DATA_REFRESH_EVENT, onRefresh);
+  }, []);
+
+  // Sauvegarder les dates dans localStorage à chaque changement
+  useEffect(() => {
+    if (startDate) {
+      try {
+        localStorage.setItem('forecast_startDate', startDate);
+      } catch (error) {
+        console.error('Erreur lors de la sauvegarde de startDate:', error);
+      }
+    }
+  }, [startDate]);
+
+  useEffect(() => {
+    if (endDate) {
+      try {
+        localStorage.setItem('forecast_endDate', endDate);
+      } catch (error) {
+        console.error('Erreur lors de la sauvegarde de endDate:', error);
+      }
+    }
+  }, [endDate]);
+
+  // Sauvegarder les filtres type et statut dans localStorage à chaque changement
+  useEffect(() => {
+    try {
+      localStorage.setItem('forecast_typeFilter', JSON.stringify(typeFilter));
+    } catch (error) {
+      console.error('Erreur lors de la sauvegarde du filtre type:', error);
+    }
+  }, [typeFilter]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('forecast_statutFilter', JSON.stringify(statutFilter));
+    } catch (error) {
+      console.error('Erreur lors de la sauvegarde du filtre statut:', error);
+    }
+  }, [statutFilter]);
+
+  useEffect(() => {
+    if (savedFilters.startDate && savedFilters.endDate) {
+      void fetchForecast({
+        startDate: savedFilters.startDate,
+        endDate: savedFilters.endDate
+      });
+    }
+    // Chargement initial uniquement (ensuite : bouton Actualiser)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Filtrer les ressources par type et statut
+  const filteredResources = useMemo(() => {
+    let filtered = resources;
+
+    // Appliquer le filtre par type (multi-sélection)
+    if (typeFilter.length > 0) {
+      filtered = filtered.filter(r => {
+        const resourceType = r.type || '';
+        return typeFilter.includes(resourceType);
+      });
+    }
+
+    // Appliquer le filtre par statut (multi-sélection)
+    if (statutFilter.length > 0) {
+      filtered = filtered.filter(r => {
+        const resourceStatut = r.statut || '';
+        return statutFilter.includes(resourceStatut);
+      });
+    }
+
+    return filtered;
+  }, [resources, typeFilter, statutFilter]);
+
+  // Calcul de la pagination
+  const totalPages = Math.ceil(filteredResources.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentResources = filteredResources.slice(startIndex, endIndex);
+
+  // Réinitialiser la page quand le filtre change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [typeFilter, statutFilter, startDate, endDate]);
+
+  // Les options de filtres sont chargées depuis toutes les ressources de la base
+  // (allTypeOptions et allStatutOptions sont mis à jour dans fetchForecast)
+
+  // Nettoyer les filtres persistés : ne garder que les valeurs présentes dans les options actuelles
+  // (libellés). Évite que d'anciens codes mémorisés gonflent le compteur (code + libellé).
+  useEffect(() => {
+    if (allTypeOptions.length === 0) return;
+    const valid = new Set(allTypeOptions);
+    setTypeFilter(prev => {
+      const cleaned = Array.from(new Set(prev.filter(t => valid.has(t))));
+      return cleaned.length === prev.length ? prev : cleaned;
+    });
+  }, [allTypeOptions]);
+
+  useEffect(() => {
+    if (allStatutOptions.length === 0) return;
+    const valid = new Set(allStatutOptions);
+    setStatutFilter(prev => {
+      const cleaned = Array.from(new Set(prev.filter(s => valid.has(s))));
+      return cleaned.length === prev.length ? prev : cleaned;
+    });
+  }, [allStatutOptions]);
+
+  // Fonction pour basculer l'état plié/déplié d'une ressource
+  const toggleResourceExpanded = (resourceId: number) => {
+    setExpandedResources(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(resourceId)) {
+        newSet.delete(resourceId);
+      } else {
+        newSet.add(resourceId);
+      }
+      return newSet;
+    });
+  };
+
+  // Fonction pour basculer l'état plié/déplié d'une prestation
+  const toggleDeliveryExpanded = (deliveryId: string | number) => {
+    setExpandedDeliveries(prev => {
+      const newSet = new Set(prev);
+      const deliveryIdStr = String(deliveryId);
+      if (newSet.has(deliveryIdStr)) {
+        newSet.delete(deliveryIdStr);
+      } else {
+        newSet.add(deliveryIdStr);
+      }
+      return newSet;
+    });
+  };
+
+  // Fermer les dropdowns quand on clique ailleurs
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.filter-dropdown-container')) {
+        setTypeDropdownOpen(false);
+        setStatutDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxVisiblePages = 5;
+    let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+    let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+    
+    if (endPage - startPage < maxVisiblePages - 1) {
+      startPage = Math.max(1, endPage - maxVisiblePages + 1);
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+      pages.push(i);
+    }
+    return pages;
+  };
+
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    } catch {
+      return dateString;
+    }
+  };
+
+  // Retourne les jours saisis indexés par mois pour une prestation/ressource.
+  const getActualTimesForDelivery = useCallback(
+    (deliveryId: string | number, resourceId: number): { [month: string]: number } => {
+      const resourceIdVariants = [String(resourceId), String(Number(resourceId)), Number(resourceId).toString()];
+      const deliveryIdVariants = [String(deliveryId), String(Number(deliveryId)), Number(deliveryId).toString()];
+      let foundData: { [month: string]: { days: number; hours: number } } | null = null;
+      for (const resIdVar of resourceIdVariants) {
+        if (!timesheetsAggregate[resIdVar]) continue;
+        for (const delIdVar of deliveryIdVariants) {
+          if (timesheetsAggregate[resIdVar][delIdVar]) {
+            foundData = timesheetsAggregate[resIdVar][delIdVar];
+            break;
+          }
+        }
+        if (foundData) break;
+      }
+      if (!foundData) return {};
+      const data = foundData;
+      const actual: { [month: string]: number } = {};
+      Object.keys(data).forEach((month) => {
+        actual[month] = data[month]?.days || 0;
+      });
+      return actual;
+    },
+    [timesheetsAggregate]
+  );
+
+  // Sauvegarder un temps prévisionnel (en jours)
+  const saveForecastTime = useCallback(async (deliveryId: string | number, month: string, days: number) => {
+    try {
+      const response = await apiFetch('/api/data/forecast-times', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          deliveryId: String(deliveryId),
+          month: month,
+          hours: days // Le backend attend "hours" mais on envoie des jours
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Erreur lors de la sauvegarde');
+      }
+
+      // Mettre à jour l'état local (cache prévisionnel par prestation).
+      setForecastByDeliveryId(prev => ({
+        ...prev,
+        [String(deliveryId)]: {
+          ...(prev[String(deliveryId)] || {}),
+          [month]: days
+        }
+      }));
+
+      setEditingMonth(null);
+    } catch (error) {
+      console.error(`❌ Erreur lors de la sauvegarde du temps prévisionnel:`, error);
+      alert(normalizeApiError(error, apiUrl('/api/data/forecast-times')));
+    }
+  }, []);
+
+  /** Mois jan–déc de l’année en cours (aligné avec les absences Boond synchronisées). */
+  const getGridMonths = (): string[] => {
+    const y = new Date().getFullYear();
+    const months: string[] = [];
+    for (let month = 1; month <= 12; month++) {
+      months.push(`${y}-${String(month).padStart(2, '0')}`);
+    }
+    return months;
+  };
+
+  /** Cherche les temps saisis (agrégat) pour une ressource × prestation. */
+  const lookupTimesheetData = (
+    deliveryId: string | number,
+    resourceId: number
+  ): { [month: string]: { days: number; hours: number } } | null => {
+    const resourceIdVariants = [String(resourceId), String(Number(resourceId)), Number(resourceId).toString()];
+    const deliveryIdVariants = [String(deliveryId), String(Number(deliveryId)), Number(deliveryId).toString()];
+
+    for (const resIdVar of resourceIdVariants) {
+      if (!timesheetsAggregate[resIdVar]) continue;
+      for (const delIdVar of deliveryIdVariants) {
+        if (timesheetsAggregate[resIdVar][delIdVar]) {
+          return timesheetsAggregate[resIdVar][delIdVar];
+        }
+      }
+    }
+    return null;
+  };
+
+  const getActualDaysForMonth = (
+    deliveryId: string | number,
+    resourceId: number,
+    month: string
+  ): number => lookupTimesheetData(deliveryId, resourceId)?.[month]?.days || 0;
+
+  /** Cumul jours saisis sur l’année précédente (colonne de gauche du tableau). */
+  const get2025Cumulative = (deliveryId: string | number, resourceId: number): number => {
+    const foundData = lookupTimesheetData(deliveryId, resourceId);
+    if (!foundData) return 0;
+
+    const priorYear = new Date().getFullYear() - 1;
+    let total = 0;
+    Object.keys(foundData).forEach((month) => {
+      if (month.startsWith(`${priorYear}-`)) {
+        total += foundData[month].days || 0;
+      }
+    });
+    return total;
+  };
+
+  // Calculer le CA d'une ressource pour une année donnée
+  const getResourceCA = (resource: ResourceWithProjects, year: number): number => {
+    const resourceIdStr = String(resource.id);
+    let totalCA = 0;
+    const projectsForYear = resource.allProjectsForCA ?? resource.projects;
+
+    projectsForYear.forEach((project) => {
+      const deliveryIdStr = String(project.id);
+      const tjm = project.tjm || 0;
+      
+      if (tjm <= 0) return;
+      
+      // Essayer plusieurs variantes d'IDs
+      const resourceIdVariants = [resourceIdStr, String(Number(resource.id)), Number(resource.id).toString()];
+      const deliveryIdVariants = [deliveryIdStr, String(Number(project.id)), Number(project.id).toString()];
+      
+      let foundData: { [month: string]: { days: number; hours: number } } | null = null;
+      
+      for (const resIdVar of resourceIdVariants) {
+        if (timesheetsAggregate[resIdVar]) {
+          for (const delIdVar of deliveryIdVariants) {
+            if (timesheetsAggregate[resIdVar][delIdVar]) {
+              foundData = timesheetsAggregate[resIdVar][delIdVar];
+              break;
+            }
+          }
+          if (foundData) break;
+        }
+      }
+      
+      if (foundData) {
+        Object.keys(foundData).forEach((month) => {
+          if (month.startsWith(`${year}-`)) {
+            const timeData = foundData![month];
+            const days = timeData.days || 0;
+            totalCA += days * tjm;
+          }
+        });
+      }
+    });
+    
+    return totalCA;
+  };
+
+  // Formater le nom du mois
+  const formatMonthName = (month: string): string => {
+    const [year, monthNum] = month.split('-');
+    const date = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
+    return date.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
+  };
+
+  if (loading) {
+    return (
+      <div className="forecast-page">
+        <div className="forecast-header">
+          <button className="back-button" onClick={onBack}>
+            ← Retour
+          </button>
+          <h2>Forecast</h2>
+        </div>
+        <div className="forecast-container">
+          <div className="loading-state">
+            <div className="loading-spinner"></div>
+            <p>Chargement du forecast...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="forecast-page">
+        <div className="forecast-header">
+          <button className="back-button" onClick={onBack}>
+            ← Retour
+          </button>
+          <h2>Forecast</h2>
+        </div>
+        <div className="forecast-container">
+          <div className="error-state">
+            <p className="error-message">❌ {error}</p>
+            <button className="retry-button" onClick={() => void fetchForecast()}>
+              Réessayer
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="forecast-page">
+      <div className="forecast-header">
+        <button className="back-button" onClick={onBack}>
+          ← Retour
+        </button>
+        <h2>Forecast</h2>
+      </div>
+      <div className="forecast-container">
+        {/* Filtres de période */}
+        <div className="forecast-filters">
+          <div className="date-filters-group">
+            <div className="date-filter">
+              <label htmlFor="start-date">Date de début :</label>
+              <div className="forecast-date-field">
+                <input
+                  type="text"
+                  id="start-date"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="jj/mm/aaaa"
+                  value={startDateInput}
+                  onChange={(e) => setStartDateInput(e.target.value)}
+                  className="date-input forecast-date-text-input"
+                />
+                <input
+                  ref={startDatePickerRef}
+                  type="date"
+                  className="forecast-native-date-hidden"
+                  aria-hidden
+                  tabIndex={-1}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v) setStartDateInput(formatYmdToFr(v));
+                  }}
+                />
+                <button
+                  type="button"
+                  className="forecast-calendar-btn"
+                  onClick={openStartDatePicker}
+                  aria-label="Calendrier date de début"
+                  title="Choisir dans le calendrier"
+                >
+                  📅
+                </button>
+              </div>
+            </div>
+            <div className="date-filter">
+              <label htmlFor="end-date">Date de fin :</label>
+              <div className="forecast-date-field">
+                <input
+                  type="text"
+                  id="end-date"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="jj/mm/aaaa"
+                  value={endDateInput}
+                  onChange={(e) => setEndDateInput(e.target.value)}
+                  className="date-input forecast-date-text-input"
+                />
+                <input
+                  ref={endDatePickerRef}
+                  type="date"
+                  className="forecast-native-date-hidden"
+                  aria-hidden
+                  tabIndex={-1}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v) setEndDateInput(formatYmdToFr(v));
+                  }}
+                />
+                <button
+                  type="button"
+                  className="forecast-calendar-btn"
+                  onClick={openEndDatePicker}
+                  aria-label="Calendrier date de fin"
+                  title="Choisir dans le calendrier"
+                >
+                  📅
+                </button>
+              </div>
+            </div>
+            <button className="refresh-button" onClick={handleActualiser}>
+              Actualiser
+            </button>
+            
+            {/* Filtres Type et Statut */}
+            <div className="filters-container">
+          {/* Filtre Type */}
+          <div className="filter-dropdown-container">
+            <button
+              className="filter-button"
+              onClick={() => {
+                setTypeDropdownOpen(!typeDropdownOpen);
+                setStatutDropdownOpen(false);
+              }}
+            >
+              Type
+              {typeFilter.length > 0 && (
+                <span className="filter-badge">{typeFilter.length}</span>
+              )}
+              <span className="dropdown-arrow">{typeDropdownOpen ? '▲' : '▼'}</span>
+            </button>
+            {typeDropdownOpen && (
+              <div className="filter-dropdown">
+                <div className="filter-dropdown-content">
+                  {allTypeOptions.map((type) => (
+                    <label key={type} className="filter-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={typeFilter.includes(type)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setTypeFilter([...typeFilter, type]);
+                          } else {
+                            setTypeFilter(typeFilter.filter(t => t !== type));
+                          }
+                        }}
+                        className="filter-checkbox"
+                      />
+                      <span>{type}</span>
+                    </label>
+                  ))}
+                </div>
+                {typeFilter.length > 0 && (
+                  <div className="filter-dropdown-footer">
+                    <button
+                      className="clear-filter-button-small"
+                      onClick={() => setTypeFilter([])}
+                    >
+                      Effacer
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Filtre Statut */}
+          <div className="filter-dropdown-container">
+            <button
+              className="filter-button"
+              onClick={() => {
+                setStatutDropdownOpen(!statutDropdownOpen);
+                setTypeDropdownOpen(false);
+              }}
+            >
+              Statut
+              {statutFilter.length > 0 && (
+                <span className="filter-badge">{statutFilter.length}</span>
+              )}
+              <span className="dropdown-arrow">{statutDropdownOpen ? '▲' : '▼'}</span>
+            </button>
+            {statutDropdownOpen && (
+              <div className="filter-dropdown">
+                <div className="filter-dropdown-content">
+                  {allStatutOptions.map((statut) => {
+                    const statutValue: string = statut || '';
+                    return (
+                      <label key={statutValue} className="filter-checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={statutFilter.includes(statutValue)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setStatutFilter([...statutFilter, statutValue]);
+                            } else {
+                              setStatutFilter(statutFilter.filter(s => s !== statutValue));
+                            }
+                          }}
+                          className="filter-checkbox"
+                        />
+                        <span>{statutValue}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {statutFilter.length > 0 && (
+                  <div className="filter-dropdown-footer">
+                    <button
+                      className="clear-filter-button-small"
+                      onClick={() => setStatutFilter([])}
+                    >
+                      Effacer
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+            </div>
+          </div>
+        </div>
+
+        {filteredResources.length === 0 ? (
+          <div className="empty-state">
+            <p className="empty-message">Aucune prestation trouvée</p>
+            <p className="empty-details">Aucune ressource n'a de prestations dans la période sélectionnée ou ne correspond aux filtres.</p>
+          </div>
+        ) : (
+          <>
+            {currentResources.map((resource) => {
+              const isExpanded = expandedResources.has(resource.id);
+              return (
+                <div key={resource.id} className="resource-card">
+                  <div className="resource-header" onClick={() => toggleResourceExpanded(resource.id)}>
+                    <h3 className="resource-name">{resource.prenom} {resource.nom}</h3>
+                    <div className="resource-header-right">
+                      <span className="resource-ca">
+                        CA {new Date().getFullYear() - 1}: {getResourceCA(resource, new Date().getFullYear() - 1).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} €
+                      </span>
+                      <span className="resource-ca">
+                        CA {new Date().getFullYear()}: {getResourceCA(resource, new Date().getFullYear()).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} €
+                      </span>
+                      <span className="projects-count">{resource.projects.length} prestation{resource.projects.length > 1 ? 's' : ''}</span>
+                      <span className="expand-icon">{isExpanded ? '▼' : '▶'}</span>
+                    </div>
+                  </div>
+                  {isExpanded && (
+                    <div className="projects-list">
+                      {resource.projects.length === 0 ? (
+                        <div className="no-projects">
+                          <p className="no-projects-message">Aucune prestation trouvée pour cette ressource</p>
+                          <p className="no-projects-details">Vérifiez que la ressource a des prestations dans la période sélectionnée ou consultez les logs du serveur.</p>
+                        </div>
+                      ) : (
+                        <div className="projects-list-container">
+                          {(() => {
+                            const resAbs = getAbsenceMapForResource(absenceByResource, resource.id);
+                            const months = getGridMonths();
+                            const gridYear =
+                              months.length > 0
+                                ? parseInt(months[0].split('-')[0], 10)
+                                : new Date().getFullYear();
+                            const prevYear = gridYear - 1;
+                            const totalPrevYear = sumAbsencesForYear(resAbs, prevYear);
+                            const maxDays = Math.max(
+                              totalPrevYear,
+                              ...months.map((m) => resAbs[m] || 0),
+                              1
+                            );
+                            return (
+                              <div className="project-card forecast-absences-block">
+                                <div className="project-months">
+                                  <table className="forecast-table forecast-absences-compact">
+                                    <tbody>
+                                      <tr className="forecast-absences-row forecast-absences-row-headers">
+                                        <th className="forecast-absences-corner" scope="row">
+                                          Absences
+                                        </th>
+                                        <th className="forecast-absences-month-head" scope="col">
+                                          <span className="forecast-absences-month-primary">{prevYear}</span>
+                                          <span
+                                            className="forecast-absences-month-workdays"
+                                            title={`${countWorkdaysInYear(prevYear, holidayYmdSet)} jours ouvrés en ${prevYear} (lun–ven, fériés métropole exclus)`}
+                                          >
+                                            {countWorkdaysInYear(prevYear, holidayYmdSet)}
+                                          </span>
+                                        </th>
+                                        {months.map((month) => {
+                                          const ouv = countWorkdaysInMonth(month, holidayYmdSet);
+                                          return (
+                                            <th
+                                              key={month}
+                                              className="forecast-absences-month-head"
+                                              scope="col"
+                                            >
+                                              <span className="forecast-absences-month-primary">
+                                                {formatMonthName(month)}
+                                              </span>
+                                              <span
+                                                className="forecast-absences-month-workdays"
+                                                title={`${ouv} jours ouvrés (lun–ven, fériés métropole exclus)`}
+                                              >
+                                                {ouv}
+                                              </span>
+                                            </th>
+                                          );
+                                        })}
+                                      </tr>
+                                      <tr className="forecast-absences-row forecast-absences-row-values">
+                                        <th className="forecast-absences-corner" scope="row">
+                                          Nombre
+                                        </th>
+                                        <td
+                                          className="forecast-absences-cell"
+                                          style={{
+                                            backgroundColor: absenceCellBackground(totalPrevYear, maxDays)
+                                          }}
+                                        >
+                                          {totalPrevYear > 0 ? totalPrevYear.toFixed(1) : '—'}
+                                        </td>
+                                        {months.map((month) => {
+                                          const d = resAbs[month] || 0;
+                                          return (
+                                            <td
+                                              key={month}
+                                              className="forecast-absences-cell"
+                                              style={{
+                                                backgroundColor: absenceCellBackground(d, maxDays)
+                                              }}
+                                            >
+                                              {d > 0 ? Number(d).toFixed(1) : '—'}
+                                            </td>
+                                          );
+                                        })}
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                          {resource.projects.map((project, index) => {
+                            const deliveryId = String(project.id);
+                            const isDeliveryExpanded = expandedDeliveries.has(deliveryId);
+                            const actualTimes = getActualTimesForDelivery(project.id, resource.id);
+                            const forecastTimes = forecastByDeliveryId[deliveryId] || {};
+                            const actualPrevYearCum = get2025Cumulative(project.id, resource.id);
+                            
+                            // Utiliser les jours commandés depuis la prestation déjà chargée
+                            const orderedDays = project.orderedDays !== null && project.orderedDays !== undefined 
+                              ? project.orderedDays 
+                              : (orderedDaysByDeliveryId[deliveryId] ?? null);
+                            
+                            // Calculer les jours consommés (tous les jours depuis timesheetsAggregate)
+                            const resourceIdStr = String(resource.id);
+                            const deliveryIdStr = String(project.id);
+                            let consumedDays = 0;
+                            
+                            // Essayer plusieurs variantes d'IDs pour la correspondance
+                            const resourceIdVariants = [resourceIdStr, String(Number(resource.id)), Number(resource.id).toString()];
+                            const deliveryIdVariants = [deliveryIdStr, String(Number(project.id)), Number(project.id).toString()];
+                            
+                            let foundData: { [month: string]: { days: number; hours: number } } | null = null;
+                            
+                            for (const resIdVar of resourceIdVariants) {
+                              if (timesheetsAggregate[resIdVar]) {
+                                for (const delIdVar of deliveryIdVariants) {
+                                  if (timesheetsAggregate[resIdVar][delIdVar]) {
+                                    foundData = timesheetsAggregate[resIdVar][delIdVar];
+                                    break;
+                                  }
+                                }
+                                if (foundData) break;
+                              }
+                            }
+                            
+                            if (foundData) {
+                              // Somme tous les jours, toutes années confondues
+                              Object.keys(foundData).forEach((month) => {
+                                const timeData = foundData![month];
+                                consumedDays += timeData.days || 0;
+                              });
+                            } else {
+                              // Log pour déboguer
+                              console.log(`⚠️  Aucune donnée trouvée pour resourceId=${resourceIdStr} (${resource.id}), deliveryId=${deliveryIdStr} (${project.id})`);
+                            }
+                            
+                            // Calculer le CA (jours consommés * TJM)
+                            const ca = project.tjm !== null && project.tjm !== undefined && consumedDays > 0
+                              ? consumedDays * project.tjm
+                              : 0;
+                            
+                            return (
+                              <div key={`${project.id}-${index}`} className="project-card">
+                                <div 
+                                  className="project-header" 
+                                  onClick={() => toggleDeliveryExpanded(project.id)}
+                                  style={{ cursor: 'pointer' }}
+                                >
+                                  <div className="project-header-content">
+                                    <div className="project-title-section">
+                                      <span className="expand-icon" style={{ fontSize: '0.7rem', color: '#2C5F5D', marginRight: '0.5rem' }}>
+                                        {isDeliveryExpanded ? '▼' : '▶'}
+                                      </span>
+                                      <span className="project-title-inline">{project.title}</span>
+                                    </div>
+                                    <span className="project-ref-inline">Réf: {project.reference || project.id || 'N/A'}</span>
+                                    <span className="project-dates-inline">
+                                      {formatDate(project.startDate)} - {formatDate(project.endDate)}
+                                    </span>
+                                    {project.tjm !== null && project.tjm !== undefined ? (
+                                      <span className="project-tjm-inline">
+                                        TJM: {project.tjm.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
+                                      </span>
+                                    ) : (
+                                      <span className="project-tjm-inline"></span>
+                                    )}
+                                    <button className="project-button project-button-ordered" onClick={(e) => e.stopPropagation()}>
+                                      Cde : {orderedDays !== null && orderedDays !== undefined ? orderedDays.toFixed(0) : '-'}
+                                    </button>
+                                    <button className="project-button project-button-consumed" onClick={(e) => e.stopPropagation()}>
+                                      Conso : {consumedDays.toFixed(1)}
+                                    </button>
+                                    <button 
+                                      className={`project-button project-button-delta ${
+                                        orderedDays !== null && orderedDays !== undefined
+                                          ? (orderedDays - consumedDays > 0 ? 'delta-positive' : orderedDays - consumedDays < 0 ? 'delta-negative' : '')
+                                          : 'delta-na'
+                                      }`}
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      Delta : {orderedDays !== null && orderedDays !== undefined 
+                                        ? (orderedDays - consumedDays).toFixed(1)
+                                        : '-'}
+                                    </button>
+                                    <button className="project-button project-button-ca" onClick={(e) => e.stopPropagation()}>
+                                      CA : {ca > 0 ? ca.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '0'} €
+                                    </button>
+                                  </div>
+                                </div>
+                                {isDeliveryExpanded && (
+                                <div className="project-months">
+                                  <table className="forecast-table">
+                                    <thead>
+                                      <tr>
+                                        <th className="table-row-label"></th>
+                                        <th className="table-header">{new Date().getFullYear() - 1}</th>
+                                        {getGridMonths().map((month) => (
+                                          <th key={month} className="table-header">
+                                            {formatMonthName(month)}
+                                          </th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {/* Ligne Temps saisi */}
+                                      <tr className="forecast-row">
+                                        <td className="table-row-label">Temps saisi</td>
+                                        <td className="table-cell actual-cell">
+                                          <span className={actualPrevYearCum > 0 ? 'has-hours' : 'no-hours'}>
+                                            {actualPrevYearCum > 0 ? actualPrevYearCum.toFixed(1) : '-'}
+                                          </span>
+                                        </td>
+                                        {getGridMonths().map((month) => {
+                                          const actualDays = getActualDaysForMonth(project.id, resource.id, month);
+                                          return (
+                                            <td key={month} className="table-cell actual-cell">
+                                              <span className={actualDays > 0 ? 'has-hours' : 'no-hours'}>
+                                                {actualDays > 0 ? actualDays.toFixed(1) : '-'}
+                                              </span>
+                                            </td>
+                                          );
+                                        })}
+                                      </tr>
+                                      {/* Ligne Temps prévisionnel */}
+                                      <tr className="forecast-row">
+                                        <td className="table-row-label">Temps prévisionnel</td>
+                                        <td className="table-cell forecast-cell">
+                                          <span className="no-forecast">-</span>
+                                        </td>
+                                        {getGridMonths().map((month) => {
+                                          const forecastDays = forecastTimes[month] ?? 0;
+                                          const actualDays = actualTimes[month] ?? 0;
+                                          const isEditing = editingMonth?.deliveryId === project.id && editingMonth?.month === month;
+                                          
+                                          // Vérifier si le mois est au-delà de la date de fin
+                                          const monthDate = new Date(month + '-01');
+                                          const endDate = project.endDate ? new Date(project.endDate) : null;
+                                          const isBeyondEndDate = endDate && monthDate > endDate;
+
+                                          const hasForecastSaisi = Object.prototype.hasOwnProperty.call(
+                                            forecastTimes,
+                                            month
+                                          );
+                                          const hasActualSaisi = Object.prototype.hasOwnProperty.call(actualTimes, month);
+                                          const showForecastDelta =
+                                            isMonthCurrentOrPast(month) && hasForecastSaisi && hasActualSaisi;
+
+                                          const rawDelta = actualDays - forecastDays;
+                                          const deltaNearZero = Math.abs(rawDelta) < 0.05;
+                                          const deltaDisplayText = deltaNearZero
+                                            ? '-'
+                                            : rawDelta > 0
+                                              ? `+${rawDelta.toFixed(1)}`
+                                              : rawDelta.toFixed(1);
+                                          
+                                          return (
+                                            <td 
+                                              key={month} 
+                                              className={`table-cell forecast-cell ${isBeyondEndDate ? 'beyond-end-date' : ''}`}
+                                            >
+                                              {isEditing ? (
+                                                <div className="forecast-edit">
+                                                  <input
+                                                    type="number"
+                                                    step="0.5"
+                                                    min="0"
+                                                    defaultValue={forecastDays}
+                                                    className={`forecast-input ${isBeyondEndDate ? 'beyond-end-date-input' : ''}`}
+                                                    autoFocus
+                                                    style={isBeyondEndDate ? { backgroundColor: '#F26B69', color: 'white' } : {}}
+                                                    onBlur={(e) => {
+                                                      const value = parseFloat(e.target.value) || 0;
+                                                      saveForecastTime(project.id, month, value);
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === 'Enter') {
+                                                        const value = parseFloat((e.target as HTMLInputElement).value) || 0;
+                                                        saveForecastTime(project.id, month, value);
+                                                      } else if (e.key === 'Escape') {
+                                                        setEditingMonth(null);
+                                                      }
+                                                    }}
+                                                  />
+                                                  <button
+                                                    className="forecast-save-btn"
+                                                    onClick={(e) => {
+                                                      const input = (e.target as HTMLElement).parentElement?.querySelector('input') as HTMLInputElement;
+                                                      const value = parseFloat(input?.value) || 0;
+                                                      saveForecastTime(project.id, month, value);
+                                                    }}
+                                                  >
+                                                    ✓
+                                                  </button>
+                                                  <button
+                                                    className="forecast-cancel-btn"
+                                                    onClick={() => setEditingMonth(null)}
+                                                  >
+                                                    ✕
+                                                  </button>
+                                                </div>
+                                              ) : showForecastDelta ? (
+                                                <div
+                                                  className={`forecast-display forecast-display-delta ${isBeyondEndDate ? 'beyond-end-date' : ''}`}
+                                                  onClick={() => {
+                                                    setEditingMonth({ deliveryId: project.id, month });
+                                                  }}
+                                                  title={`Δ saisi − prévi : ${deltaDisplayText} (saisi ${actualDays.toFixed(1)}, prévi ${forecastDays.toFixed(1)}) — cliquer pour modifier`}
+                                                >
+                                                  {deltaDisplayText}
+                                                </div>
+                                              ) : (
+                                                <div
+                                                  className={`forecast-display ${forecastDays > 0 ? 'has-forecast' : 'no-forecast'} ${isBeyondEndDate ? 'beyond-end-date' : ''}`}
+                                                  onClick={() => {
+                                                    setEditingMonth({ deliveryId: project.id, month });
+                                                  }}
+                                                  title={isBeyondEndDate ? 'Mois au-delà de la date de fin - saisie possible' : 'Cliquez pour modifier'}
+                                                >
+                                                  {forecastDays > 0 ? forecastDays.toFixed(1) : '-'}
+                                                </div>
+                                              )}
+                                            </td>
+                                          );
+                                        })}
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="pagination-container">
+                <div className="pagination-info">
+                  <span>
+                    Affichage de {startIndex + 1} à {Math.min(endIndex, filteredResources.length)} sur {filteredResources.length} ressource{filteredResources.length > 1 ? 's' : ''}
+                  </span>
+                </div>
+                
+                <div className="pagination">
+                  <button
+                    className="pagination-button"
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                  >
+                    ‹ Précédent
+                  </button>
+                  
+                  <div className="pagination-numbers">
+                    {getPageNumbers().map((page) => (
+                      <button
+                        key={page}
+                        className={`pagination-number ${currentPage === page ? 'active' : ''}`}
+                        onClick={() => handlePageChange(page)}
+                      >
+                        {page}
+                      </button>
+                    ))}
+                  </div>
+                  
+                  <button
+                    className="pagination-button"
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                  >
+                    Suivant ›
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="forecast-summary">
+              <p>Total : <strong>{filteredResources.length}</strong> ressource{filteredResources.length > 1 ? 's' : ''} avec prestations</p>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default Forecast;

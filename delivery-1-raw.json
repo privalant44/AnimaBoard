@@ -1,0 +1,295 @@
+{
+  "meta": {
+    "version": "9.1.60.0",
+    "androidMinVersion": "2.31.5",
+    "iosMinVersion": "2.28.6",
+    "isLogged": true,
+    "language": "fr",
+    "timestamp": 1781093547493,
+    "login": "philippe.rivalant@animaneo.fr",
+    "customer": "animaneo"
+  },
+  "data": {
+    "id": "1",
+    "type": "delivery",
+    "attributes": {
+      "creationDate": "2024-11-20T20:56:56+0100",
+      "updateDate": "2025-03-26T19:01:07+0100",
+      "startDate": "2024-08-26",
+      "endDate": "2024-12-31",
+      "title": "IT#2 - Accompagnement stratégique & opérationnel",
+      "state": 0,
+      "typeOf": 1,
+      "forceAverageDailyPriceExcludingTax": true,
+      "averageDailyPriceExcludingTax": 1050,
+      "averageDailyCost": 545.3046487095,
+      "averageDailyContractCost": 545.3046487095,
+      "numberOfDaysInvoicedOrQuantity": 60,
+      "numberOfDaysFree": 0,
+      "informationComments": "",
+      "conditions": "",
+      "turnoverSimulatedExcludingTax": 67050,
+      "costsSimulatedExcludingTax": 32718.278922570003,
+      "marginSimulatedExcludingTax": 34331.72107743,
+      "profitabilitySimulated": 51.20316342644295,
+      "dailyExpenses": 0,
+      "monthlyExpenses": 0,
+      "numberOfWorkingDays": 215,
+      "forceAverageHourlyPriceExcludingTax": false,
+      "calendar": "",
+      "additionalTurnoverAndCosts": [
+        {
+          "id": "7",
+          "date": "2024-11-30",
+          "state": true,
+          "canWriteAdditionalTurnoverAndCosts": true,
+          "title": "PILOTAGE NOV 24",
+          "turnoverExcludingTax": 1800,
+          "costsExcludingTax": 0
+        },
+        {
+          "id": "8",
+          "date": "2024-12-03",
+          "state": true,
+          "canWriteAdditionalTurnoverAndCosts": true,
+          "title": "PILOTAGE DEC 24",
+          "turnoverExcludingTax": 2250,
+          "costsExcludingTax": 0
+        }
+      ],
+      "expensesDetails": []
+    },
+    "relationships": {
+      "project": {
+        "data": {
+          "id": "1",
+          "type": "project"
+        }
+      },
+      "dependsOn": {
+        "data": {
+          "id": "1",
+          "type": "resource"
+        }
+      },
+      "contract": {
+        "data": {
+          "id": "34",
+          "type": "contract"
+        }
+      },
+      "purchase": {
+        "data": null
+      },
+      "master": {
+        "data": null
+      },
+      "slave": {
+        "data": null
+      },
+      "files": {
+        "data": []
+      },
+      "createdBy": {
+        "data": {
+          "id": "1",
+          "type": "resource"
+        }
+      }
+    }
+  },
+  "included": [
+    {
+      "id": "1",
+      "type": "resource",
+      "attributes": {
+        "lastName": "RIVALANT",
+        "firstName": "Philippe",
+        "typeOf": 3,
+        "title": "Directeur général",
+        "subscription": "active"
+      },
+      "relationships": {
+        "agency": {
+          "data": {
+            "id": "1",
+            "type": "agency"
+          }
+        },
+        "contracts": {
+          "data": [
+            {
+              "id": "34",
+              "type": "contract"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1",
+      "type": "opportunity",
+      "attributes": {
+        "reference": "AO1",
+        "title": "Accompagnement Transformation SERCEL"
+      }
+    },
+    {
+      "id": "1",
+      "type": "agency",
+      "attributes": {
+        "name": "Anima Neo",
+        "allowAdvantagesOnProjects": false,
+        "allowExceptionalScalesOnProjects": false,
+        "closedPeriods": [
+          {
+            "id": "1",
+            "parentType": "timesreport",
+            "period": ""
+          },
+          {
+            "id": "2",
+            "parentType": "expensesreport",
+            "period": ""
+          },
+          {
+            "id": "3",
+            "parentType": "invoice",
+            "period": ""
+          },
+          {
+            "id": "4",
+            "parentType": "project",
+            "period": ""
+          },
+          {
+            "id": "5",
+            "parentType": "contract",
+            "period": ""
+          }
+        ],
+        "calendar": "calendar",
+        "currency": 0,
+        "exchangeRate": 1,
+        "expenseTypes": [
+          {
+            "reference": 1,
+            "name": "Restaurant",
+            "taxRate": 0
+          },
+          {
+            "reference": 2,
+            "name": "Hôtel",
+            "taxRate": 0
+          },
+          {
+            "reference": 3,
+            "name": "Transport",
+            "taxRate": 0
+          },
+          {
+            "reference": 4,
+            "name": "Parking",
+            "taxRate": 0
+          },
+          {
+            "reference": 5,
+            "name": "Carburant",
+            "taxRate": 0
+          },
+          {
+            "reference": 6,
+            "name": "Divers",
+            "taxRate": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "25",
+      "type": "contact",
+      "attributes": {
+        "lastName": "Matthieu",
+        "firstName": "GOURIOU"
+      }
+    },
+    {
+      "id": "24",
+      "type": "company",
+      "attributes": {
+        "name": "Sercel"
+      }
+    },
+    {
+      "id": "1",
+      "type": "project",
+      "attributes": {
+        "reference": "Accompagnement Transformation SERCEL",
+        "typeOf": 7,
+        "mode": 1,
+        "currency": 0,
+        "currencyAgency": 0,
+        "exchangeRate": 1,
+        "exchangeRateAgency": 1,
+        "workUnitRate": 1
+      },
+      "relationships": {
+        "mainManager": {
+          "data": {
+            "id": "1",
+            "type": "resource"
+          }
+        },
+        "opportunity": {
+          "data": {
+            "id": "1",
+            "type": "opportunity"
+          }
+        },
+        "agency": {
+          "data": {
+            "id": "1",
+            "type": "agency"
+          }
+        },
+        "contact": {
+          "data": {
+            "id": "25",
+            "type": "contact"
+          }
+        },
+        "company": {
+          "data": {
+            "id": "24",
+            "type": "company"
+          }
+        }
+      }
+    },
+    {
+      "id": "34",
+      "type": "contract",
+      "attributes": {
+        "startDate": "2015-11-17",
+        "endDate": "",
+        "calendar": "",
+        "contractAverageDailyCost": 545.3046487095,
+        "monthlySalary": 6241.666667,
+        "dailyExpenses": 0,
+        "monthlyExpenses": 0,
+        "currency": 0,
+        "currencyAgency": 0,
+        "exchangeRate": 1,
+        "exchangeRateAgency": 1
+      },
+      "relationships": {
+        "agency": {
+          "data": {
+            "id": "1",
+            "type": "agency"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "installCommand": "npm install && cd client && npm install",
+  "buildCommand": "cd client && npm run build",
+  "outputDirectory": "client/build",
+  "framework": null,
+  "functions": {
+    "api/cron/daily-sync.js": { "maxDuration": 300 },
+    "api/batch-sync/run.js": { "maxDuration": 300 },
+    "api/dashboard/income-statement/sync.js": { "maxDuration": 60 },
+    "api/**/*.js": { "maxDuration": 60 }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/daily-sync",
+      "schedule": "0 4 * * *"
+    }
+  ],
+  "rewrites": [
+    { "source": "/api/dashboard/:path*", "destination": "/api/dashboard?route=:path*" },
+    { "source": "/api/auth/:path*", "destination": "/api/auth?route=:path*" },
+    { "source": "/api/boondmanager/sync/:path*", "destination": "/api/boondmanager/sync?route=:path*" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ]
+}

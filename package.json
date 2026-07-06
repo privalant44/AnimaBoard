@@ -1,0 +1,62 @@
+{
+  "name": "anima-board",
+  "version": "1.0.0",
+  "description": "Tableau de bord Anima Néo - Intégration BoondManager et Pennylane",
+  "main": "server/index.js",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "dev:win": "powershell -ExecutionPolicy Bypass -File ./dev.ps1",
+    "server": "node server/index.js",
+    "client": "cd client && npm start",
+    "stop": "npx --yes kill-port 3000 3001",
+    "init-dictionary": "node scripts/init-dictionary.js",
+    "build": "node scripts/build-client.js",
+    "start": "node server/index.js",
+    "start:prod": "node scripts/run-prod.js",
+    "serve": "npm run build && npm run start:prod",
+    "install-all": "npm install && cd client && npm install",
+    "sync": "node sync.js",
+    "sync-deliveries-year": "node scripts/sync-deliveries-year.js",
+    "sync-projects-year": "node scripts/sync-projects-year.js",
+    "extract-projects": "node extract_projects.js",
+    "report": "node report.js",
+    "sync-timesheets": "node sync_timesheets.js",
+    "sync-absences": "node sync_absences.js",
+    "sync-timesheets-2years": "node scripts/sync-timesheets-2years.js",
+    "init-income-statement": "node scripts/init-pennylane-income-statement.js",
+    "view-db": "node scripts/view-kv.js",
+    "encrypt-env": "node scripts/encrypt-env.js",
+    "seed-french-holidays": "node scripts/seed-french-holidays.js",
+    "dump-ledger-month": "node scripts/dump-pennylane-ledger-month.js",
+    "db:export-dev": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-dev-to-prod.ps1 -Action Export",
+    "db:import-prod": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-dev-to-prod.ps1 -Action Import",
+    "db:clone-dev-to-prod": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-dev-to-prod.ps1 -Action Clone"
+  },
+  "keywords": [
+    "dashboard",
+    "anima",
+    "boondmanager",
+    "pennylane"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.101.0",
+    "axios": "^1.6.2",
+    "cors": "^2.8.5",
+    "csv-parse": "^5.6.0",
+    "date-fns": "^2.30.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.3",
+    "jwks-rsa": "^3.2.2"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nodemon": "^2.0.22",
+    "supabase": "^2.78.1"
+  }
+}

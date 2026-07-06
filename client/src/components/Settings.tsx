@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import { PERMISSIONS } from '../auth/roles';
 import SettingsDataSyncPanel from './settings/SettingsDataSyncPanel';
@@ -69,20 +69,20 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
         <h2>Paramètres</h2>
         <div className="settings-hub-grid">
           <button type="button" className="settings-hub-card" onClick={() => setView('data-sync')}>
-            <span className="settings-hub-card-icon" aria-hidden="true">🔄</span>
+            <span className="settings-hub-card-icon" aria-hidden="true">{'\u{1F504}'}</span>
             <span className="settings-hub-card-title">Actualisation des données</span>
           </button>
           <button type="button" className="settings-hub-card" onClick={() => setView('diagnostics')}>
-            <span className="settings-hub-card-icon" aria-hidden="true">🔍</span>
+            <span className="settings-hub-card-icon" aria-hidden="true">{'\u{1F50D}'}</span>
             <span className="settings-hub-card-title">Tests et consultations</span>
           </button>
           <button type="button" className="settings-hub-card" onClick={() => setView('batch-logs')}>
-            <span className="settings-hub-card-icon" aria-hidden="true">📋</span>
+            <span className="settings-hub-card-icon" aria-hidden="true">{'\u{1F4CB}'}</span>
             <span className="settings-hub-card-title">Journaux batch</span>
           </button>
           {canManageUsers && (
             <button type="button" className="settings-hub-card" onClick={() => setView('users')}>
-              <span className="settings-hub-card-icon" aria-hidden="true">👥</span>
+              <span className="settings-hub-card-icon" aria-hidden="true">{'\u{1F465}'}</span>
               <span className="settings-hub-card-title">Administration utilisateurs</span>
             </button>
           )}

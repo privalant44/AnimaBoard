@@ -2,6 +2,11 @@
  * GET /api/data/forecast-bootstrap
  * Endpoint bootstrap unique pour la vue Forecast/Report en environnement Vercel.
  */
+const path = require('path');
+try {
+  require(path.join(__dirname, '..', '..', 'lib', 'secretEnv'));
+} catch (e) {}
+
 const kvStorage = require('../../lib/kvStorage');
 const { KV_KEYS } = require('../../lib/constants');
 const { getSupabase } = require('../../lib/supabaseClient');

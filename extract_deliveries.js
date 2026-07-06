@@ -8,18 +8,21 @@ const {
   fetchDelivery,
 } = require('./lib/deliveryBoond');
 
-let email = process.env.BOOND_EMAIL;
-let password = process.env.BOOND_PASSWORD;
-
-console.log('🚀 Extraction des prestations via /api/deliveries/{id} (JSON)\n');
-console.log('='.repeat(80));
-if (!email || !password) {
-  console.error('❌ Erreur: BOOND_EMAIL et BOOND_PASSWORD (ou BOOND_PASSWORD_ENC) requis');
-  process.exit(1);
+function getBoondCredentials() {
+  const email = process.env.BOOND_EMAIL;
+  const password = process.env.BOOND_PASSWORD;
+  if (!email || !password) {
+    throw new Error('BOOND_EMAIL et BOOND_PASSWORD (ou BOOND_PASSWORD_ENC) requis');
+  }
+  return { email, password };
 }
-console.log(`🔑 Authentification: Basic Auth avec ${email}\n`);
 
 async function extractDeliveries() {
+  console.log('🚀 Extraction des prestations via /api/deliveries/{id} (JSON)\n');
+  console.log('='.repeat(80));
+  const { email, password } = getBoondCredentials();
+  console.log(`🔑 Authentification: Basic Auth avec ${email}\n`);
+
   const config = getBoondAuthConfig(email, password);
   const baseURL = DEFAULT_BASE_URL;
 

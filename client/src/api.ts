@@ -40,3 +40,16 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
   }
   return fetch(apiUrl(path), { ...init, headers });
 }
+
+/** Parse une réponse API en JSON avec message clair si le serveur renvoie du HTML (timeout Vercel, etc.). */
+export async function parseApiJson<T = Record<string, unknown>>(res: Response): Promise<T> {
+  const text = await res.text();
+  if (!text.trim()) return {} as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const isHtml = (res.headers.get('content-type') || '').includes('text/html');
+    const hint = isHtml ? ' — timeout ou route API absente (Vercel)' : '';
+    throw new Error(`Réponse invalide du serveur (${res.status})${hint}. Vérifiez les logs du déploiement.`);
+  }
+}

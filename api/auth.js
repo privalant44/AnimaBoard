@@ -1,14 +1,23 @@
 /**
  * Auth routes for Vercel (single function + rewrites in vercel.json).
  *
- * GET  /api/auth/me
- * POST /api/auth/local/login
+ * GET    /api/auth/me
+ * POST   /api/auth/local/login
+ * GET    /api/auth/users
+ * POST   /api/auth/users
+ * DELETE /api/auth/users/:email
  */
 const path = require('path');
 const { createVercelHandler } = require(path.join(__dirname, '..', 'lib', 'errorHandler'));
 const { isAuthEnabled } = require(path.join(__dirname, '..', 'lib', 'microsoftAuth'));
 const { getDisplayNameFromAuth } = require(path.join(__dirname, '..', 'lib', 'authUser'));
-const { resolveUserAccess } = require(path.join(__dirname, '..', 'lib', 'userRoles'));
+const { ROLES, getRoleLabel } = require(path.join(__dirname, '..', 'lib', 'roles'));
+const {
+  resolveUserAccess,
+  listUserRoles,
+  upsertUserRole,
+  deleteUserRole,
+} = require(path.join(__dirname, '..', 'lib', 'userRoles'));
 const {
   authenticateLocal,
   signLocalToken,
@@ -119,6 +128,30 @@ module.exports = async (req, res) => {
             authMethod: 'local',
           },
         });
+      }
+
+      if (route === 'users' && req.method === 'GET') {
+        const users = await listUserRoles();
+        return res.status(200).json({
+          success: true,
+          users,
+          roles: ROLES,
+          roleLabels: ROLES.map((r) => ({ id: r, label: getRoleLabel(r) })),
+        });
+      }
+
+      if (route === 'users' && req.method === 'POST') {
+        const body = readJsonBody(req);
+        const { email, role, displayName } = body;
+        const user = await upsertUserRole({ email, role, displayName });
+        return res.status(200).json({ success: true, user });
+      }
+
+      const usersDeleteMatch = route.match(/^users\/(.+)$/);
+      if (usersDeleteMatch && req.method === 'DELETE') {
+        const email = decodeURIComponent(usersDeleteMatch[1]);
+        await deleteUserRole(email);
+        return res.status(200).json({ success: true });
       }
 
       return res.status(404).json({

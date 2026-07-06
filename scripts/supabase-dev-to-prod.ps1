@@ -6,13 +6,13 @@
   Utilise pg_dump / pg_restore / psql (PostgreSQL client tools).
 
   Actions :
-    Export  — dump du schéma public local vers backups/
-    Import  — vide public en prod, restaure un dump, réapplique les droits Supabase
+    Export  - dump du schema public local vers backups/
+    Import  - vide public en prod, restaure un dump, reapplique les droits Supabase
     Clone   — Export dev + backup prod + Import (pipeline complet)
 
   Configuration prod : fichier .env.production à la racine du projet
     SUPABASE_URL=https://<project-ref>.supabase.co
-    SUPABASE_DB_PASSWORD=<mot de passe postgres>   (Dashboard → Settings → Database)
+    SUPABASE_DB_PASSWORD=<mot de passe postgres>   (Dashboard -> Settings -> Database)
 
 .EXAMPLE
   .\scripts\supabase-dev-to-prod.ps1 -Action Export
@@ -147,7 +147,7 @@ function Build-ProdDbUrl {
     throw 'ProdProjectRef est requis.'
   }
   if ([string]::IsNullOrWhiteSpace($Password)) {
-    throw 'Mot de passe DB prod manquant. Ajoutez SUPABASE_DB_PASSWORD dans .env.production (Dashboard Supabase → Database).'
+    throw 'Mot de passe DB prod manquant. Ajoutez SUPABASE_DB_PASSWORD dans .env.production (Dashboard Supabase -> Database).'
   }
 
   $encoded = Encode-DbPassword -Password $Password
@@ -176,7 +176,7 @@ function Resolve-ProdDbUrl {
   $projectRef = Resolve-ProdProjectRef -InputRef $InputProjectRef -EnvVars $EnvVars
   $password = $EnvVars['SUPABASE_DB_PASSWORD']
   if ([string]::IsNullOrWhiteSpace($password)) {
-    $securePwd = Read-Host 'Mot de passe postgres prod (Dashboard Supabase → Database)' -AsSecureString
+    $securePwd = Read-Host 'Mot de passe postgres prod (Dashboard Supabase -> Database)' -AsSecureString
     $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePwd)
     try {
       $password = [Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
@@ -210,7 +210,7 @@ function Export-DevDatabase {
     [string]$OutFile
   )
 
-  Write-Step 'Export DEV → dump' 'Cyan'
+  Write-Step 'Export DEV -> dump' 'Cyan'
   $outDir = Split-Path -Parent $OutFile
   if (-not (Test-Path $outDir)) {
     New-Item -Path $outDir -ItemType Directory | Out-Null
@@ -275,7 +275,7 @@ function Import-DumpToProd {
     throw "Fichier dump introuvable : $DumpPath"
   }
 
-  Write-Step "Import dump → PROD ($DumpPath)" 'Cyan'
+  Write-Step "Import dump -> PROD ($DumpPath)" 'Cyan'
   Invoke-PgCommand -Exe $PgRestore -Arguments @(
     '--no-owner',
     '--no-privileges',
@@ -383,7 +383,7 @@ try {
 
   if ($Action -eq 'Clone') {
     Write-Host ''
-    Write-Host 'Clone dev → prod terminé.' -ForegroundColor Green
+    Write-Host 'Clone dev -> prod termine.' -ForegroundColor Green
   }
 
   exit 0

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { apiFetch } from '../../api';
+import { apiFetch, parseApiJson } from '../../api';
 import { dispatchDataRefresh } from '../../dataRefresh';
 import { useAuth } from '../../auth/AuthProvider';
 import { PERMISSIONS } from '../../auth/roles';
@@ -19,6 +19,14 @@ interface StepSummary {
   extra?: string;
   error?: string;
   durationMs?: number | null;
+}
+
+interface SyncApiResponse {
+  success?: boolean;
+  message?: string;
+  error?: string;
+  errorDetail?: string;
+  hint?: string;
 }
 
 function formatDuration(ms: number | null | undefined): string {
@@ -120,7 +128,7 @@ const SettingsDataSyncPanel: React.FC<SettingsDataSyncPanelProps> = ({ onBack })
         headers: { 'Content-Type': 'application/json' },
       });
 
-      const data = await response.json();
+      const data = await parseApiJson<SyncApiResponse>(response);
 
       if (response.ok && data.success) {
         setSyncResult({
@@ -156,7 +164,7 @@ const SettingsDataSyncPanel: React.FC<SettingsDataSyncPanelProps> = ({ onBack })
         },
       });
 
-      const data = await response.json();
+      const data = await parseApiJson<SyncApiResponse>(response);
 
       if (response.ok && data.success) {
         setSyncResult({
@@ -197,13 +205,13 @@ const SettingsDataSyncPanel: React.FC<SettingsDataSyncPanelProps> = ({ onBack })
         },
       });
 
-      const data = await response.json();
+      const data = await parseApiJson<SyncApiResponse>(response);
 
       if (response.ok && data.success) {
         setSyncResult({
           type: 'deliveries',
           success: true,
-          message: data.message || 'Extraction réussie',
+          message: data.message || 'Synchronisation réussie: prestations mises à jour',
         });
         dispatchDataRefresh();
       } else {
@@ -256,7 +264,6 @@ const SettingsDataSyncPanel: React.FC<SettingsDataSyncPanelProps> = ({ onBack })
         });
         return;
       }
-
       if (response.ok && data.success) {
         setSyncResult({
           type: 'timesheets',
@@ -296,7 +303,7 @@ const SettingsDataSyncPanel: React.FC<SettingsDataSyncPanelProps> = ({ onBack })
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ beginDate, endDate }),
       });
-      const data = await response.json();
+      const data = await parseApiJson<SyncApiResponse>(response);
       if (response.ok && data.success) {
         setSyncResult({
           type: 'absences',
@@ -329,7 +336,7 @@ const SettingsDataSyncPanel: React.FC<SettingsDataSyncPanelProps> = ({ onBack })
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ recentMonths: 2 }),
       });
-      const data = await response.json();
+      const data = await parseApiJson<SyncApiResponse>(response);
       if (response.ok && data.success) {
         setSyncResult({
           type: 'besoins',
@@ -338,7 +345,9 @@ const SettingsDataSyncPanel: React.FC<SettingsDataSyncPanelProps> = ({ onBack })
         });
         dispatchDataRefresh();
       } else {
-        const msg = (data.error || data.message) || 'Erreur lors de l’actualisation des besoins';
+        const msg = [data.error || data.message, data.hint, data.errorDetail]
+          .filter(Boolean)
+          .join(' — ') || 'Erreur lors de l’actualisation des besoins';
         setSyncResult({ type: 'besoins', success: false, message: msg });
       }
     } catch (err) {

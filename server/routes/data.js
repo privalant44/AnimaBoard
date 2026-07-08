@@ -6,7 +6,11 @@ const router = express.Router();
 const kvStorage = require('../../lib/kvStorage');
 const { KV_KEYS } = require('../../lib/constants');
 const { toHolidayYmdString } = require('../../lib/holidayDate');
+const { getSupabase } = require('../../lib/supabaseClient');
+const { getHolidayRowsForYearRange } = require('../../lib/frenchHolidays');
 const boondManagerService = require('../services/boondManagerService');
+const { resetTimesheetsWindow } = require('../../lib/timesheetsReset');
+const { getForecastBootstrapData } = require('../../lib/forecastBootstrapService');
 
 // Helper: réponse standard avec data
 function okData(res, data, fileLabel = null, count = null) {
@@ -148,11 +152,6 @@ router.get('/timesheets_data.json', async (req, res) => {
 // --- Jours fériés France (table french_public_holiday, repli calcul lib/frenchHolidays.js)
 router.get('/french-holidays.json', async (req, res) => {
   try {
-    const { getSupabase } = require('../../lib/supabaseClient');
-    const {
-      getHolidayRowsForYearRange
-    } = require('../../lib/frenchHolidays');
-
     const nowY = new Date().getFullYear();
     const startYear = Math.max(2000, parseInt(String(req.query.from ?? nowY), 10) || nowY);
     const numYears = Math.min(15, Math.max(1, parseInt(String(req.query.years ?? '10'), 10) || 10));
@@ -248,143 +247,20 @@ router.get('/timesheets_aggregate.json', async (req, res) => {
 // --- Bootstrap Forecast (un seul appel pour limiter la latence côté client)
 router.get('/forecast-bootstrap', async (req, res) => {
   try {
-    const deliveriesStored = await kvStorage.get(KV_KEYS.DELIVERIES, null);
-    if (!deliveriesStored) {
-      return res.status(404).json({
-        success: false,
-        error: 'Aucune donnée prestations. Lancez la synchronisation "Prestations" depuis Paramètres.',
-      });
-    }
-    const deliveriesData = deliveriesStored.data || deliveriesStored;
-    const deliveries = Array.isArray(deliveriesData) ? deliveriesData : (deliveriesData.data || []);
-
-    const resourcesLocal = await getResourcesLocalEnriched();
-
-    const forecastStored = await kvStorage.get(KV_KEYS.FORECAST_TIMES, null);
-    const forecastRaw = forecastStored?.data || {};
-
-    const forecastByDeliveryId = {};
-    Object.keys(forecastRaw).forEach((deliveryId) => {
-      forecastByDeliveryId[String(deliveryId)] = forecastRaw[deliveryId]?.forecast || {};
+    const data = await getForecastBootstrapData({
+      reqQuery: req.query,
+      includeSupabaseTimesheetsFallback: true,
     });
-
-    const orderedDaysByDeliveryId = {};
-    deliveries.forEach((d) => {
-      const od = d?.orderedDays;
-      if (od !== null && od !== undefined && !isNaN(Number(od))) {
-        orderedDaysByDeliveryId[String(d.id)] = Number(od);
-      }
-    });
-
-    const absenceStored = await kvStorage.get(KV_KEYS.ABSENCE_MONTHLY, null);
-    const absenceRows = Array.isArray(absenceStored?.data)
-      ? absenceStored.data
-      : (Array.isArray(absenceStored) ? absenceStored : []);
-    const absenceByResource = {};
-    absenceRows.forEach((row) => {
-      const rid = String(row.resourceId ?? '');
-      const mo = String(row.month ?? '');
-      if (!rid || !mo) return;
-      if (!absenceByResource[rid]) absenceByResource[rid] = {};
-      absenceByResource[rid][mo] = (absenceByResource[rid][mo] || 0) + (Number(row.days) || 0);
-    });
-
-    const { getSupabase } = require('../../lib/supabaseClient');
-    const { getHolidayRowsForYearRange } = require('../../lib/frenchHolidays');
-    const nowY = new Date().getFullYear();
-    const startYear = Math.max(2000, parseInt(String(req.query.from ?? nowY - 1), 10) || (nowY - 1));
-    const numYears = Math.min(15, Math.max(1, parseInt(String(req.query.years ?? '12'), 10) || 12));
-    const endYear = startYear + numYears - 1;
-    let holidayRows = [];
-    const supabase = getSupabase();
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('french_public_holiday')
-        .select('holiday_date, label, year')
-        .gte('year', startYear)
-        .lte('year', endYear)
-        .order('holiday_date', { ascending: true });
-      if (!error && data && data.length > 0) {
-        holidayRows = data
-          .map((r) => ({
-            holiday_date: toHolidayYmdString(r.holiday_date),
-            label: r.label || '',
-            year: r.year,
-          }))
-          .filter((r) => r.holiday_date);
-      }
-    }
-    if (holidayRows.length === 0) {
-      holidayRows = getHolidayRowsForYearRange(startYear, endYear).map((r) => ({
-        holiday_date: r.holiday_date,
-        label: r.label,
-        year: r.year,
-      }));
-    }
-
-    const timesheetsStored = await kvStorage.get(KV_KEYS.TIMESHEETS_AGGREGATE, null);
-    const aggregateRows = timesheetsStored?.data || timesheetsStored || [];
-    const timesheetsAggregate = {};
-    (Array.isArray(aggregateRows) ? aggregateRows : []).forEach((item) => {
-      const resourceId = String(item.resourceId || '');
-      const deliveryId = String(item.deliveryId || '');
-      const month = item.month || '';
-      if (!resourceId || !deliveryId || !month) return;
-      if (!timesheetsAggregate[resourceId]) timesheetsAggregate[resourceId] = {};
-      if (!timesheetsAggregate[resourceId][deliveryId]) timesheetsAggregate[resourceId][deliveryId] = {};
-      const days = parseFloat(item.totalDays) || 0;
-      const hours = parseFloat(item.totalHours) || 0;
-      timesheetsAggregate[resourceId][deliveryId][month] = {
-        days,
-        hours: hours > 0 ? hours : (days * 7),
-      };
-    });
-
-    // Fallback historique: complète les mois absents depuis Supabase (utile pour N-1/N-2).
-    if (supabase) {
-      const { data: tsRows, error: tsError } = await supabase
-        .from('timesheets_detail')
-        .select('resource_id,delivery_id,month,total_days_prod')
-        .gte('month', `${startYear}-01`)
-        .lte('month', `${endYear}-12`)
-        .neq('delivery_id', 0);
-      if (!tsError && Array.isArray(tsRows)) {
-        tsRows.forEach((row) => {
-          const resourceId = String(row.resource_id || '');
-          const deliveryId = String(row.delivery_id || '');
-          const month = String(row.month || '');
-          if (!resourceId || !deliveryId || !month) return;
-          const days = Number(row.total_days_prod) || 0;
-          if (days <= 0) return;
-
-          if (!timesheetsAggregate[resourceId]) timesheetsAggregate[resourceId] = {};
-          if (!timesheetsAggregate[resourceId][deliveryId]) timesheetsAggregate[resourceId][deliveryId] = {};
-
-          // Ne remplit que les cellules absentes pour éviter de doubler l'agrégat KV existant.
-          if (!timesheetsAggregate[resourceId][deliveryId][month]) {
-            timesheetsAggregate[resourceId][deliveryId][month] = {
-              days,
-              hours: days * 7,
-            };
-          }
-        });
-      }
-    }
 
     return res.json({
       success: true,
-      data: {
-        deliveries,
-        resourcesLocal,
-        forecastByDeliveryId,
-        orderedDaysByDeliveryId,
-        absenceByResource,
-        holidays: holidayRows,
-        timesheetsAggregate,
-      },
+      data,
     });
   } catch (error) {
     console.error('❌ Erreur /api/data/forecast-bootstrap:', error);
+    if (error?.status === 404) {
+      return res.status(404).json({ success: false, error: error.message });
+    }
     return res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -411,19 +287,7 @@ router.post('/resources-metadata', async (req, res) => {
 // --- Réinitialiser les feuilles de temps (6 derniers mois pour éviter timeout)
 router.post('/timesheets-reset', async (req, res) => {
   try {
-    await kvStorage.del(KV_KEYS.TIMESHEETS_DATA);
-    await kvStorage.del(KV_KEYS.TIMESHEETS_AGGREGATE);
-    
-    // Limiter à 6 mois pour éviter timeout Vercel
-    const now = new Date();
-    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
-    const startMonth = `${sixMonthsAgo.getFullYear()}-${String(sixMonthsAgo.getMonth() + 1).padStart(2, '0')}`;
-    const endMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    
-    const syncTimesheets = require('../../sync_timesheets');
-    const result = await syncTimesheets(startMonth, endMonth);
-    const count = result?.metadata?.totalTimesheets ?? 0;
-    const totalEntries = result?.metadata?.totalEntries ?? 0;
+    const { startMonth, endMonth, count, totalEntries } = await resetTimesheetsWindow({ monthsBack: 6 });
     return res.json({
       success: true,
       message: `Feuilles de temps réinitialisées et rechargées (${startMonth} à ${endMonth}) : ${count} feuilles, ${totalEntries} entrées.`

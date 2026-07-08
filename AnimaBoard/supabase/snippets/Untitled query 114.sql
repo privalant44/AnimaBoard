@@ -1,1 +1,0 @@
-select a.month,sum(a.days) from absence a group by a.month order by a.month desc

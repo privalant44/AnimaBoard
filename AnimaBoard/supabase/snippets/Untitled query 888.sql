@@ -1,1 +1,0 @@
-select distinct resource_name from timesheets_detail where month = '2026-02'

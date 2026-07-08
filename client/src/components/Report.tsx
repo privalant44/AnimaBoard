@@ -363,10 +363,18 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
   }, [resources, typeFilter, statutFilter]);
 
   // Obtenir la liste unique des types pour le filtre
-  const uniqueTypes = Array.from(new Set(resources.map(r => r.type).filter((t): t is string => t !== undefined && t !== null && t !== ''))).sort();
+  const uniqueTypes = useMemo(() => {
+    return Array.from(
+      new Set(resources.map(r => r.type).filter((t): t is string => t !== undefined && t !== null && t !== ''))
+    ).sort();
+  }, [resources]);
   
   // Obtenir la liste unique des statuts pour le filtre
-  const uniqueStatuts = Array.from(new Set(resources.map(r => r.statut).filter((s): s is string => s !== undefined && s !== null && s !== ''))).sort();
+  const uniqueStatuts = useMemo(() => {
+    return Array.from(
+      new Set(resources.map(r => r.statut).filter((s): s is string => s !== undefined && s !== null && s !== ''))
+    ).sort();
+  }, [resources]);
 
   // Fermer les dropdowns quand on clique ailleurs
   useEffect(() => {

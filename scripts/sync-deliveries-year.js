@@ -1,11 +1,11 @@
 /**
- * Sync incrémentale des prestations Boond créées sur une année civile.
+ * Sync incrémentale des prestations Boond actives sur une année civile.
  *
  * Stratégie (par défaut) :
  * 1. Re-fetch les prestations déjà en base avec creation_date sur l'année cible
  * 2. Re-fetch les prestations en base sans creation_date (backfill dates Boond)
  * 3. Scanner les nouveaux IDs Boond (max(id) en base + 1 → dernier ID existant)
- * 4. Upsert uniquement les prestations dont creationDate tombe dans l'année
+ * 4. Upsert uniquement les prestations dont la période (start/end) chevauche l'année
  *
  * Usage:
  *   node scripts/sync-deliveries-year.js
@@ -32,7 +32,7 @@ const {
   DEFAULT_BASE_URL,
   DELIVERIES_START_ID,
   getBoondAuthConfig,
-  isCreationInYear,
+  doesDeliveryOverlapYear,
   findMaxDeliveryId,
   fetchDelivery,
 } = require('../lib/deliveryBoond');
@@ -45,6 +45,7 @@ function parseArgs(argv) {
     startId: DELIVERIES_START_ID || 1,
     endId: null,
     delayMs: 200,
+    recentBackfill: 200,
     help: false,
   };
 
@@ -56,6 +57,7 @@ function parseArgs(argv) {
     else if (arg.startsWith('--start-id=')) options.startId = parseInt(arg.slice('--start-id='.length), 10);
     else if (arg.startsWith('--end-id=')) options.endId = parseInt(arg.slice('--end-id='.length), 10);
     else if (arg.startsWith('--delay=')) options.delayMs = parseInt(arg.slice('--delay='.length), 10);
+    else if (arg.startsWith('--recent-backfill=')) options.recentBackfill = parseInt(arg.slice('--recent-backfill='.length), 10);
   }
 
   if (!Number.isFinite(options.year)) {
@@ -78,6 +80,7 @@ Options:
   --start-id=N      Borne basse (défaut : 1)
   --end-id=N        Borne haute (défaut : auto)
   --delay=MS        Pause entre appels Boond (défaut : 200)
+  --recent-backfill=N  Re-scan les N derniers IDs (défaut : 200)
   -h, --help        Cette aide
 `);
 }
@@ -149,6 +152,14 @@ function buildIdSet(options, endId, maxDbId, idsFromDb) {
     for (let id = from; id <= endId; id += 1) ids.add(id);
   }
 
+  // Backfill de sécurité : rescanner les derniers IDs, même si maxDbId >= endId.
+  // Ça rattrape les trous (prestations existantes mais jamais upsertées) sans coût d’un full-scan.
+  const recent = Number(options.recentBackfill);
+  if (Number.isFinite(recent) && recent > 0) {
+    const from = Math.max(options.startId, endId - recent + 1);
+    for (let id = from; id <= endId; id += 1) ids.add(id);
+  }
+
   return ids;
 }
 
@@ -192,7 +203,7 @@ async function syncDeliveriesYear(options = {}) {
   const baseURL = DEFAULT_BASE_URL;
   const year = options.year;
 
-  console.log(`\n🚀 Sync prestations Boond — créées en ${year}\n`);
+  console.log(`\n🚀 Sync prestations Boond — actives sur ${year}\n`);
   console.log('='.repeat(72));
 
   const endId =
@@ -241,14 +252,14 @@ async function syncDeliveriesYear(options = {}) {
       if (result.status === 404) {
         notFound += 1;
       } else if (result.delivery) {
-        if (isCreationInYear(result.delivery.creationDate, year)) {
+        if (doesDeliveryOverlapYear(result.delivery, year)) {
           deliveries.push(result.delivery);
           saved += 1;
           if (result.project && !projectsMap[result.project.id]) {
             projectsMap[result.project.id] = result.project;
           }
           if (saved % 25 === 0) {
-            console.log(`   ✅ ${saved} prestation(s) ${year} enregistrée(s) (dernier ID ${id})`);
+            console.log(`   ✅ ${saved} prestation(s) (année ${year}) enregistrée(s) (dernier ID ${id})`);
           }
         } else {
           skippedYear += 1;
@@ -275,7 +286,7 @@ async function syncDeliveriesYear(options = {}) {
     idsRequested: sortedIds.length,
     idsFetched: fetched,
     savedCount: saved,
-    skippedOtherYear: skippedYear,
+    skippedNotInYear: skippedYear,
     notFoundCount: notFound,
     errorCount: errors,
     idsFromDbCount: idsFromDb.length,

@@ -192,6 +192,7 @@ const loadForecastFiltersFromStorage = () => {
 };
 
 const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
+  const isDebug = process.env.NODE_ENV !== 'production';
   // Charger les filtres depuis localStorage au démarrage
   const savedFilters = loadForecastFiltersFromStorage();
   
@@ -285,7 +286,9 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       });
       setAllTypeOptions(Array.from(typeSet).sort());
       setAllStatutOptions(Array.from(statutSet).sort());
-      console.log(`📊 Options filtres: ${typeSet.size} types, ${statutSet.size} statuts`);
+      if (isDebug) {
+        console.log(`📊 Options filtres: ${typeSet.size} types, ${statutSet.size} statuts`);
+      }
 
       // Créer un map des ressources par ID pour accès rapide
       // Les typeLabel et stateLabel sont déjà résolus par /resources-local
@@ -395,16 +398,18 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         return a.prenom.localeCompare(b.prenom);
       });
 
-      console.log(`✅ ${resourcesWithProjects.length} ressources avec prestations trouvées`);
-      // Vérifier que les libellés sont bien mappés
-      const sampleResource = resourcesWithProjects[0];
-      if (sampleResource) {
-        console.log(`📋 Exemple de ressource mappée:`, {
-          nom: sampleResource.nom,
-          prenom: sampleResource.prenom,
-          type: sampleResource.type,
-          statut: sampleResource.statut
-        });
+      if (isDebug) {
+        console.log(`✅ ${resourcesWithProjects.length} ressources avec prestations trouvées`);
+        // Vérifier que les libellés sont bien mappés
+        const sampleResource = resourcesWithProjects[0];
+        if (sampleResource) {
+          console.log(`📋 Exemple de ressource mappée:`, {
+            nom: sampleResource.nom,
+            prenom: sampleResource.prenom,
+            type: sampleResource.type,
+            statut: sampleResource.statut,
+          });
+        }
       }
 
       setResources(resourcesWithProjects);
@@ -418,7 +423,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate]);
+  }, [startDate, endDate, isDebug]);
 
   const handleActualiser = useCallback(() => {
     const s = parseFrDateToYmd(startDateInput.trim());
@@ -710,33 +715,69 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
   }, []);
 
   /** Mois jan–déc de l’année en cours (aligné avec les absences Boond synchronisées). */
-  const getGridMonths = (): string[] => {
-    const y = new Date().getFullYear();
+  const gridYear = new Date().getFullYear();
+  const gridMonths = useMemo(() => {
     const months: string[] = [];
     for (let month = 1; month <= 12; month++) {
-      months.push(`${y}-${String(month).padStart(2, '0')}`);
+      months.push(`${gridYear}-${String(month).padStart(2, '0')}`);
     }
     return months;
-  };
+  }, [gridYear]);
+
+  const previousYear = gridYear - 1;
+
+  // Cache pour éviter de refaire des recherches variants-ID dans timesheetsAggregate
+  // à chaque cellule/ligne rendue.
+  const timesheetLookupCacheRef = useRef<
+    Map<string, { [month: string]: { days: number; hours: number } } | null>
+  >(new Map());
+  const consumedDaysCacheRef = useRef<Map<string, number>>(new Map());
+  const cumulativePrevYearCacheRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    timesheetLookupCacheRef.current.clear();
+    consumedDaysCacheRef.current.clear();
+    cumulativePrevYearCacheRef.current.clear();
+  }, [timesheetsAggregate]);
 
   /** Cherche les temps saisis (agrégat) pour une ressource × prestation. */
-  const lookupTimesheetData = (
-    deliveryId: string | number,
-    resourceId: number
-  ): { [month: string]: { days: number; hours: number } } | null => {
-    const resourceIdVariants = [String(resourceId), String(Number(resourceId)), Number(resourceId).toString()];
-    const deliveryIdVariants = [String(deliveryId), String(Number(deliveryId)), Number(deliveryId).toString()];
+  const lookupTimesheetData = useCallback(
+    (
+      deliveryId: string | number,
+      resourceId: number
+    ): { [month: string]: { days: number; hours: number } } | null => {
+      const cacheKey = `${resourceId}|${String(deliveryId)}`;
+      if (timesheetLookupCacheRef.current.has(cacheKey)) {
+        return timesheetLookupCacheRef.current.get(cacheKey) || null;
+      }
 
-    for (const resIdVar of resourceIdVariants) {
-      if (!timesheetsAggregate[resIdVar]) continue;
-      for (const delIdVar of deliveryIdVariants) {
-        if (timesheetsAggregate[resIdVar][delIdVar]) {
-          return timesheetsAggregate[resIdVar][delIdVar];
+      const resourceIdVariants = [
+        String(resourceId),
+        String(Number(resourceId)),
+        Number(resourceId).toString(),
+      ];
+      const deliveryIdVariants = [
+        String(deliveryId),
+        String(Number(deliveryId)),
+        Number(deliveryId).toString(),
+      ];
+
+      for (const resIdVar of resourceIdVariants) {
+        if (!timesheetsAggregate[resIdVar]) continue;
+        for (const delIdVar of deliveryIdVariants) {
+          if (timesheetsAggregate[resIdVar][delIdVar]) {
+            const value = timesheetsAggregate[resIdVar][delIdVar];
+            timesheetLookupCacheRef.current.set(cacheKey, value);
+            return value;
+          }
         }
       }
-    }
-    return null;
-  };
+
+      timesheetLookupCacheRef.current.set(cacheKey, null);
+      return null;
+    },
+    [timesheetsAggregate]
+  );
 
   const getActualDaysForMonth = (
     deliveryId: string | number,
@@ -746,62 +787,78 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
 
   /** Cumul jours saisis sur l’année précédente (colonne de gauche du tableau). */
   const get2025Cumulative = (deliveryId: string | number, resourceId: number): number => {
+    const cacheKey = `${resourceId}|${String(deliveryId)}|${previousYear}`;
+    if (cumulativePrevYearCacheRef.current.has(cacheKey)) {
+      return cumulativePrevYearCacheRef.current.get(cacheKey) || 0;
+    }
+
     const foundData = lookupTimesheetData(deliveryId, resourceId);
     if (!foundData) return 0;
 
-    const priorYear = new Date().getFullYear() - 1;
     let total = 0;
     Object.keys(foundData).forEach((month) => {
-      if (month.startsWith(`${priorYear}-`)) {
+      if (month.startsWith(`${previousYear}-`)) {
         total += foundData[month].days || 0;
       }
     });
+
+    cumulativePrevYearCacheRef.current.set(cacheKey, total);
     return total;
   };
 
-  // Calculer le CA d'une ressource pour une année donnée
-  const getResourceCA = (resource: ResourceWithProjects, year: number): number => {
-    const resourceIdStr = String(resource.id);
-    let totalCA = 0;
-    const projectsForYear = resource.allProjectsForCA ?? resource.projects;
+  // Jours consommés (tous mois, toutes années confondues) pour un duo ressource × prestation.
+  // Utilisé intensivement dans le rendu "projects-list".
+  const getConsumedDays = (deliveryId: string | number, resourceId: number): number => {
+    const cacheKey = `${resourceId}|${String(deliveryId)}`;
+    if (consumedDaysCacheRef.current.has(cacheKey)) {
+      return consumedDaysCacheRef.current.get(cacheKey) || 0;
+    }
 
-    projectsForYear.forEach((project) => {
-      const deliveryIdStr = String(project.id);
-      const tjm = project.tjm || 0;
-      
-      if (tjm <= 0) return;
-      
-      // Essayer plusieurs variantes d'IDs
-      const resourceIdVariants = [resourceIdStr, String(Number(resource.id)), Number(resource.id).toString()];
-      const deliveryIdVariants = [deliveryIdStr, String(Number(project.id)), Number(project.id).toString()];
-      
-      let foundData: { [month: string]: { days: number; hours: number } } | null = null;
-      
-      for (const resIdVar of resourceIdVariants) {
-        if (timesheetsAggregate[resIdVar]) {
-          for (const delIdVar of deliveryIdVariants) {
-            if (timesheetsAggregate[resIdVar][delIdVar]) {
-              foundData = timesheetsAggregate[resIdVar][delIdVar];
-              break;
-            }
-          }
-          if (foundData) break;
-        }
-      }
-      
-      if (foundData) {
-        Object.keys(foundData).forEach((month) => {
-          if (month.startsWith(`${year}-`)) {
-            const timeData = foundData![month];
-            const days = timeData.days || 0;
-            totalCA += days * tjm;
-          }
-        });
-      }
+    const foundData = lookupTimesheetData(deliveryId, resourceId);
+    if (!foundData) return 0;
+    let total = 0;
+    Object.keys(foundData).forEach((month) => {
+      total += foundData[month]?.days || 0;
     });
-    
-    return totalCA;
+    consumedDaysCacheRef.current.set(cacheKey, total);
+    return total;
   };
+
+  // CA pré-calculé pour éviter de refaire des recherches variants-ID
+  // dans timesheetsAggregate à chaque render.
+  const resourceCAByYear = useMemo(() => {
+    const years = [previousYear, gridYear];
+    const out: Record<string, Record<number, number>> = {};
+
+    resources.forEach((resource) => {
+      const resourceKey = String(resource.id);
+      out[resourceKey] = {};
+      const projectsForCA = resource.allProjectsForCA ?? resource.projects;
+
+      years.forEach((year) => {
+        let totalCA = 0;
+
+        projectsForCA.forEach((project) => {
+          const tjm = project.tjm || 0;
+          if (tjm <= 0) return;
+
+          const foundData = lookupTimesheetData(project.id, resource.id);
+          if (!foundData) return;
+
+          Object.keys(foundData).forEach((month) => {
+            if (month.startsWith(`${year}-`)) {
+              const days = foundData[month]?.days || 0;
+              totalCA += days * tjm;
+            }
+          });
+        });
+
+        out[resourceKey][year] = totalCA;
+      });
+    });
+
+    return out;
+  }, [resources, lookupTimesheetData, gridYear, previousYear]);
 
   // Formater le nom du mois
   const formatMonthName = (month: string): string => {
@@ -1059,10 +1116,10 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                     <h3 className="resource-name">{resource.prenom} {resource.nom}</h3>
                     <div className="resource-header-right">
                       <span className="resource-ca">
-                        CA {new Date().getFullYear() - 1}: {getResourceCA(resource, new Date().getFullYear() - 1).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} €
+                        CA {previousYear}: {(resourceCAByYear[String(resource.id)]?.[previousYear] ?? 0).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} €
                       </span>
                       <span className="resource-ca">
-                        CA {new Date().getFullYear()}: {getResourceCA(resource, new Date().getFullYear()).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} €
+                        CA {gridYear}: {(resourceCAByYear[String(resource.id)]?.[gridYear] ?? 0).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} €
                       </span>
                       <span className="projects-count">{resource.projects.length} prestation{resource.projects.length > 1 ? 's' : ''}</span>
                       <span className="expand-icon">{isExpanded ? '▼' : '▶'}</span>
@@ -1079,12 +1136,9 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                         <div className="projects-list-container">
                           {(() => {
                             const resAbs = getAbsenceMapForResource(absenceByResource, resource.id);
-                            const months = getGridMonths();
-                            const gridYear =
-                              months.length > 0
-                                ? parseInt(months[0].split('-')[0], 10)
-                                : new Date().getFullYear();
-                            const prevYear = gridYear - 1;
+                            const months = gridMonths;
+                            const gridYearLocal = gridYear;
+                            const prevYear = gridYearLocal - 1;
                             const totalPrevYear = sumAbsencesForYear(resAbs, prevYear);
                             const maxDays = Math.max(
                               totalPrevYear,
@@ -1175,44 +1229,14 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                               ? project.orderedDays 
                               : (orderedDaysByDeliveryId[deliveryId] ?? null);
                             
-                            // Calculer les jours consommés (tous les jours depuis timesheetsAggregate)
-                            const resourceIdStr = String(resource.id);
-                            const deliveryIdStr = String(project.id);
-                            let consumedDays = 0;
-                            
-                            // Essayer plusieurs variantes d'IDs pour la correspondance
-                            const resourceIdVariants = [resourceIdStr, String(Number(resource.id)), Number(resource.id).toString()];
-                            const deliveryIdVariants = [deliveryIdStr, String(Number(project.id)), Number(project.id).toString()];
-                            
-                            let foundData: { [month: string]: { days: number; hours: number } } | null = null;
-                            
-                            for (const resIdVar of resourceIdVariants) {
-                              if (timesheetsAggregate[resIdVar]) {
-                                for (const delIdVar of deliveryIdVariants) {
-                                  if (timesheetsAggregate[resIdVar][delIdVar]) {
-                                    foundData = timesheetsAggregate[resIdVar][delIdVar];
-                                    break;
-                                  }
-                                }
-                                if (foundData) break;
-                              }
-                            }
-                            
-                            if (foundData) {
-                              // Somme tous les jours, toutes années confondues
-                              Object.keys(foundData).forEach((month) => {
-                                const timeData = foundData![month];
-                                consumedDays += timeData.days || 0;
-                              });
-                            } else {
-                              // Log pour déboguer
-                              console.log(`⚠️  Aucune donnée trouvée pour resourceId=${resourceIdStr} (${resource.id}), deliveryId=${deliveryIdStr} (${project.id})`);
-                            }
-                            
+                            // Calculer les jours consommés (tous les mois)
+                            const consumedDays = getConsumedDays(project.id, resource.id);
+
                             // Calculer le CA (jours consommés * TJM)
-                            const ca = project.tjm !== null && project.tjm !== undefined && consumedDays > 0
-                              ? consumedDays * project.tjm
-                              : 0;
+                            const ca =
+                              project.tjm !== null && project.tjm !== undefined && consumedDays > 0
+                                ? consumedDays * project.tjm
+                                : 0;
                             
                             return (
                               <div key={`${project.id}-${index}`} className="project-card">
@@ -1269,7 +1293,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                       <tr>
                                         <th className="table-row-label"></th>
                                         <th className="table-header">{new Date().getFullYear() - 1}</th>
-                                        {getGridMonths().map((month) => (
+                                        {gridMonths.map((month) => (
                                           <th key={month} className="table-header">
                                             {formatMonthName(month)}
                                           </th>
@@ -1285,7 +1309,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                             {actualPrevYearCum > 0 ? actualPrevYearCum.toFixed(1) : '-'}
                                           </span>
                                         </td>
-                                        {getGridMonths().map((month) => {
+                                        {gridMonths.map((month) => {
                                           const actualDays = getActualDaysForMonth(project.id, resource.id, month);
                                           return (
                                             <td key={month} className="table-cell actual-cell">
@@ -1302,7 +1326,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                         <td className="table-cell forecast-cell">
                                           <span className="no-forecast">-</span>
                                         </td>
-                                        {getGridMonths().map((month) => {
+                                        {gridMonths.map((month) => {
                                           const forecastDays = forecastTimes[month] ?? 0;
                                           const actualDays = actualTimes[month] ?? 0;
                                           const isEditing = editingMonth?.deliveryId === project.id && editingMonth?.month === month;

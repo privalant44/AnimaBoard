@@ -1,3 +1,0 @@
---select resource_name,total_days_prod prod,total_days_int int from timesheets_detail where month = '2026-01' order by resource_name
---select resource_name,sum(total_days_prod) prod,sum(total_days_int) int from timesheets_detail where month = '2026-01' group by resource_name order by resource_name
-select month,sum(total_days_prod) prod,sum(total_days_int) int from timesheets_detail where month = '2026-01' group by month

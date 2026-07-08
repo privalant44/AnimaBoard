@@ -1,1 +1,0 @@
-select * from timesheets_detail order by month desc

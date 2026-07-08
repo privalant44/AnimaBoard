@@ -1,6 +1,7 @@
 const boondManagerService = require('./boondManagerService');
 const pennylaneService = require('./pennylaneService');
 const { getSupabase } = require('../../lib/supabaseClient');
+const { loadDictionaryMaps } = require('../../lib/dictionarySync');
 const { getHolidayRowsForYear } = require('../../lib/frenchHolidays');
 const { toHolidayYmdString } = require('../../lib/holidayDate');
 const { format, parseISO, startOfMonth, endOfMonth, eachMonthOfInterval } = require('date-fns');
@@ -778,35 +779,44 @@ class DashboardService {
     // 2) TACE constaté mensuel:
     // TACE(%) = somme(total_days_prod timesheets_detail du mois) / (jours_ouvres_du_mois * nb_ressources_type_0_3_10) * 100
     const eligibleTypeCodes = new Set(['0', '3', '10']);
-    const [resourcesRes, timesheetsRes, forecastRes, deliveriesRes, holidaysRes, absencesRes] = await Promise.all([
-      supabase.from('resources').select('id,type_of'),
-      supabase
-        .from('timesheets_detail')
-        .select('resource_id,month,delivery_id,total_days_prod')
-        .gte('month', `${y}-01`)
-        .lte('month', `${y}-12`),
-      supabase
-        .from('forecast_times')
-        .select('delivery_id,month,value')
-        .gte('month', `${y}-01`)
-        .lte('month', `${y}-12`),
-      supabase.from('deliveries').select('id, resource_id, tjm, average_daily_cost, raw'),
-      supabase
-        .from('french_public_holiday')
-        .select('holiday_date')
-        .eq('year', y),
-      supabase
-        .from('absence')
-        .select('resource_id,month,days')
-        .gte('month', `${y}-01`)
-        .lte('month', `${y}-12`),
-    ]);
+    const [resourcesRes, timesheetsRes, forecastRes, deliveriesRes, holidaysRes, absencesRes] =
+      await Promise.all([
+        supabase.from('resources').select('id,type_of'),
+        supabase
+          .from('timesheets_detail')
+          .select('resource_id,month,delivery_id,total_days_prod')
+          .gte('month', `${y}-01`)
+          .lte('month', `${y}-12`),
+        supabase
+          .from('forecast_times')
+          .select('delivery_id,month,value')
+          .gte('month', `${y}-01`)
+          .lte('month', `${y}-12`),
+        supabase.from('deliveries').select('id, resource_id, tjm, average_daily_cost, raw'),
+        supabase
+          .from('french_public_holiday')
+          .select('holiday_date')
+          .eq('year', y),
+        supabase
+          .from('absence')
+          .select('resource_id,month,days')
+          .gte('month', `${y}-01`)
+          .lte('month', `${y}-12`),
+      ]);
     if (resourcesRes.error) throw resourcesRes.error;
     if (timesheetsRes.error) throw timesheetsRes.error;
     if (forecastRes.error) throw forecastRes.error;
     if (deliveriesRes.error) throw deliveriesRes.error;
     if (holidaysRes.error) throw holidaysRes.error;
     if (absencesRes.error) throw absencesRes.error;
+
+    const dictMaps = await loadDictionaryMaps('resources');
+    const typeLabels = dictMaps?.type_of || {};
+    const externalTypeCodes = new Set(
+      Object.entries(typeLabels)
+        .filter(([, label]) => String(label) === 'Consultant.e Externe')
+        .map(([code]) => String(code))
+    );
 
     const eligibleResourceIds = new Set(
       (resourcesRes.data || [])
@@ -816,6 +826,13 @@ class DashboardService {
         })
         .map((r) => String(r.id))
     );
+
+    const resourceIsExternal = new Map();
+    (resourcesRes.data || []).forEach((r) => {
+      const typeCode = r?.type_of == null ? null : String(r.type_of);
+      const isExternal = typeCode != null && externalTypeCodes.has(typeCode);
+      resourceIsExternal.set(String(r.id), isExternal);
+    });
 
     const holidaySet = new Set();
     (holidaysRes.data || []).forEach((r) => {
@@ -879,19 +896,34 @@ class DashboardService {
 
     const forecastByMonthResource = new Map();
     const resourcesWithForecastByMonth = new Map();
+    const forecastCaInternalByMonth = new Map();
+    const forecastCaExternalByMonth = new Map();
     (forecastRes.data || []).forEach((r) => {
       const month = String(r.month || '');
       if (!monthMap.has(month)) return;
       const deliveryId = String(r.delivery_id || '');
       const resourceId = deliveryToResourceId.get(deliveryId) || '';
-      if (!resourceId || !eligibleResourceIds.has(resourceId)) return;
-      const key = `${month}|${resourceId}`;
+      if (!resourceId) return;
+
       const value = Number(r.value) || 0;
-      forecastByMonthResource.set(key, (forecastByMonthResource.get(key) || 0) + value);
-      if (!resourcesWithForecastByMonth.has(month)) {
-        resourcesWithForecastByMonth.set(month, new Set());
+      if (value <= 0) return;
+
+      const key = `${month}|${resourceId}`;
+      if (eligibleResourceIds.has(resourceId)) {
+        forecastByMonthResource.set(key, (forecastByMonthResource.get(key) || 0) + value);
+        if (!resourcesWithForecastByMonth.has(month)) {
+          resourcesWithForecastByMonth.set(month, new Set());
+        }
+        resourcesWithForecastByMonth.get(month).add(resourceId);
       }
-      resourcesWithForecastByMonth.get(month).add(resourceId);
+
+      const delivery = deliveryById.get(deliveryId);
+      const tjm = deliveryTjm(delivery);
+      if (tjm == null) return;
+      const ca = value * tjm;
+      const isExternal = resourceIsExternal.get(resourceId) === true;
+      const targetMap = isExternal ? forecastCaExternalByMonth : forecastCaInternalByMonth;
+      targetMap.set(month, (targetMap.get(month) || 0) + ca);
     });
 
     const absencesByMonthResource = new Map();
@@ -937,6 +969,13 @@ class DashboardService {
       m.absencesInMonth = round2(absencesDays);
       m.taceDenominatorDays = denominator;
       m.tacePct = denominator > 0 ? round2((actualDays / denominator) * 100) : 0;
+
+      if (!isClosedMonth) {
+        const caAnimaNeoForecast = forecastCaInternalByMonth.get(m.month) || 0;
+        const caSousTraitanceForecast = forecastCaExternalByMonth.get(m.month) || 0;
+        m.caAnimaNeo = round2(caAnimaNeoForecast);
+        m.caSousTraitance = round2(caSousTraitanceForecast);
+      }
     });
 
     // 3) Besoins: calcul mensuel basé sur les règles métier explicites

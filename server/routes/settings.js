@@ -2,7 +2,7 @@
  * Routes /api/settings — configuration applicative partagée
  */
 const express = require('express');
-const logoHandlers = require('../../api/settings/logo');
+const logoHandlers = require('../../api/settings');
 
 const router = express.Router();
 

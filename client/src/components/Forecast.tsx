@@ -90,6 +90,45 @@ function sumAbsencesForYear(monthMap: Record<string, number>, year: number): num
   return s;
 }
 
+/** Filtre la saisie : entiers ou décimales .0, .25, .5 uniquement. */
+function sanitizeForecastDaysInput(raw: string): string {
+  const normalized = raw.replace(',', '.');
+  let out = '';
+  let hasDot = false;
+  for (let i = 0; i < normalized.length; i++) {
+    const c = normalized[i];
+    if (c >= '0' && c <= '9') {
+      if (hasDot) {
+        const decSoFar = out.slice(out.indexOf('.') + 1) + c;
+        if (!/^(0|2|25|5)$/.test(decSoFar)) continue;
+      }
+      out += c;
+    } else if (c === '.' && !hasDot && out.length > 0) {
+      out += '.';
+      hasDot = true;
+    }
+  }
+  return out;
+}
+
+/** Retourne les jours saisis ou null si vide / invalide. */
+function parseForecastDaysInput(raw: string): number | null {
+  const trimmed = raw.trim().replace(',', '.');
+  if (!trimmed) return null;
+  if (!/^\d+(\.(25|5|0{1,2})?)?$/.test(trimmed)) return null;
+  const value = parseFloat(trimmed);
+  if (!Number.isFinite(value) || value < 0) return null;
+  const frac = Math.round((value % 1) * 100) / 100;
+  if (frac !== 0 && frac !== 0.25 && frac !== 0.5) return null;
+  return value;
+}
+
+function formatForecastDaysFr(n: number): string {
+  if (Number.isInteger(n)) return String(n);
+  const s = n.toFixed(2).replace('.', ',');
+  return s.replace(/,0+$/, '').replace(/(\,\d)0$/, '$1');
+}
+
 /** Mois calendaire YYYY-MM au plus tard le mois courant (inclus). */
 function isMonthCurrentOrPast(ym: string): boolean {
   const parts = ym.split('-');
@@ -228,6 +267,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
   const [forecastByDeliveryId, setForecastByDeliveryId] = useState<Record<string, Record<string, number>>>({});
   const [orderedDaysByDeliveryId, setOrderedDaysByDeliveryId] = useState<Record<string, number>>({});
   const [editingMonth, setEditingMonth] = useState<{ deliveryId: string | number; month: string } | null>(null);
+  const [editingInputValue, setEditingInputValue] = useState('');
   
   // État pour l'agrégat des timesheets
   const [timesheetsAggregate, setTimesheetsAggregate] = useState<{
@@ -708,11 +748,51 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       }));
 
       setEditingMonth(null);
+      setEditingInputValue('');
     } catch (error) {
       console.error(`❌ Erreur lors de la sauvegarde du temps prévisionnel:`, error);
       alert(normalizeApiError(error, apiUrl('/api/data/forecast-times')));
     }
   }, []);
+
+  const getMaxForecastDaysForMonth = useCallback(
+    (resourceId: number, month: string): number => {
+      const workdays = countWorkdaysInMonth(month, holidayYmdSet);
+      const absences = getAbsenceMapForResource(absenceByResource, resourceId)[month] || 0;
+      return Math.max(0, workdays - absences);
+    },
+    [absenceByResource, holidayYmdSet]
+  );
+
+  const commitForecastEdit = useCallback(
+    (deliveryId: string | number, resourceId: number, month: string, rawInput: string) => {
+      const trimmed = rawInput.trim();
+      if (!trimmed) {
+        setEditingMonth(null);
+        setEditingInputValue('');
+        return;
+      }
+
+      const parsed = parseForecastDaysInput(rawInput);
+      if (parsed === null) {
+        alert(
+          'Le nombre de jours doit être un entier, un quart de jour (0,25) ou une demi-journée (0,5).'
+        );
+        return;
+      }
+
+      const maxDays = getMaxForecastDaysForMonth(resourceId, month);
+      if (parsed > maxDays + 1e-9) {
+        alert(
+          `Le nombre de jours saisi (${formatForecastDaysFr(parsed)} j) dépasse le maximum autorisé : ${formatForecastDaysFr(maxDays)} j (jours ouvrés du mois moins les absences).`
+        );
+        return;
+      }
+
+      saveForecastTime(deliveryId, month, parsed);
+    },
+    [getMaxForecastDaysForMonth, saveForecastTime]
+  );
 
   /** Mois jan–déc de l’année en cours (aligné avec les absences Boond synchronisées). */
   const gridYear = new Date().getFullYear();
@@ -1358,50 +1438,32 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                               className={`table-cell forecast-cell ${isBeyondEndDate ? 'beyond-end-date' : ''}`}
                                             >
                                               {isEditing ? (
-                                                <div className="forecast-edit">
-                                                  <input
-                                                    type="number"
-                                                    step="0.5"
-                                                    min="0"
-                                                    defaultValue={forecastDays}
-                                                    className={`forecast-input ${isBeyondEndDate ? 'beyond-end-date-input' : ''}`}
-                                                    autoFocus
-                                                    style={isBeyondEndDate ? { backgroundColor: '#F26B69', color: 'white' } : {}}
-                                                    onBlur={(e) => {
-                                                      const value = parseFloat(e.target.value) || 0;
-                                                      saveForecastTime(project.id, month, value);
-                                                    }}
-                                                    onKeyDown={(e) => {
-                                                      if (e.key === 'Enter') {
-                                                        const value = parseFloat((e.target as HTMLInputElement).value) || 0;
-                                                        saveForecastTime(project.id, month, value);
-                                                      } else if (e.key === 'Escape') {
-                                                        setEditingMonth(null);
-                                                      }
-                                                    }}
-                                                  />
-                                                  <button
-                                                    className="forecast-save-btn"
-                                                    onClick={(e) => {
-                                                      const input = (e.target as HTMLElement).parentElement?.querySelector('input') as HTMLInputElement;
-                                                      const value = parseFloat(input?.value) || 0;
-                                                      saveForecastTime(project.id, month, value);
-                                                    }}
-                                                  >
-                                                    ✓
-                                                  </button>
-                                                  <button
-                                                    className="forecast-cancel-btn"
-                                                    onClick={() => setEditingMonth(null)}
-                                                  >
-                                                    ✕
-                                                  </button>
-                                                </div>
+                                                <input
+                                                  type="text"
+                                                  inputMode="decimal"
+                                                  value={editingInputValue}
+                                                  className={`forecast-input ${isBeyondEndDate ? 'beyond-end-date-input' : ''}`}
+                                                  autoFocus
+                                                  style={isBeyondEndDate ? { backgroundColor: '#F26B69', color: 'white' } : {}}
+                                                  onChange={(e) => setEditingInputValue(sanitizeForecastDaysInput(e.target.value))}
+                                                  onBlur={() => {
+                                                    commitForecastEdit(project.id, resource.id, month, editingInputValue);
+                                                  }}
+                                                  onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                      (e.target as HTMLInputElement).blur();
+                                                    } else if (e.key === 'Escape') {
+                                                      setEditingMonth(null);
+                                                      setEditingInputValue('');
+                                                    }
+                                                  }}
+                                                />
                                               ) : showForecastDelta ? (
                                                 <div
                                                   className={`forecast-display forecast-display-delta ${isBeyondEndDate ? 'beyond-end-date' : ''}`}
                                                   onClick={() => {
                                                     setEditingMonth({ deliveryId: project.id, month });
+                                                    setEditingInputValue('');
                                                   }}
                                                   title={`Δ saisi − prévi : ${deltaDisplayText} (saisi ${actualDays.toFixed(1)}, prévi ${forecastDays.toFixed(1)}) — cliquer pour modifier`}
                                                 >
@@ -1412,6 +1474,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                                   className={`forecast-display ${forecastDays > 0 ? 'has-forecast' : 'no-forecast'} ${isBeyondEndDate ? 'beyond-end-date' : ''}`}
                                                   onClick={() => {
                                                     setEditingMonth({ deliveryId: project.id, month });
+                                                    setEditingInputValue('');
                                                   }}
                                                   title={isBeyondEndDate ? 'Mois au-delà de la date de fin - saisie possible' : 'Cliquez pour modifier'}
                                                 >

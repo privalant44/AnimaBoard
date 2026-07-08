@@ -7,9 +7,11 @@
  * POST /api/boondmanager/sync/timesheets
  * POST /api/boondmanager/sync/absences
  * POST /api/boondmanager/sync/besoins/snapshot
+ * POST /api/timesheets-reset (rewrite → route=timesheets-reset)
  */
 const path = require('path');
 const { createVercelHandler } = require(path.join(__dirname, '..', '..', 'lib', 'errorHandler'));
+const { resetTimesheetsWindow } = require(path.join(__dirname, '..', '..', 'lib', 'timesheetsReset'));
 const boondManagerService = require(path.join(__dirname, '..', '..', 'server', 'services', 'boondManagerService'));
 const { getSupabase } = require(path.join(__dirname, '..', '..', 'lib', 'supabaseClient'));
 const {
@@ -265,6 +267,18 @@ async function handleBesoinsSnapshotSync(req, res) {
   });
 }
 
+async function handleTimesheetsReset(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ success: false, error: 'Method Not Allowed' });
+  }
+  const { startMonth, endMonth, count, totalEntries } = await resetTimesheetsWindow({ monthsBack: 6 });
+  res.setHeader('Content-Type', 'application/json');
+  return res.status(200).json({
+    success: true,
+    message: `Feuilles de temps réinitialisées et rechargées (${startMonth} à ${endMonth}) : ${count} feuilles, ${totalEntries} entrées.`,
+  });
+}
+
 const ROUTES = {
   resources: handleResourcesSync,
   deliveries: handleDeliveriesSync,
@@ -272,6 +286,7 @@ const ROUTES = {
   timesheets: handleTimesheetsSync,
   absences: handleAbsencesSync,
   'besoins/snapshot': handleBesoinsSnapshotSync,
+  'timesheets-reset': handleTimesheetsReset,
 };
 
 module.exports = createVercelHandler(async (req, res) => {

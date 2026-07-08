@@ -21,6 +21,8 @@
     { "source": "/api/auth/:path*", "destination": "/api/auth?route=:path*" },
     { "source": "/api/batch-sync/:path*", "destination": "/api/batch-sync?route=:path*" },
     { "source": "/api/boondmanager/sync/:path*", "destination": "/api/boondmanager/sync?route=:path*" },
+    { "source": "/api/timesheets-reset", "destination": "/api/boondmanager/sync?route=timesheets-reset" },
+    { "source": "/api/settings/:path*", "destination": "/api/settings?route=:path*" },
     { "source": "/api/data/forecast-times", "destination": "/api/data/forecast-times.json" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]

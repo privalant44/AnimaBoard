@@ -23,7 +23,7 @@ app.get('/api/health', (req, res) => {
 app.get('/api/env-check', require('../api/env-check'));
 
 // Logo entreprise (lecture publique — page de connexion)
-const logoHandlers = require('../api/settings/logo');
+const logoHandlers = require('../api/settings');
 app.get('/api/settings/logo', async (req, res, next) => {
   try {
     await logoHandlers.handleGet(req, res);

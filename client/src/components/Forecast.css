@@ -1183,13 +1183,6 @@
   color: #2c5f5d;
 }
 
-.forecast-edit {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  justify-content: center;
-}
-
 .forecast-input {
   width: 80px;
   padding: 0.4rem;
@@ -1217,35 +1210,6 @@
 .forecast-input.beyond-end-date-input:focus {
   border-color: white;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
-}
-
-.forecast-save-btn,
-.forecast-cancel-btn {
-  padding: 0.3rem 0.6rem;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.8rem;
-  font-weight: 600;
-  transition: all 0.2s;
-}
-
-.forecast-save-btn {
-  background: #28a745;
-  color: white;
-}
-
-.forecast-save-btn:hover {
-  background: #218838;
-}
-
-.forecast-cancel-btn {
-  background: #dc3545;
-  color: white;
-}
-
-.forecast-cancel-btn:hover {
-  background: #c82333;
 }
 
 .no-months {

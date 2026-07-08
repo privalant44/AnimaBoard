@@ -36,6 +36,7 @@ interface HomeMonthlyRecapResponse {
     plannedScenarioFilter?: 'all' | number;
     plannedScenarioFilterLabel?: string;
     caForecastFormula?: string;
+    resultatForecastFormula?: string;
   };
 }
 
@@ -323,7 +324,9 @@ const HomeMonthlyRecap: React.FC = () => {
                 </td>
               </tr>
               <tr className="metric-sign-highlight">
-                <td>Résultat</td>
+                <td title={data?.meta?.resultatForecastFormula}>
+                  Résultat
+                </td>
                 {(data?.monthly || []).map((row) => (
                   <td key={`res-${row.month}`} className={`num ${financialMonthClass(row)} ${financialResultClass(row)} ${row.resultat >= 0 ? 'pos' : 'neg'}`}>
                     {formatCurrency(row.resultat)}

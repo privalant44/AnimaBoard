@@ -737,6 +737,7 @@ class DashboardService {
         caSousTraitance: 0,
         margeBruteAnimaNeo: 0,
         margeBruteSousTraitance: 0,
+        sousTraitanceCharges611: 0,
         resultat: 0,
         taceBaseDays: 0,
         taceSource: 'actual',
@@ -779,6 +780,7 @@ class DashboardService {
           ? row.by_account
           : {};
       const charges611 = chargesSumByLedgerAccountRef(byAccount, SOUS_TRAITANCE_CHARGE_ACCOUNT);
+      bucket.sousTraitanceCharges611 = round2(charges611);
       bucket.margeBruteSousTraitance = round2(bucket.caSousTraitance - charges611);
     });
 
@@ -1033,10 +1035,16 @@ class DashboardService {
       m.tacePct = denominator > 0 ? round2((actualDays / denominator) * 100) : 0;
 
       if (!monthClosed) {
+        const baseCaTotal = round2(m.caAnimaNeo + m.caSousTraitance);
+        const baseResultat = m.resultat;
         const caAnimaNeoForecast = forecastCaInternalByMonth.get(m.month) || 0;
         const caSousTraitanceForecast = forecastCaExternalByMonth.get(m.month) || 0;
         m.caAnimaNeo = round2(caAnimaNeoForecast);
         m.caSousTraitance = round2(caSousTraitanceForecast);
+        const forecastCaTotal = round2(m.caAnimaNeo + m.caSousTraitance);
+        m.resultat = round2(baseResultat + (forecastCaTotal - baseCaTotal));
+        m.margeBruteAnimaNeo = round2(m.caAnimaNeo - (prodCostByMonth.get(m.month) || 0));
+        m.margeBruteSousTraitance = round2(m.caSousTraitance - (m.sousTraitanceCharges611 || 0));
       }
     });
 
@@ -1102,6 +1110,8 @@ class DashboardService {
           'Mois clôturés: somme(total_days_prod) depuis timesheets_detail. Mois non clôturés: somme(temps saisis + prévisionnels) par prestation. TACE(%) = base / ((jours_ouvres * nb_ressources_eligibles_du_mois) - conges_du_mois) * 100',
         caForecastFormula:
           'Mois non clôturés: Σ (jours saisis + jours prévisionnels Boond) × TJM par prestation (timesheets_detail + forecast_times) + Σ (jours prévisionnels manuels, cumul P1…Pn selon filtre) × TJM (planned_forecast)',
+        resultatForecastFormula:
+          'Mois non clôturés: résultat Pennylane + (CA prévisionnel total − CA Pennylane) ; charges Pennylane inchangées',
         plannedScenarios: plannedCa.availableScenarios,
         plannedScenarioFilter:
           plannedScenarioFilter === 'none' ? 'none' : plannedScenarioFilter,

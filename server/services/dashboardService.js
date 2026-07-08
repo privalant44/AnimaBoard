@@ -225,6 +225,25 @@ function deliveryTjm(row) {
   return null;
 }
 
+/** Coût journalier moyen par ressource (moyenne des prestations Boond). */
+function buildAverageDailyCostByResource(deliveries) {
+  const acc = new Map();
+  (deliveries || []).forEach((d) => {
+    const resourceId = String(d.resource_id || '');
+    const dailyCost = deliveryAverageDailyCost(d);
+    if (!resourceId || dailyCost == null || dailyCost <= 0) return;
+    if (!acc.has(resourceId)) acc.set(resourceId, { sum: 0, n: 0 });
+    const entry = acc.get(resourceId);
+    entry.sum += dailyCost;
+    entry.n += 1;
+  });
+  const out = new Map();
+  acc.forEach((entry, resourceId) => {
+    out.set(resourceId, entry.sum / entry.n);
+  });
+  return out;
+}
+
 function countWorkdaysInMonth(year, month, holidaySet) {
   let count = 0;
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -939,6 +958,9 @@ class DashboardService {
     const resourcesWithForecastByMonth = new Map();
     const forecastCaInternalByMonth = new Map();
     const forecastCaExternalByMonth = new Map();
+    const forecastProdCostInternalByMonth = new Map();
+    const forecastProdCostExternalByMonth = new Map();
+    const avgDailyCostByResource = buildAverageDailyCostByResource(deliveriesRes.data || []);
     const openMonthDeliveryKeys = new Set();
     forecastByMonthDelivery.forEach((_, key) => {
       const month = key.split('|')[0];
@@ -978,6 +1000,15 @@ class DashboardService {
       const isExternal = resourceIsExternal.get(resourceId) === true;
       const targetMap = isExternal ? forecastCaExternalByMonth : forecastCaInternalByMonth;
       targetMap.set(month, (targetMap.get(month) || 0) + ca);
+
+      const dailyCost = deliveryAverageDailyCost(delivery);
+      if (dailyCost != null && dailyCost > 0) {
+        const cost = effectiveDays * dailyCost;
+        const costMap = isExternal
+          ? forecastProdCostExternalByMonth
+          : forecastProdCostInternalByMonth;
+        costMap.set(month, (costMap.get(month) || 0) + cost);
+      }
     });
 
     const plannedCa = await getPlannedCaContribution({
@@ -986,6 +1017,7 @@ class DashboardService {
       eligibleResourceIds,
       resourceIsExternal,
       isOpenMonth: (month) => !isClosedMonth(month),
+      averageDailyCostByResource: avgDailyCostByResource,
     });
     plannedCa.internalByMonth.forEach((ca, month) => {
       forecastCaInternalByMonth.set(month, (forecastCaInternalByMonth.get(month) || 0) + ca);
@@ -1035,16 +1067,36 @@ class DashboardService {
       m.tacePct = denominator > 0 ? round2((actualDays / denominator) * 100) : 0;
 
       if (!monthClosed) {
-        const baseCaTotal = round2(m.caAnimaNeo + m.caSousTraitance);
+        const baseCaAnimaNeo = m.caAnimaNeo;
+        const baseCaSousTraitance = m.caSousTraitance;
+        const baseCaTotal = round2(baseCaAnimaNeo + baseCaSousTraitance);
         const baseResultat = m.resultat;
+        const baseCharges611 = m.sousTraitanceCharges611;
         const caAnimaNeoForecast = forecastCaInternalByMonth.get(m.month) || 0;
         const caSousTraitanceForecast = forecastCaExternalByMonth.get(m.month) || 0;
         m.caAnimaNeo = round2(caAnimaNeoForecast);
         m.caSousTraitance = round2(caSousTraitanceForecast);
         const forecastCaTotal = round2(m.caAnimaNeo + m.caSousTraitance);
         m.resultat = round2(baseResultat + (forecastCaTotal - baseCaTotal));
-        m.margeBruteAnimaNeo = round2(m.caAnimaNeo - (prodCostByMonth.get(m.month) || 0));
-        m.margeBruteSousTraitance = round2(m.caSousTraitance - (m.sousTraitanceCharges611 || 0));
+
+        const forecastProdCostInternal =
+          (forecastProdCostInternalByMonth.get(m.month) || 0) +
+          (plannedCa.internalCostByMonth.get(m.month) || 0);
+        m.margeBruteAnimaNeo = round2(m.caAnimaNeo - forecastProdCostInternal);
+
+        let forecastCharges611 = baseCharges611;
+        if (baseCaSousTraitance > 0) {
+          forecastCharges611 = round2(
+            baseCharges611 * (m.caSousTraitance / baseCaSousTraitance)
+          );
+        } else if (m.caSousTraitance > 0) {
+          forecastCharges611 = round2(
+            (forecastProdCostExternalByMonth.get(m.month) || 0) +
+              (plannedCa.externalCostByMonth.get(m.month) || 0)
+          );
+        }
+        m.sousTraitanceCharges611 = forecastCharges611;
+        m.margeBruteSousTraitance = round2(m.caSousTraitance - forecastCharges611);
       }
     });
 
@@ -1118,9 +1170,9 @@ class DashboardService {
         plannedScenarioFilterLabel: formatPlannedScenarioFilterLabel(plannedScenarioFilter),
         plannedScenarioFilterCumulative: plannedScenarioFilter !== 'none',
         margeBruteAnimaNeoFormula:
-          'CA Anima Néo (Pennylane) − Σ total_days_prod × averageDailyCost prestation (timesheets_detail, ressources type 0/3/10)',
+          'Mois clôturés: CA Anima Néo (Pennylane) − Σ total_days_prod × averageDailyCost (timesheets_detail). Mois non clôturés: CA prévisionnel − Σ (jours saisis + prévisionnels Boond + scénarios manuels) × coût journalier prestation/ressource',
         margeBruteSousTraitanceFormula:
-          'CA sous-traitance (compte 70612) − charges compte 6110000 (Pennylane by_account)',
+          'Mois clôturés: CA sous-traitance − charges 6110000 (Pennylane). Mois non clôturés: CA prévisionnel − charges 611 proratisées au CA ou coût journalier externe si pas de base Pennylane',
       },
     };
   }

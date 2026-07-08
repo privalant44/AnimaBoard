@@ -126,7 +126,7 @@ function parseForecastDaysInput(raw: string): number | null {
 function formatForecastDaysFr(n: number): string {
   if (Number.isInteger(n)) return String(n);
   const s = n.toFixed(2).replace('.', ',');
-  return s.replace(/,0+$/, '').replace(/(\,\d)0$/, '$1');
+  return s.replace(/,0+$/, '').replace(/,(\d)0$/, ',$1');
 }
 
 /** Mois calendaire YYYY-MM au plus tard le mois courant (inclus). */

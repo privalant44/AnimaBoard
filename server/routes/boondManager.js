@@ -951,30 +951,28 @@ router.post('/sync/resources', async (req, res) => {
   }
 });
 
-// Extraire les prestations (deliveries)
+// Extraire les prestations (deliveries) — même logique que npm run sync-deliveries-year
 router.post('/sync/deliveries', async (req, res) => {
   try {
-    console.log('🔄 Extraction des prestations demandée...');
-    const extractDeliveries = require('../../extract_deliveries');
-    
-    const result = await extractDeliveries();
-    
-    const count = result?.data?.length || 0;
-    console.log(`✅ Extraction des prestations terminée: ${count} prestations`);
-    
+    console.log('🔄 Synchronisation des prestations demandée...');
+    const syncDeliveriesYear = require('../../scripts/sync-deliveries-year');
+    const result = await syncDeliveriesYear();
+    const count = result?.metadata?.savedCount ?? result?.data?.length ?? 0;
+    const year = result?.metadata?.targetYear ?? new Date().getFullYear();
+    console.log(`✅ Synchronisation des prestations terminée: ${count} prestation(s) pour ${year}`);
     res.json({
       success: true,
-      message: `Extraction réussie: ${count} prestations extraites`,
-      count: count,
-      metadata: result?.metadata
+      message: `Synchronisation réussie: ${count} prestation(s) pour ${year}`,
+      count,
+      metadata: result?.metadata,
     });
   } catch (error) {
-    console.error('❌ Erreur lors de l\'extraction des prestations:', error);
+    console.error('❌ Erreur lors de la synchronisation des prestations:', error);
     res.status(500).json({
       success: false,
-      message: 'Erreur lors de l\'extraction des prestations',
+      message: 'Erreur lors de la synchronisation des prestations',
       error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
     });
   }
 });

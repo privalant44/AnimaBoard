@@ -101,9 +101,9 @@ async function handleDeliveriesSync(req, res) {
   if (!assertBoondPasswordReady(res)) return;
 
   const syncDeliveriesYear = require(path.join(__dirname, '..', '..', 'scripts', 'sync-deliveries-year'));
-  const year = new Date().getFullYear();
-  const result = await syncDeliveriesYear({ year, delayMs: 150 });
+  const result = await syncDeliveriesYear();
   const count = result?.metadata?.savedCount ?? result?.data?.length ?? 0;
+  const year = result?.metadata?.targetYear ?? new Date().getFullYear();
   res.setHeader('Content-Type', 'application/json');
   return res.status(200).json({
     success: true,

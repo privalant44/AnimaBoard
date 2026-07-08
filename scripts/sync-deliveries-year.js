@@ -7,6 +7,11 @@
  * 3. Scanner les nouveaux IDs Boond (max(id) en base + 1 → dernier ID existant)
  * 4. Upsert uniquement les prestations dont la période (start/end) chevauche l'année
  *
+ * Points d'entrée (même comportement par défaut) :
+ *   - CLI : npm run sync-deliveries-year
+ *   - Bouton Paramètres : POST /api/boondmanager/sync/deliveries (Vercel + Express dev)
+ *   - Batch quotidien : lib/dailyBatchSync.js
+ *
  * Usage:
  *   node scripts/sync-deliveries-year.js
  *   node scripts/sync-deliveries-year.js --year=2026
@@ -38,33 +43,22 @@ const {
 } = require('../lib/deliveryBoond');
 
 function parseArgs(argv) {
-  const options = {
-    year: new Date().getFullYear(),
-    fullScan: false,
-    scanNew: true,
-    startId: DELIVERIES_START_ID || 1,
-    endId: null,
-    delayMs: 200,
-    recentBackfill: 200,
-    help: false,
-  };
+  const overrides = { help: false };
 
   for (const arg of argv.slice(2)) {
-    if (arg === '--help' || arg === '-h') options.help = true;
-    else if (arg === '--full-scan') options.fullScan = true;
-    else if (arg === '--no-scan-new') options.scanNew = false;
-    else if (arg.startsWith('--year=')) options.year = parseInt(arg.slice('--year='.length), 10);
-    else if (arg.startsWith('--start-id=')) options.startId = parseInt(arg.slice('--start-id='.length), 10);
-    else if (arg.startsWith('--end-id=')) options.endId = parseInt(arg.slice('--end-id='.length), 10);
-    else if (arg.startsWith('--delay=')) options.delayMs = parseInt(arg.slice('--delay='.length), 10);
-    else if (arg.startsWith('--recent-backfill=')) options.recentBackfill = parseInt(arg.slice('--recent-backfill='.length), 10);
+    if (arg === '--help' || arg === '-h') overrides.help = true;
+    else if (arg === '--full-scan') overrides.fullScan = true;
+    else if (arg === '--no-scan-new') overrides.scanNew = false;
+    else if (arg.startsWith('--year=')) overrides.year = parseInt(arg.slice('--year='.length), 10);
+    else if (arg.startsWith('--start-id=')) overrides.startId = parseInt(arg.slice('--start-id='.length), 10);
+    else if (arg.startsWith('--end-id=')) overrides.endId = parseInt(arg.slice('--end-id='.length), 10);
+    else if (arg.startsWith('--delay=')) overrides.delayMs = parseInt(arg.slice('--delay='.length), 10);
+    else if (arg.startsWith('--recent-backfill=')) {
+      overrides.recentBackfill = parseInt(arg.slice('--recent-backfill='.length), 10);
+    }
   }
 
-  if (!Number.isFinite(options.year)) {
-    throw new Error(`Année invalide : ${options.year}`);
-  }
-
-  return options;
+  return overrides;
 }
 
 function printHelp() {
@@ -139,29 +133,71 @@ async function getMaxDeliveryIdFromDb() {
   return data?.id != null ? Number(data.id) : 0;
 }
 
+const DEFAULT_SYNC_DELIVERIES_OPTIONS = {
+  fullScan: false,
+  scanNew: true,
+  startId: DELIVERIES_START_ID || 1,
+  endId: null,
+  delayMs: 200,
+  recentBackfill: 200,
+};
+
+function resolveStartId(options) {
+  const startId = Number(options.startId ?? DELIVERIES_START_ID ?? 1);
+  return Number.isFinite(startId) && startId > 0 ? startId : 1;
+}
+
+function normalizeSyncOptions(options = {}) {
+  const year = Number(options.year ?? new Date().getFullYear());
+  if (!Number.isFinite(year)) {
+    throw new Error(`Année invalide : ${options.year}`);
+  }
+
+  const merged = {
+    ...DEFAULT_SYNC_DELIVERIES_OPTIONS,
+    year,
+    ...options,
+  };
+
+  return {
+    ...merged,
+    year,
+    startId: resolveStartId(merged),
+  };
+}
+
 function buildIdSet(options, endId, maxDbId, idsFromDb) {
   const ids = new Set(idsFromDb);
+  const startId = resolveStartId(options);
 
   if (options.fullScan) {
-    for (let id = options.startId; id <= endId; id += 1) ids.add(id);
+    for (let id = startId; id <= endId; id += 1) ids.add(id);
     return ids;
   }
 
-  if (options.scanNew) {
-    const from = Math.max(options.startId, maxDbId + 1);
+  if (options.scanNew !== false) {
+    const from = Math.max(startId, maxDbId + 1);
     for (let id = from; id <= endId; id += 1) ids.add(id);
   }
 
   // Backfill de sécurité : rescanner les derniers IDs, même si maxDbId >= endId.
-  // Ça rattrape les trous (prestations existantes mais jamais upsertées) sans coût d’un full-scan.
-  // IMPORTANT : doit aussi fonctionner en mode "programmatique" (API/batch), donc on met une valeur par défaut ici.
   const recent = Number(options.recentBackfill ?? 200);
   if (Number.isFinite(recent) && recent > 0) {
-    const from = Math.max(options.startId, endId - recent + 1);
+    const from = Math.max(startId, endId - recent + 1);
     for (let id = from; id <= endId; id += 1) ids.add(id);
   }
 
   return ids;
+}
+
+function prioritizeIds(ids, maxDbId) {
+  const numericMaxDbId = Number(maxDbId) || 0;
+  return [...ids].sort((a, b) => {
+    const aNew = a > numericMaxDbId ? 0 : 1;
+    const bNew = b > numericMaxDbId ? 0 : 1;
+    if (aNew !== bNew) return aNew - bNew;
+    return a - b;
+  });
 }
 
 async function saveResults(deliveries, projectsMap, metadata) {
@@ -193,7 +229,9 @@ async function saveResults(deliveries, projectsMap, metadata) {
   }
 }
 
-async function syncDeliveriesYear(options = {}) {
+async function syncDeliveriesYear(rawOptions = {}) {
+  const options = normalizeSyncOptions(rawOptions);
+
   const email = process.env.BOOND_EMAIL;
   const password = process.env.BOOND_PASSWORD;
   if (!email || !password) {
@@ -225,16 +263,17 @@ async function syncDeliveriesYear(options = {}) {
     ...idsFromDb,
     ...idsWithNullDates,
   ]);
-  const sortedIds = [...idsToFetch].sort((a, b) => a - b);
+  const sortedIds = prioritizeIds(idsToFetch, maxDbId);
 
   console.log(`📡 Plage Boond détectée : ${options.startId} → ${endId}`);
   console.log(`📦 En base pour ${year} : ${idsFromDb.length} prestation(s)`);
+  console.log(`📦 Max ID en base : ${maxDbId || 0}`);
   if (idsWithNullDates.length > 0) {
     console.log(`⚠️  Sans creation_date en base : ${idsWithNullDates.length} (backfill Boond)`);
   }
   console.log(`🔎 IDs à interroger : ${sortedIds.length}`);
   if (options.fullScan) console.log('   (mode full-scan)');
-  else if (!options.scanNew) console.log('   (mode no-scan-new)');
+  else if (options.scanNew === false) console.log('   (mode no-scan-new)');
   else console.log(`   (refresh base + scan ${Math.max(options.startId, maxDbId + 1)} → ${endId})`);
   console.log('');
 
@@ -245,6 +284,22 @@ async function syncDeliveriesYear(options = {}) {
   let skippedYear = 0;
   let notFound = 0;
   let errors = 0;
+  let lastPersistedAt = 0;
+
+  async function persistProgress(force = false) {
+    if (deliveries.length === 0) return;
+    if (!force && saved - lastPersistedAt < 25) return;
+    await saveResults(deliveries, projectsMap, {
+      extractedAt: new Date().toISOString(),
+      method: 'sync-deliveries-year',
+      baseURL: `${baseURL}/deliveries/{id}`,
+      targetYear: year,
+      idRange: `${options.startId}-${endId}`,
+      partial: !force,
+      savedCount: saved,
+    });
+    lastPersistedAt = saved;
+  }
 
   for (const id of sortedIds) {
     fetched += 1;
@@ -262,6 +317,7 @@ async function syncDeliveriesYear(options = {}) {
           if (saved % 25 === 0) {
             console.log(`   ✅ ${saved} prestation(s) (année ${year}) enregistrée(s) (dernier ID ${id})`);
           }
+          await persistProgress();
         } else {
           skippedYear += 1;
         }
@@ -310,15 +366,18 @@ async function syncDeliveriesYear(options = {}) {
 }
 
 module.exports = syncDeliveriesYear;
+module.exports.DEFAULT_SYNC_DELIVERIES_OPTIONS = DEFAULT_SYNC_DELIVERIES_OPTIONS;
+module.exports.normalizeSyncOptions = normalizeSyncOptions;
 
 if (require.main === module) {
-  const options = parseArgs(process.argv);
-  if (options.help) {
+  const cliArgs = parseArgs(process.argv);
+  if (cliArgs.help) {
     printHelp();
     process.exit(0);
   }
 
-  syncDeliveriesYear(options)
+  const { help, ...cliOverrides } = cliArgs;
+  syncDeliveriesYear(cliOverrides)
     .then(() => {
       console.log('\n✅ Sync annuelle terminée.');
       process.exit(0);

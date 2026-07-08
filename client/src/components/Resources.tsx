@@ -178,11 +178,6 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
     saveResourcesMetadata(updated);
   };
 
-  useEffect(() => {
-    fetchResources();
-    loadResourcesMetadata();
-  }, []);
-
   const fetchResources = async () => {
     try {
       setLoading(true);
@@ -254,6 +249,11 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
   const loadResourcesMetadataRef = useRef(loadResourcesMetadata);
   fetchResourcesRef.current = fetchResources;
   loadResourcesMetadataRef.current = loadResourcesMetadata;
+
+  useEffect(() => {
+    void fetchResourcesRef.current();
+    void loadResourcesMetadataRef.current();
+  }, []);
 
   useEffect(() => {
     const onRefresh = () => {

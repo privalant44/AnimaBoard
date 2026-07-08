@@ -17,13 +17,22 @@ type SettingsView = 'hub' | 'data-sync' | 'diagnostics' | 'batch-logs' | 'users'
 const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
   const auth = useAuth();
   const [view, setView] = useState<SettingsView>('hub');
+  const [batchLogsBackView, setBatchLogsBackView] = useState<SettingsView>('hub');
   const canManageUsers = !auth || auth.can(PERMISSIONS.USERS_MANAGE);
+
+  const openBatchLogs = (returnView: SettingsView) => {
+    setBatchLogsBackView(returnView);
+    setView('batch-logs');
+  };
 
   if (view === 'data-sync') {
     return (
       <div className="settings-page">
         <div className="settings-container">
-          <SettingsDataSyncPanel onBack={() => setView('hub')} />
+          <SettingsDataSyncPanel
+            onBack={() => setView('hub')}
+            onOpenBatchLogs={() => openBatchLogs('data-sync')}
+          />
         </div>
       </div>
     );
@@ -47,7 +56,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     return (
       <div className="settings-page">
         <div className="settings-container">
-          <SettingsBatchLogsPanel onBack={() => setView('hub')} />
+          <SettingsBatchLogsPanel onBack={() => setView(batchLogsBackView)} />
         </div>
       </div>
     );
@@ -76,7 +85,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
             <span className="settings-hub-card-icon" aria-hidden="true">{'\u{1F50D}'}</span>
             <span className="settings-hub-card-title">Tests et consultations</span>
           </button>
-          <button type="button" className="settings-hub-card" onClick={() => setView('batch-logs')}>
+          <button type="button" className="settings-hub-card" onClick={() => openBatchLogs('hub')}>
             <span className="settings-hub-card-icon" aria-hidden="true">{'\u{1F4CB}'}</span>
             <span className="settings-hub-card-title">Journaux batch</span>
           </button>

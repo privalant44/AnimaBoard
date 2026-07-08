@@ -22,6 +22,16 @@ app.get('/api/health', (req, res) => {
 // Variables d'environnement (public — utilisé par le client avant connexion)
 app.get('/api/env-check', require('../api/env-check'));
 
+// Logo entreprise (lecture publique — page de connexion)
+const logoHandlers = require('../api/settings/logo');
+app.get('/api/settings/logo', async (req, res, next) => {
+  try {
+    await logoHandlers.handleGet(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Routes API en premier (avant le static / SPA) pour ne jamais renvoyer index.html sur /api/*
 try {
   const authRoutes = require('./routes/auth');
@@ -44,6 +54,7 @@ try {
   app.use('/api/test', testRoutes);
   app.use('/api/data', dataRoutes);
   app.use('/api/batch-sync', batchSyncRoutes);
+  app.use('/api/settings', require('./routes/settings'));
 
   // POST /api/timesheets-reset : vide KV puis recharge périodes n-1 et n
   app.post('/api/timesheets-reset', async (req, res) => {

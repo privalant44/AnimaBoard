@@ -154,7 +154,8 @@ function buildIdSet(options, endId, maxDbId, idsFromDb) {
 
   // Backfill de sécurité : rescanner les derniers IDs, même si maxDbId >= endId.
   // Ça rattrape les trous (prestations existantes mais jamais upsertées) sans coût d’un full-scan.
-  const recent = Number(options.recentBackfill);
+  // IMPORTANT : doit aussi fonctionner en mode "programmatique" (API/batch), donc on met une valeur par défaut ici.
+  const recent = Number(options.recentBackfill ?? 200);
   if (Number.isFinite(recent) && recent > 0) {
     const from = Math.max(options.startId, endId - recent + 1);
     for (let id = from; id <= endId; id += 1) ids.add(id);

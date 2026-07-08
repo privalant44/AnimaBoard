@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import './Login.css';
-
-const LOGO_STORAGE_KEY = 'animaLogo';
+import { fetchCompanyLogo } from '../companyLogo';
 
 type LoginProps = {
   onMicrosoftLogin: () => void;
@@ -23,8 +22,9 @@ const Login: React.FC<LoginProps> = ({
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    const savedLogo = localStorage.getItem(LOGO_STORAGE_KEY);
-    if (savedLogo) setLogoUrl(savedLogo);
+    fetchCompanyLogo().then((url) => {
+      if (url) setLogoUrl(url);
+    });
   }, []);
 
   const handleLocalSubmit = async (e: React.FormEvent) => {

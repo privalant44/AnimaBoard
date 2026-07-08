@@ -31,6 +31,7 @@
     "encrypt-env": "node scripts/encrypt-env.js",
     "seed-french-holidays": "node scripts/seed-french-holidays.js",
     "dump-ledger-month": "node scripts/dump-pennylane-ledger-month.js",
+    "rebuild-deliveries-from-min-range-stage": "node scripts/rebuild-deliveries-from-min-range-stage.js",
     "db:export-dev": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-dev-to-prod.ps1 -Action Export",
     "db:import-prod": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-dev-to-prod.ps1 -Action Import",
     "db:clone-dev-to-prod": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-dev-to-prod.ps1 -Action Clone"

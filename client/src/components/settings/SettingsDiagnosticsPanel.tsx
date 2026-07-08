@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { apiFetch } from '../../api';
+import { deleteCompanyLogo, uploadCompanyLogo } from '../../companyLogo';
 import SettingsPanelLayout from './SettingsPanelLayout';
 import '../Settings.css';
 
@@ -20,6 +21,7 @@ interface ApiTestResult {
 
 const SettingsDiagnosticsPanel: React.FC<SettingsDiagnosticsPanelProps> = ({ onBack, onLogoChange, currentLogo }) => {
   const [logoPreview, setLogoPreview] = useState<string | null>(currentLogo);
+  const [logoUploading, setLogoUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [testingApi, setTestingApi] = useState(false);
   const [apiTestResult, setApiTestResult] = useState<ApiTestResult | null>(null);
@@ -30,31 +32,47 @@ const SettingsDiagnosticsPanel: React.FC<SettingsDiagnosticsPanelProps> = ({ onB
   const [loadingDataFiles, setLoadingDataFiles] = useState<{ [key: string]: boolean }>({});
   const [dataFiles, setDataFiles] = useState<{ [key: string]: any }>({});
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      if (!file.type.startsWith('image/')) {
-        alert('Veuillez sélectionner un fichier image');
-        return;
-      }
+    if (!file) return;
 
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        setLogoPreview(result);
-        localStorage.setItem('animaLogo', result);
-        onLogoChange(result);
-      };
-      reader.readAsDataURL(file);
+    if (!file.type.startsWith('image/')) {
+      alert('Veuillez sélectionner un fichier image');
+      return;
+    }
+
+    setLogoUploading(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Lecture du fichier impossible'));
+        reader.readAsDataURL(file);
+      });
+
+      const url = await uploadCompanyLogo(dataUrl);
+      setLogoPreview(url);
+      onLogoChange(url || '');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Erreur lors du téléchargement du logo');
+    } finally {
+      setLogoUploading(false);
     }
   };
 
-  const handleRemoveLogo = () => {
-    setLogoPreview(null);
-    localStorage.removeItem('animaLogo');
-    onLogoChange('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+  const handleRemoveLogo = async () => {
+    setLogoUploading(true);
+    try {
+      await deleteCompanyLogo();
+      setLogoPreview(null);
+      onLogoChange('');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Erreur lors de la suppression du logo');
+    } finally {
+      setLogoUploading(false);
     }
   };
 
@@ -174,14 +192,14 @@ const SettingsDiagnosticsPanel: React.FC<SettingsDiagnosticsPanelProps> = ({ onB
       <div className="settings-section">
         <h3>Logo de l'entreprise</h3>
         <p className="settings-description">
-          Téléchargez le logo qui sera affiché sur la page d'accueil.
+          Téléchargez le logo affiché pour tous les utilisateurs (connexion et menu).
         </p>
 
         <div className="logo-upload-area">
           {logoPreview ? (
             <div className="logo-preview-container">
               <img src={logoPreview} alt="Logo Anima Néo" className="logo-preview" />
-              <button onClick={handleRemoveLogo} className="remove-logo-btn">
+              <button onClick={handleRemoveLogo} className="remove-logo-btn" disabled={logoUploading}>
                 Supprimer le logo
               </button>
             </div>
@@ -200,10 +218,11 @@ const SettingsDiagnosticsPanel: React.FC<SettingsDiagnosticsPanelProps> = ({ onB
             accept="image/*"
             onChange={handleFileChange}
             id="logo-upload"
+            disabled={logoUploading}
             style={{ display: 'none' }}
           />
-          <label htmlFor="logo-upload" className="upload-button">
-            {logoPreview ? 'Changer le logo' : 'Télécharger un logo'}
+          <label htmlFor="logo-upload" className="upload-button" style={logoUploading ? { opacity: 0.6, pointerEvents: 'none' } : undefined}>
+            {logoUploading ? 'Téléchargement…' : logoPreview ? 'Changer le logo' : 'Télécharger un logo'}
           </label>
         </div>
       </div>

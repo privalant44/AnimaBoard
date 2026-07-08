@@ -435,61 +435,26 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
     } : { r: 0, g: 0, b: 0 };
   };
 
-  // Fonction pour interpoler entre deux couleurs
-  const interpolateColor = (color1: string, color2: string, ratio: number): string => {
-    const rgb1 = hexToRgb(color1);
-    const rgb2 = hexToRgb(color2);
-    const r = Math.round(rgb1.r + (rgb2.r - rgb1.r) * ratio);
-    const g = Math.round(rgb1.g + (rgb2.g - rgb1.g) * ratio);
-    const b = Math.round(rgb1.b + (rgb2.b - rgb1.b) * ratio);
-    return `rgb(${r}, ${g}, ${b})`;
-  };
-
   // Fonction pour calculer la luminosité relative d'une couleur RGB (0-1)
   const getLuminance = (r: number, g: number, b: number): number => {
-    // Formule de luminosité relative selon WCAG
-    const [rs, gs, bs] = [r, g, b].map(val => {
-      val = val / 255;
-      return val <= 0.03928 ? val / 12.92 : Math.pow((val + 0.055) / 1.055, 2.4);
+    const [rs, gs, bs] = [r, g, b].map((val) => {
+      const channel = val / 255;
+      return channel <= 0.03928 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
     });
     return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
   };
 
-  // Fonction pour déterminer si une couleur est foncée (nécessite texte blanc)
   const isDarkColor = (color: string): boolean => {
     const rgb = hexToRgb(color);
-    const luminance = getLuminance(rgb.r, rgb.g, rgb.b);
-    return luminance < 0.5; // Seuil pour déterminer si c'est foncé
+    return getLuminance(rgb.r, rgb.g, rgb.b) < 0.5;
   };
 
-  // Fonction pour obtenir la couleur selon le formatage conditionnel
-  // C01411 : entre 0 et 4
-  // EE423F : entre 5 et 9
-  // FFBD2E : entre 10 et 13
-  // 5ECFCB : entre 14 et 16
-  // 267E7B : au delà de 16
+  // Échelle fixe — synthèse forecast (jours saisis + prévisionnels)
   const getCellColor = (value: number): string => {
-    if (value <= 0) {
-      return '#C01411'; // Rouge foncé pour 0
-    } else if (value <= 4) {
-      // Dégradé entre C01411 et EE423F (0-4)
-      const ratio = value / 4;
-      return interpolateColor('#C01411', '#EE423F', ratio);
-    } else if (value <= 9) {
-      // Dégradé entre EE423F et FFBD2E (5-9)
-      const ratio = (value - 5) / 5;
-      return interpolateColor('#EE423F', '#FFBD2E', ratio);
-    } else if (value <= 13) {
-      // Dégradé entre FFBD2E et 5ECFCB (10-13)
-      const ratio = (value - 10) / 4;
-      return interpolateColor('#FFBD2E', '#5ECFCB', ratio);
-    } else if (value <= 16) {
-      // Dégradé entre 5ECFCB et 267E7B (14-16)
-      const ratio = (value - 14) / 3;
-      return interpolateColor('#5ECFCB', '#267E7B', ratio);
-    } else {
-      return '#267E7B'; // Vert foncé pour 16+
-    }
+    if (value <= 4) return '#EE423F';
+    if (value <= 9) return '#FAC7C6';
+    if (value <= 14) return '#FFBD2E';
+    return '#B1E8E6';
   };
 
   // Formater le nom du mois
@@ -1086,24 +1051,20 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
 
         <div className="report-legend">
           <div className="legend-item">
-            <div className="legend-color" style={{ backgroundColor: '#C01411' }}></div>
+            <div className="legend-color" style={{ backgroundColor: '#EE423F' }}></div>
             <span>0-4 jours</span>
           </div>
           <div className="legend-item">
-            <div className="legend-color" style={{ backgroundColor: '#EE423F' }}></div>
+            <div className="legend-color" style={{ backgroundColor: '#FAC7C6' }}></div>
             <span>5-9 jours</span>
           </div>
           <div className="legend-item">
             <div className="legend-color" style={{ backgroundColor: '#FFBD2E' }}></div>
-            <span>10-13 jours</span>
+            <span>10-14 jours</span>
           </div>
           <div className="legend-item">
-            <div className="legend-color" style={{ backgroundColor: '#5ECFCB' }}></div>
-            <span>14-16 jours</span>
-          </div>
-          <div className="legend-item">
-            <div className="legend-color" style={{ backgroundColor: '#267E7B' }}></div>
-            <span>16+ jours</span>
+            <div className="legend-color" style={{ backgroundColor: '#B1E8E6' }}></div>
+            <span>15 jours et plus</span>
           </div>
         </div>
           </>

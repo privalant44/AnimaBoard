@@ -8,6 +8,7 @@ import '../Settings.css';
 
 interface SettingsDataSyncPanelProps {
   onBack: () => void;
+  onOpenBatchLogs?: () => void;
 }
 
 interface StepSummary {
@@ -39,7 +40,7 @@ function formatDuration(ms: number | null | undefined): string {
   return `${min} min ${rem} s`;
 }
 
-const SettingsDataSyncPanel: React.FC<SettingsDataSyncPanelProps> = ({ onBack }) => {
+const SettingsDataSyncPanel: React.FC<SettingsDataSyncPanelProps> = ({ onBack, onOpenBatchLogs }) => {
   const auth = useAuth();
   const canRunBatch = !auth || auth.can(PERMISSIONS.OPS_SYNC);
 
@@ -403,79 +404,171 @@ const SettingsDataSyncPanel: React.FC<SettingsDataSyncPanelProps> = ({ onBack })
   const isAnySyncRunning =
     syncingResources || syncingDeliveries || syncingTimesheets || syncingAbsences || syncingBesoins || syncingDictionary || resettingTimesheets;
 
+  const isBusy = isAnySyncRunning || runningBatch;
+
+  const syncResultSection =
+    syncResult?.type === 'timesheets-reset' ? 'reset' : syncResult ? 'sync' : null;
+
   return (
     <SettingsPanelLayout title="Actualisation des données" onBack={onBack}>
       <p className="settings-description">
-        Lancez le batch quotidien complet ou exécutez des synchronisations individuelles selon le besoin.
+        Lancez le batch quotidien, actualisez une source de données précise ou réinitialisez un jeu de données.
       </p>
 
-      {canRunBatch && (
-        <button
-          type="button"
-          className="sync-button batch-sync-run-button"
-          onClick={runBatch}
-          disabled={runningBatch || isAnySyncRunning}
-        >
-          {runningBatch ? '⏳ Batch en cours…' : '▶️ Lancer le batch quotidien'}
-        </button>
-      )}
-
-      {runResult && (
-        <div className={`sync-result ${runResult.success ? 'success' : 'error'}`}>
-          <span className="sync-result-icon">{runResult.success ? '✅' : '❌'}</span>
-          <div className="batch-sync-run-result-body">
-            <span className="sync-result-message">{runResult.message}</span>
-            {runResult.steps?.some((s) => !s.ok) && (
-              <ul className="batch-sync-run-failures">
-                {runResult.steps
-                  .filter((s) => !s.ok)
-                  .map((s) => (
-                    <li key={s.name}>
-                      <strong>{s.label}</strong> — {s.error || 'erreur'}
-                    </li>
-                  ))}
-              </ul>
+      <div className="sync-data-sections">
+        {(canRunBatch || onOpenBatchLogs) && (
+          <section className="sync-data-section sync-data-section--batch" aria-labelledby="sync-section-batch-title">
+            <div className="sync-data-section-header">
+              <h4 id="sync-section-batch-title" className="sync-data-section-title">
+                Batch quotidien
+              </h4>
+              <p className="sync-data-section-description">
+                Exécution complète planifiée (Pennylane, ressources, prestations, projets, timesheets, besoins).
+              </p>
+            </div>
+            <div className="sync-data-button-grid">
+              {canRunBatch && (
+                <button
+                  type="button"
+                  className="sync-button sync-button--batch"
+                  onClick={runBatch}
+                  disabled={isBusy}
+                >
+                  {runningBatch ? '⏳ Batch en cours…' : '▶️ Lancer le batch quotidien'}
+                </button>
+              )}
+              {onOpenBatchLogs && (
+                <button
+                  type="button"
+                  className="sync-button sync-button--batch"
+                  onClick={onOpenBatchLogs}
+                  disabled={runningBatch}
+                >
+                  📋 Consulter les journaux batch
+                </button>
+              )}
+            </div>
+            {runResult && (
+              <div className={`sync-result ${runResult.success ? 'success' : 'error'}`}>
+                <span className="sync-result-icon">{runResult.success ? '✅' : '❌'}</span>
+                <div className="batch-sync-run-result-body">
+                  <span className="sync-result-message">{runResult.message}</span>
+                  {runResult.steps?.some((s) => !s.ok) && (
+                    <ul className="batch-sync-run-failures">
+                      {runResult.steps
+                        .filter((s) => !s.ok)
+                        .map((s) => (
+                          <li key={s.name}>
+                            <strong>{s.label}</strong> — {s.error || 'erreur'}
+                          </li>
+                        ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
             )}
+          </section>
+        )}
+
+        <section className="sync-data-section sync-data-section--sync" aria-labelledby="sync-section-sync-title">
+          <div className="sync-data-section-header">
+            <h4 id="sync-section-sync-title" className="sync-data-section-title">
+              Actualisations
+            </h4>
+            <p className="sync-data-section-description">
+              Synchronisations ciblées depuis BoondManager, une source à la fois.
+            </p>
           </div>
-        </div>
-      )}
+          <div className="sync-data-button-grid">
+            <button
+              type="button"
+              className="sync-button sync-button--sync"
+              onClick={syncResources}
+              disabled={isBusy}
+            >
+              {syncingResources ? '⏳ Actualisation en cours…' : '🔄 Actualiser les ressources'}
+            </button>
 
-      <div className="sync-buttons-section">
-        <button className="sync-button sync-resources-button" onClick={syncResources} disabled={isAnySyncRunning || runningBatch}>
-          {syncingResources ? '⏳ Actualisation en cours...' : '🔄 Actualiser les ressources'}
-        </button>
+            <button
+              type="button"
+              className="sync-button sync-button--sync"
+              onClick={syncDictionary}
+              disabled={isBusy}
+            >
+              {syncingDictionary ? '⏳ Synchronisation en cours…' : '📖 Synchroniser le dictionnaire'}
+            </button>
 
-        <button className="sync-button sync-dictionary-button" onClick={syncDictionary} disabled={isAnySyncRunning || runningBatch}>
-          {syncingDictionary ? '⏳ Synchronisation en cours...' : '📖 Synchroniser le dictionnaire (libellés type / statut)'}
-        </button>
+            <button
+              type="button"
+              className="sync-button sync-button--sync"
+              onClick={syncDeliveries}
+              disabled={isBusy}
+            >
+              {syncingDeliveries ? '⏳ Extraction en cours…' : '📋 Actualiser les prestations'}
+            </button>
 
-        <button className="sync-button sync-deliveries-button" onClick={syncDeliveries} disabled={isAnySyncRunning || runningBatch}>
-          {syncingDeliveries ? '⏳ Extraction en cours...' : '📋 Actualiser les prestations (extract)'}
-        </button>
+            <button
+              type="button"
+              className="sync-button sync-button--sync"
+              onClick={syncTimesheets}
+              disabled={isBusy}
+            >
+              {syncingTimesheets ? '⏳ Synchronisation en cours…' : '📅 Synchroniser les feuilles de temps (3 mois)'}
+            </button>
 
-        <button className="sync-button sync-timesheets-button" onClick={syncTimesheets} disabled={isAnySyncRunning || runningBatch}>
-          {syncingTimesheets ? '⏳ Synchronisation en cours...' : '📅 Synchroniser les feuilles de temps (prod + interne, 3 derniers mois)'}
-        </button>
+            <button
+              type="button"
+              className="sync-button sync-button--sync"
+              onClick={syncAbsences}
+              disabled={isBusy}
+            >
+              {syncingAbsences ? '⏳ Synchronisation en cours…' : '🏖️ Synchroniser les absences'}
+            </button>
 
-        <button className="sync-button sync-absences-button" onClick={syncAbsences} disabled={isAnySyncRunning || runningBatch}>
-          {syncingAbsences ? '⏳ Synchronisation en cours...' : '🏖️ Synchroniser les absences (N-1 et année en cours)'}
-        </button>
+            <button
+              type="button"
+              className="sync-button sync-button--sync"
+              onClick={syncBesoinsRecentMonths}
+              disabled={isBusy}
+            >
+              {syncingBesoins ? '⏳ Actualisation en cours…' : '🎯 Actualiser les besoins (2 mois)'}
+            </button>
+          </div>
+          {syncResult && syncResultSection === 'sync' && (
+            <div className={`sync-result ${syncResult.success ? 'success' : 'error'}`}>
+              <span className="sync-result-icon">{syncResult.success ? '✅' : '❌'}</span>
+              <span className="sync-result-message">{syncResult.message}</span>
+            </div>
+          )}
+        </section>
 
-        <button className="sync-button sync-besoins-button" onClick={syncBesoinsRecentMonths} disabled={isAnySyncRunning || runningBatch}>
-          {syncingBesoins ? '⏳ Actualisation en cours...' : '🎯 Actualiser les besoins/opportunités (2 derniers mois)'}
-        </button>
-
-        <button className="sync-button sync-timesheets-reset-button" onClick={resetTimesheets} disabled={isAnySyncRunning || runningBatch}>
-          {resettingTimesheets ? '⏳ Réinitialisation...' : '🗑️ Réinitialiser les feuilles de temps (année n-1 et n)'}
-        </button>
+        <section className="sync-data-section sync-data-section--reset" aria-labelledby="sync-section-reset-title">
+          <div className="sync-data-section-header">
+            <h4 id="sync-section-reset-title" className="sync-data-section-title">
+              Réinitialisation
+            </h4>
+            <p className="sync-data-section-description">
+              Actions destructives : à utiliser avec précaution avant une nouvelle synchronisation.
+            </p>
+          </div>
+          <div className="sync-data-button-grid sync-data-button-grid--single">
+            <button
+              type="button"
+              className="sync-button sync-button--reset"
+              onClick={resetTimesheets}
+              disabled={isBusy}
+            >
+              {resettingTimesheets ? '⏳ Réinitialisation…' : '🗑️ Réinitialiser les feuilles de temps'}
+            </button>
+          </div>
+          {syncResult && syncResultSection === 'reset' && (
+            <div className={`sync-result ${syncResult.success ? 'success' : 'error'}`}>
+              <span className="sync-result-icon">{syncResult.success ? '✅' : '❌'}</span>
+              <span className="sync-result-message">{syncResult.message}</span>
+            </div>
+          )}
+        </section>
       </div>
-
-      {syncResult && (
-        <div className={`sync-result ${syncResult.success ? 'success' : 'error'}`}>
-          <span className="sync-result-icon">{syncResult.success ? '✅' : '❌'}</span>
-          <span className="sync-result-message">{syncResult.message}</span>
-        </div>
-      )}
     </SettingsPanelLayout>
   );
 };

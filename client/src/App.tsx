@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import { apiFetch } from './api';
+import { fetchCompanyLogo } from './companyLogo';
 import { useAuth } from './auth/AuthProvider';
 import { isAuthEnabled } from './auth/msalConfig';
 import type { AppTab } from './auth/roles';
@@ -39,12 +40,11 @@ function App() {
     }
   }, [auth, activeTab]);
 
-  // Charger le logo depuis localStorage au démarrage
+  // Charger le logo partagé depuis l'API
   useEffect(() => {
-    const savedLogo = localStorage.getItem('animaLogo');
-    if (savedLogo) {
-      setLogoUrl(savedLogo);
-    }
+    fetchCompanyLogo().then((url) => {
+      if (url) setLogoUrl(url);
+    });
   }, []);
 
   const handleLogoChange = (newLogoUrl: string) => {

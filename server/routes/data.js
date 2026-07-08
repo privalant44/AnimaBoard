@@ -11,6 +11,11 @@ const { getHolidayRowsForYearRange } = require('../../lib/frenchHolidays');
 const boondManagerService = require('../services/boondManagerService');
 const { resetTimesheetsWindow } = require('../../lib/timesheetsReset');
 const { getForecastBootstrapData } = require('../../lib/forecastBootstrapService');
+const {
+  createPlannedDelivery,
+  updatePlannedDelivery,
+  deletePlannedDelivery,
+} = require('../../lib/plannedDeliveriesService');
 
 // Helper: réponse standard avec data
 function okData(res, data, fileLabel = null, count = null) {
@@ -50,15 +55,23 @@ router.get('/resources', handleResources);
 router.get('/resources.json', handleResources);
 
 async function getResourcesLocalEnriched() {
-  const { getResourcesLocalEnriched: enrich } = require('../../lib/dictionarySync');
-  return enrich();
+  const { getResourcesLocalPayload } = require('../../lib/dictionarySync');
+  const payload = await getResourcesLocalPayload();
+  return payload.resources;
 }
 
 // --- Resources locales (lecture uniquement base, sans appel API) - pour la vue Ressources
 router.get('/resources-local', async (req, res) => {
   try {
-    const list = await getResourcesLocalEnriched();
-    return okData(res, list, 'resources', list.length);
+    const { getResourcesLocalPayload } = require('../../lib/dictionarySync');
+    const { resources, dictionaryOptions } = await getResourcesLocalPayload();
+    return res.json({
+      success: true,
+      data: resources,
+      file: 'resources',
+      count: resources.length,
+      dictionaryOptions,
+    });
   } catch (error) {
     console.error('❌ Erreur /api/data/resources-local:', error);
     return res.status(500).json({ success: false, error: error.message });
@@ -262,6 +275,44 @@ router.get('/forecast-bootstrap', async (req, res) => {
       return res.status(404).json({ success: false, error: error.message });
     }
     return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// --- Prestations prévisionnelles manuelles (planned_scenario + planned_forecast)
+router.post('/planned-deliveries', async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (body.delete && body.resourceId && body.scenario) {
+      await deletePlannedDelivery({
+        resourceId: body.resourceId,
+        scenario: body.scenario,
+      });
+      return res.json({ success: true, message: 'Prestation prévisionnelle supprimée' });
+    }
+    if (body.resourceId && body.scenario) {
+      const updated = await updatePlannedDelivery({
+        resourceId: body.resourceId,
+        scenario: body.scenario,
+        tjm: body.tjm,
+        description: body.description,
+        month: body.month,
+        days: body.days,
+      });
+      return res.json({ success: true, message: 'Prestation prévisionnelle mise à jour', data: updated });
+    }
+    if (!body.resourceId) {
+      return res.status(400).json({ success: false, error: 'resourceId est requis' });
+    }
+    const created = await createPlannedDelivery({
+      resourceId: body.resourceId,
+      tjm: body.tjm,
+      description: body.description,
+    });
+    return res.json({ success: true, message: 'Prestation prévisionnelle créée', data: created });
+  } catch (error) {
+    const status = error.status || 500;
+    if (status >= 500) console.error('❌ Erreur /api/data/planned-deliveries:', error);
+    return res.status(status).json({ success: false, error: error.message });
   }
 });
 

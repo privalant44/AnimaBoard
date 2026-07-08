@@ -124,7 +124,7 @@ async function handleDictionarySync(req, res) {
   res.setHeader('Content-Type', 'application/json');
   return res.status(200).json({
     success: true,
-    message: `Dictionnaire synchronisé : ${result.count} entrées`,
+    message: `Dictionnaire synchronisé : ${result.resourcesTypeOf} types ressources, ${result.resourcesState} statuts ressources, ${result.opportunitiesTypeOf} types opportunités, ${result.opportunitiesState} statuts opportunités.`,
     count: result.count,
     details: result,
   });

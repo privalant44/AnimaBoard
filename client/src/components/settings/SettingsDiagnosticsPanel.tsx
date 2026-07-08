@@ -297,7 +297,7 @@ const SettingsDiagnosticsPanel: React.FC<SettingsDiagnosticsPanelProps> = ({ onB
       <div className="settings-section">
         <h3>Dictionnaire Resources</h3>
         <p className="settings-description">
-          Affiche le dictionnaire de la rubrique "resources" avec le mapping typeOf.
+          Affiche le dictionnaire Boond de la rubrique « resources » (types et états).
         </p>
 
         <button className="test-api-button" onClick={loadDictionary} disabled={loadingDictionary}>
@@ -330,7 +330,7 @@ const SettingsDiagnosticsPanel: React.FC<SettingsDiagnosticsPanelProps> = ({ onB
                 <div className="api-test-content">
                   {dictionaryData.typeOfTable && dictionaryData.typeOfTable.length > 0 && (
                     <div className="dictionary-table-container">
-                      <p><strong>Tableau des valeurs typeOf:</strong></p>
+                      <p><strong>Types de ressource (typeOf) :</strong></p>
                       <table className="dictionary-table">
                         <thead>
                           <tr>
@@ -341,6 +341,28 @@ const SettingsDiagnosticsPanel: React.FC<SettingsDiagnosticsPanelProps> = ({ onB
                         <tbody>
                           {dictionaryData.typeOfTable.map((item: any, index: number) => (
                             <tr key={index}>
+                              <td>{item.code}</td>
+                              <td>{item.label}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {dictionaryData.stateTable && dictionaryData.stateTable.length > 0 && (
+                    <div className="dictionary-table-container">
+                      <p><strong>États de ressource (state) :</strong></p>
+                      <table className="dictionary-table">
+                        <thead>
+                          <tr>
+                            <th>Code</th>
+                            <th>Label</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {dictionaryData.stateTable.map((item: any, index: number) => (
+                            <tr key={`state-${index}`}>
                               <td>{item.code}</td>
                               <td>{item.label}</td>
                             </tr>

@@ -78,7 +78,8 @@ router.post('/income-statement/init', async (req, res) => {
 router.get('/home-monthly-recap', async (req, res) => {
   try {
     const year = req.query.year != null ? req.query.year : undefined;
-    const data = await dashboardService.getHomeMonthlyRecap(year);
+    const scenario = req.query.scenario != null ? req.query.scenario : 'none';
+    const data = await dashboardService.getHomeMonthlyRecap(year, scenario);
     res.json(data);
   } catch (error) {
     console.error('❌ Erreur home-monthly-recap:', error);

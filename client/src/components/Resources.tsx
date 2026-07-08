@@ -24,6 +24,10 @@ type SortDirection = 'asc' | 'desc';
 const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [resources, setResources] = useState<Resource[]>([]);
+  const [dictionaryFilterOptions, setDictionaryFilterOptions] = useState<{ types: string[]; states: string[] }>({
+    types: [],
+    states: [],
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>(null);
@@ -193,6 +197,11 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
       }
 
       const resourcesData = Array.isArray(data.data) ? data.data : [];
+      const dictOpts = data.dictionaryOptions || {};
+      setDictionaryFilterOptions({
+        types: Array.isArray(dictOpts.types) ? dictOpts.types : [],
+        states: Array.isArray(dictOpts.states) ? dictOpts.states : [],
+      });
 
       if (resourcesData.length === 0) {
         setResources([]);
@@ -240,11 +249,22 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
     return () => window.removeEventListener(DATA_REFRESH_EVENT, onRefresh);
   }, []);
 
-  // Obtenir la liste unique des types pour le filtre
-  const uniqueTypes = Array.from(new Set(resources.map(r => r.type).filter(t => t && t !== 'N/A'))).sort();
-  
-  // Obtenir la liste unique des statuts pour le filtre
-  const uniqueStatuts = Array.from(new Set(resources.map(r => r.statut).filter((s): s is string => s !== undefined && s !== null && s !== 'N/A'))).sort();
+  // Options de filtres : dictionnaire Boond (complet) + valeurs réellement présentes sur les ressources
+  const uniqueTypes = useMemo(() => {
+    const set = new Set<string>(dictionaryFilterOptions.types);
+    resources.forEach((r) => {
+      if (r.type && r.type !== 'N/A') set.add(r.type);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'fr'));
+  }, [resources, dictionaryFilterOptions.types]);
+
+  const uniqueStatuts = useMemo(() => {
+    const set = new Set<string>(dictionaryFilterOptions.states);
+    resources.forEach((r) => {
+      if (r.statut && r.statut !== 'N/A') set.add(r.statut);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'fr'));
+  }, [resources, dictionaryFilterOptions.states]);
 
   // Nettoyer les filtres persistés (localStorage) : retirer les valeurs obsolètes (ex. anciens codes
   // mémorisés quand le dictionnaire était vide) et dédoublonner, sinon le compteur compte code + libellé.

@@ -120,6 +120,10 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
   const [snapBesoinsLoading, setSnapBesoinsLoading] = useState(false);
   const [snapBesoinsStatus, setSnapBesoinsStatus] = useState<string | null>(null);
   const [snapBesoinsError, setSnapBesoinsError] = useState<string | null>(null);
+  const [dictionaryFilterOptions, setDictionaryFilterOptions] = useState<{ types: string[]; states: string[] }>({
+    types: [],
+    states: [],
+  });
 
   // Obtenir tous les mois de l'année en cours
   const getCurrentYearMonths = (): string[] => {
@@ -146,6 +150,11 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
       const payload = bootstrapBody.data || {};
       const resourcesList = Array.isArray(payload.resourcesLocal) ? payload.resourcesLocal : [];
       const deliveries = Array.isArray(payload.deliveries) ? payload.deliveries : [];
+      const dictOpts = payload.dictionaryOptions || {};
+      setDictionaryFilterOptions({
+        types: Array.isArray(dictOpts.types) ? dictOpts.types : [],
+        states: Array.isArray(dictOpts.states) ? dictOpts.states : [],
+      });
 
       // Forecast prévisionnel déjà indexé par deliveryId.
       const forecastTimes = payload.forecastByDeliveryId || {};
@@ -364,17 +373,20 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
 
   // Obtenir la liste unique des types pour le filtre
   const uniqueTypes = useMemo(() => {
-    return Array.from(
-      new Set(resources.map(r => r.type).filter((t): t is string => t !== undefined && t !== null && t !== ''))
-    ).sort();
-  }, [resources]);
-  
-  // Obtenir la liste unique des statuts pour le filtre
+    const set = new Set<string>(dictionaryFilterOptions.types);
+    resources.forEach((r) => {
+      if (r.type) set.add(r.type);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'fr'));
+  }, [resources, dictionaryFilterOptions.types]);
+
   const uniqueStatuts = useMemo(() => {
-    return Array.from(
-      new Set(resources.map(r => r.statut).filter((s): s is string => s !== undefined && s !== null && s !== ''))
-    ).sort();
-  }, [resources]);
+    const set = new Set<string>(dictionaryFilterOptions.states);
+    resources.forEach((r) => {
+      if (r.statut) set.add(r.statut);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'fr'));
+  }, [resources, dictionaryFilterOptions.states]);
 
   // Fermer les dropdowns quand on clique ailleurs
   useEffect(() => {

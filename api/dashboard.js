@@ -61,7 +61,8 @@ module.exports = createVercelHandler(async (req, res) => {
 
   if (route === 'home-monthly-recap' && req.method === 'GET') {
     const year = req.query.year != null ? req.query.year : undefined;
-    const data = await dashboardService.getHomeMonthlyRecap(year);
+    const scenario = req.query.scenario != null ? req.query.scenario : 'none';
+    const data = await dashboardService.getHomeMonthlyRecap(year, scenario);
     return sendJson(res, 200, data);
   }
 

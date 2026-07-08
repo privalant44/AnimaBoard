@@ -741,6 +741,238 @@
   color: #2c5f5d;
 }
 
+/* Prestations prévisionnelles manuelles (sous les absences) */
+.forecast-planned-block {
+  border: 1px solid #c8ddd9;
+  background: #f7fbfa;
+  margin-bottom: 0.5rem;
+}
+
+.forecast-planned-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  background: #e3f0ed;
+  border-bottom: 1px solid #c8ddd9;
+}
+
+.forecast-planned-toolbar--collapsed {
+  border-bottom: none;
+}
+
+.forecast-planned-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+
+.forecast-planned-toggle .expand-icon {
+  font-size: 0.7rem;
+  color: #2c5f5d;
+  flex-shrink: 0;
+}
+
+.forecast-planned-toggle:hover .forecast-planned-title {
+  color: #1e4a48;
+}
+
+.forecast-planned-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #2c5f5d;
+}
+
+.forecast-planned-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 1px solid #2c5f5d;
+  border-radius: 4px;
+  background: #fff;
+  color: #2c5f5d;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.forecast-planned-add-btn:hover {
+  background: #2c5f5d;
+  color: #fff;
+}
+
+.forecast-planned-compact {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.forecast-planned-row-headers {
+  background: #d4ebe6;
+  color: #2c5f5d;
+}
+
+.forecast-planned-corner-head {
+  background: #c8e3dc;
+}
+
+.forecast-planned-month-head {
+  font-weight: 600;
+  padding: 0.4rem 0.3rem;
+  border: 1px solid #b8d4cf;
+  text-align: center;
+  vertical-align: middle;
+  min-width: 2.6rem;
+}
+
+.forecast-planned-month-primary {
+  display: block;
+  font-size: inherit;
+  white-space: nowrap;
+}
+
+.forecast-planned-month-workdays {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #5a7a77;
+  margin-top: 0.1rem;
+}
+
+.forecast-planned-corner {
+  text-align: left;
+  font-weight: 600;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #c8ddd9;
+  background: #edf5f3;
+  min-width: 14rem;
+  vertical-align: middle;
+}
+
+.forecast-planned-row-head {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.forecast-planned-row-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #2c5f5d;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.forecast-planned-sep {
+  color: #8aa8a4;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.forecast-planned-tjm-input {
+  width: 3.5rem;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid #b8d4cf;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.forecast-planned-description-input {
+  flex: 1;
+  min-width: 5rem;
+  padding: 0.15rem 0.35rem;
+  border: 1px solid #b8d4cf;
+  border-radius: 4px;
+  font-size: 0.78rem;
+}
+
+.forecast-planned-trash-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #9a6b6b;
+  cursor: pointer;
+  padding: 0;
+}
+
+.forecast-planned-trash-btn:hover {
+  color: #c0392b;
+  background: #fdecea;
+}
+
+.forecast-planned-actions-head {
+  width: 2rem;
+  min-width: 2rem;
+  padding: 0.35rem 0.25rem;
+  border: 1px solid #b8d4cf;
+  background: #c8e3dc;
+}
+
+.forecast-planned-actions-cell {
+  padding: 0.25rem;
+  border: 1px solid #d4e8e4;
+  text-align: center;
+  vertical-align: middle;
+  width: 2rem;
+  min-width: 2rem;
+}
+
+.forecast-planned-cell {
+  padding: 0.35rem 0.3rem;
+  border: 1px solid #d4e8e4;
+  text-align: center;
+  vertical-align: middle;
+  min-width: 2.6rem;
+}
+
+.forecast-planned-cell-muted {
+  color: #8aa8a4;
+  background: #f0f7f6;
+}
+
+.forecast-planned-cell--locked,
+.forecast-planned-month-head--locked {
+  background: #eef2f1;
+  color: #9aa8a5;
+}
+
+.forecast-planned-locked-value {
+  color: #9aa8a5;
+  font-size: 0.78rem;
+}
+
+.forecast-planned-forecast-input {
+  width: 2.4rem;
+  padding: 0.15rem;
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.forecast-planned-display {
+  min-height: 1.2rem;
+  cursor: pointer;
+}
+
 .project-card {
   border: 1px solid #e0e0e0;
   border-radius: 8px;

@@ -18,6 +18,14 @@ interface Project {
   orderedDays?: number | null;
 }
 
+interface PlannedScenario {
+  resourceId: number;
+  scenario: number;
+  tjm: number | null;
+  description: string;
+  forecast: Record<string, number>;
+}
+
 interface ResourceWithProjects {
   id: number;
   nom: string;
@@ -82,6 +90,17 @@ function getAbsenceMapForResource(
   return {};
 }
 
+function getPlannedMapForResource(
+  plannedByResource: Record<string, PlannedScenario[]>,
+  resourceId: number
+): PlannedScenario[] {
+  const keys = [String(resourceId), String(Number(resourceId)), Number(resourceId).toString()];
+  for (const k of keys) {
+    if (plannedByResource[k]) return plannedByResource[k];
+  }
+  return [];
+}
+
 function sumAbsencesForYear(monthMap: Record<string, number>, year: number): number {
   let s = 0;
   for (const [month, days] of Object.entries(monthMap)) {
@@ -141,6 +160,18 @@ function isMonthCurrentOrPast(ym: string): boolean {
   if (y < cy) return true;
   if (y > cy) return false;
   return m <= cm;
+}
+
+/** Mois saisissable pour une prévi : année en cours, mois courant inclus jusqu'à décembre. */
+function isPlannedMonthEditable(ym: string, year: number): boolean {
+  if (!ym.startsWith(`${year}-`)) return false;
+  const parts = ym.split('-');
+  const m = parseInt(parts[1], 10);
+  if (Number.isNaN(m)) return false;
+  const now = new Date();
+  if (year < now.getFullYear()) return false;
+  if (year > now.getFullYear()) return true;
+  return m >= now.getMonth() + 1;
 }
 
 /** Fond cellule : base #F8E4A7, plus intense quand les jours augmentent ; vide ≈ blanc cassé. */
@@ -262,6 +293,8 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
   // États pour le pliage/dépliage des prestations
   const [expandedResources, setExpandedResources] = useState<Set<number>>(new Set());
   const [expandedDeliveries, setExpandedDeliveries] = useState<Set<string>>(new Set());
+  /** Ressources dont le bloc prestations prévisionnelles est replié (déplié par défaut). */
+  const [collapsedPlannedResources, setCollapsedPlannedResources] = useState<Set<number>>(new Set());
   
   // Données prévisionnelles et jours commandés indexés par prestation
   const [forecastByDeliveryId, setForecastByDeliveryId] = useState<Record<string, Record<string, number>>>({});
@@ -283,6 +316,14 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
   const [allStatutOptions, setAllStatutOptions] = useState<string[]>([]);
 
   const [absenceByResource, setAbsenceByResource] = useState<Record<string, Record<string, number>>>({});
+  const [plannedDeliveriesByResource, setPlannedDeliveriesByResource] = useState<
+    Record<string, PlannedScenario[]>
+  >({});
+  const [editingPlannedMonth, setEditingPlannedMonth] = useState<{
+    resourceId: number;
+    scenario: number;
+    month: string;
+  } | null>(null);
   /** Dates fériées YYYY-MM-DD (table french_public_holiday via API). */
   const [frenchHolidayDates, setFrenchHolidayDates] = useState<string[]>([]);
   const holidayYmdSet = useMemo(() => new Set(frenchHolidayDates), [frenchHolidayDates]);
@@ -310,22 +351,24 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       setForecastByDeliveryId(payload.forecastByDeliveryId || {});
       setTimesheetsAggregate(payload.timesheetsAggregate || {});
       setAbsenceByResource(payload.absenceByResource || {});
+      setPlannedDeliveriesByResource(payload.plannedDeliveriesByResource || {});
       const holidayDateList = Array.from(
         holidaySetFromApiRows(Array.isArray(payload.holidays) ? payload.holidays : [])
       );
       setFrenchHolidayDates(holidayDateList);
 
-      // Extraire tous les types et statuts pour les options de filtres
-      const typeSet = new Set<string>();
-      const statutSet = new Set<string>();
+      // Extraire tous les types et statuts pour les options de filtres (dictionnaire + ressources)
+      const dictOpts = payload.dictionaryOptions || {};
+      const typeSet = new Set<string>(Array.isArray(dictOpts.types) ? dictOpts.types : []);
+      const statutSet = new Set<string>(Array.isArray(dictOpts.states) ? dictOpts.states : []);
       resourcesList.forEach((r: any) => {
         const type = r.typeLabel || '';
         const statut = r.stateLabel || '';
         if (type) typeSet.add(type);
         if (statut) statutSet.add(statut);
       });
-      setAllTypeOptions(Array.from(typeSet).sort());
-      setAllStatutOptions(Array.from(statutSet).sort());
+      setAllTypeOptions(Array.from(typeSet).sort((a, b) => a.localeCompare(b, 'fr')));
+      setAllStatutOptions(Array.from(statutSet).sort((a, b) => a.localeCompare(b, 'fr')));
       if (isDebug) {
         console.log(`📊 Options filtres: ${typeSet.size} types, ${statutSet.size} statuts`);
       }
@@ -458,6 +501,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       setError(errorMessage);
       console.error('❌ Error fetching forecast:', err);
       setAbsenceByResource({});
+      setPlannedDeliveriesByResource({});
       setFrenchHolidayDates([]);
       setResources([]);
     } finally {
@@ -632,6 +676,18 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
   };
 
   // Fonction pour basculer l'état plié/déplié d'une prestation
+  const togglePlannedExpanded = (resourceId: number) => {
+    setCollapsedPlannedResources((prev) => {
+      const next = new Set(prev);
+      if (next.has(resourceId)) {
+        next.delete(resourceId);
+      } else {
+        next.add(resourceId);
+      }
+      return next;
+    });
+  };
+
   const toggleDeliveryExpanded = (deliveryId: string | number) => {
     setExpandedDeliveries(prev => {
       const newSet = new Set(prev);
@@ -794,6 +850,175 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
     [getMaxForecastDaysForMonth, saveForecastTime]
   );
 
+  const savePlannedDelivery = useCallback(
+    async (payload: {
+      resourceId: number;
+      scenario?: number;
+      tjm?: number | null;
+      description?: string;
+      month?: string;
+      days?: number | null;
+      delete?: boolean;
+    }) => {
+      const response = await apiFetch('/api/data/planned-deliveries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const body = await safeParseJson(response);
+      if (!response.ok || !body?.success) {
+        throw new Error(body?.error || 'Erreur lors de la sauvegarde');
+      }
+      return body.data as PlannedScenario | undefined;
+    },
+    []
+  );
+
+  const patchPlannedScenarioInState = useCallback((updated: PlannedScenario) => {
+    setPlannedDeliveriesByResource((prev) => {
+      const key = String(updated.resourceId);
+      const list = prev[key] || [];
+      const exists = list.some(
+        (p) => p.resourceId === updated.resourceId && p.scenario === updated.scenario
+      );
+      return {
+        ...prev,
+        [key]: exists
+          ? list.map((p) =>
+              p.resourceId === updated.resourceId && p.scenario === updated.scenario ? updated : p
+            )
+          : [...list, updated],
+      };
+    });
+  }, []);
+
+  const addPlannedDelivery = useCallback(
+    async (resourceId: number) => {
+      try {
+        const created = await savePlannedDelivery({ resourceId });
+        if (!created) return;
+        patchPlannedScenarioInState(created);
+      } catch (error) {
+        console.error('❌ Erreur création prestation prévisionnelle:', error);
+        alert(normalizeApiError(error, apiUrl('/api/data/planned-deliveries')));
+      }
+    },
+    [savePlannedDelivery, patchPlannedScenarioInState]
+  );
+
+  const updatePlannedTjm = useCallback(
+    async (resourceId: number, scenario: number, rawTjm: string) => {
+      const trimmed = rawTjm.trim().replace(',', '.');
+      const tjm = trimmed === '' ? null : Number(trimmed);
+      if (trimmed !== '' && (Number.isNaN(tjm) || tjm! < 0)) {
+        alert('Le TJM doit être un nombre positif.');
+        return;
+      }
+      try {
+        const updated = await savePlannedDelivery({ resourceId, scenario, tjm });
+        if (!updated) return;
+        patchPlannedScenarioInState(updated);
+      } catch (error) {
+        console.error('❌ Erreur mise à jour TJM:', error);
+        alert(normalizeApiError(error, apiUrl('/api/data/planned-deliveries')));
+      }
+    },
+    [savePlannedDelivery, patchPlannedScenarioInState]
+  );
+
+  const updatePlannedDescription = useCallback(
+    async (resourceId: number, scenario: number, rawDescription: string) => {
+      try {
+        const updated = await savePlannedDelivery({
+          resourceId,
+          scenario,
+          description: rawDescription.trim(),
+        });
+        if (!updated) return;
+        patchPlannedScenarioInState(updated);
+      } catch (error) {
+        console.error('❌ Erreur mise à jour description:', error);
+        alert(normalizeApiError(error, apiUrl('/api/data/planned-deliveries')));
+      }
+    },
+    [savePlannedDelivery, patchPlannedScenarioInState]
+  );
+
+  const removePlannedDelivery = useCallback(
+    async (resourceId: number, scenario: number) => {
+      try {
+        await savePlannedDelivery({ resourceId, scenario, delete: true });
+        setPlannedDeliveriesByResource((prev) => {
+          const key = String(resourceId);
+          return {
+            ...prev,
+            [key]: (prev[key] || []).filter((p) => p.scenario !== scenario),
+          };
+        });
+      } catch (error) {
+        console.error('❌ Erreur suppression prestation prévisionnelle:', error);
+        alert(normalizeApiError(error, apiUrl('/api/data/planned-deliveries')));
+      }
+    },
+    [savePlannedDelivery]
+  );
+
+  const commitPlannedForecastEdit = useCallback(
+    async (planned: PlannedScenario, month: string, rawInput: string) => {
+      const trimmed = rawInput.trim();
+      if (!trimmed) {
+        try {
+          const updated = await savePlannedDelivery({
+            resourceId: planned.resourceId,
+            scenario: planned.scenario,
+            month,
+            days: null,
+          });
+          if (updated) patchPlannedScenarioInState(updated);
+        } catch (error) {
+          console.error('❌ Erreur suppression temps prévisionnel:', error);
+          alert(normalizeApiError(error, apiUrl('/api/data/planned-deliveries')));
+        }
+        setEditingPlannedMonth(null);
+        setEditingInputValue('');
+        return;
+      }
+
+      const parsed = parseForecastDaysInput(rawInput);
+      if (parsed === null) {
+        alert(
+          'Le nombre de jours doit être un entier, un quart de jour (0,25) ou une demi-journée (0,5).'
+        );
+        return;
+      }
+
+      const maxDays = getMaxForecastDaysForMonth(planned.resourceId, month);
+      if (parsed > maxDays + 1e-9) {
+        alert(
+          `Le nombre de jours saisi (${formatForecastDaysFr(parsed)} j) dépasse le maximum autorisé : ${formatForecastDaysFr(maxDays)} j (jours ouvrés du mois moins les absences).`
+        );
+        return;
+      }
+
+      try {
+        const updated = await savePlannedDelivery({
+          resourceId: planned.resourceId,
+          scenario: planned.scenario,
+          month,
+          days: parsed,
+        });
+        if (!updated) return;
+        patchPlannedScenarioInState(updated);
+        setEditingPlannedMonth(null);
+        setEditingInputValue('');
+      } catch (error) {
+        console.error('❌ Erreur sauvegarde temps prévisionnel:', error);
+        alert(normalizeApiError(error, apiUrl('/api/data/planned-deliveries')));
+      }
+    },
+    [getMaxForecastDaysForMonth, savePlannedDelivery, patchPlannedScenarioInState]
+  );
+
   /** Mois jan–déc de l’année en cours (aligné avec les absences Boond synchronisées). */
   const gridYear = new Date().getFullYear();
   const gridMonths = useMemo(() => {
@@ -933,12 +1158,22 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
           });
         });
 
+        getPlannedMapForResource(plannedDeliveriesByResource, resource.id).forEach((planned) => {
+          const tjm = planned.tjm || 0;
+          if (tjm <= 0) return;
+          Object.entries(planned.forecast || {}).forEach(([month, days]) => {
+            if (month.startsWith(`${year}-`)) {
+              totalCA += (Number(days) || 0) * tjm;
+            }
+          });
+        });
+
         out[resourceKey][year] = totalCA;
       });
     });
 
     return out;
-  }, [resources, lookupTimesheetData, gridYear, previousYear]);
+  }, [resources, lookupTimesheetData, gridYear, previousYear, plannedDeliveriesByResource]);
 
   // Formater le nom du mois
   const formatMonthName = (month: string): string => {
@@ -1207,12 +1442,6 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                   </div>
                   {isExpanded && (
                     <div className="projects-list">
-                      {resource.projects.length === 0 ? (
-                        <div className="no-projects">
-                          <p className="no-projects-message">Aucune prestation trouvée pour cette ressource</p>
-                          <p className="no-projects-details">Vérifiez que la ressource a des prestations dans la période sélectionnée ou consultez les logs du serveur.</p>
-                        </div>
-                      ) : (
                         <div className="projects-list-container">
                           {(() => {
                             const resAbs = getAbsenceMapForResource(absenceByResource, resource.id);
@@ -1297,6 +1526,257 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                               </div>
                             );
                           })()}
+                          {(() => {
+                            const plannedItems = getPlannedMapForResource(
+                              plannedDeliveriesByResource,
+                              resource.id
+                            );
+                            const months = gridMonths;
+                            const isPlannedExpanded = !collapsedPlannedResources.has(resource.id);
+                            return (
+                              <div className="project-card forecast-planned-block">
+                                <div
+                                  className={`forecast-planned-toolbar ${isPlannedExpanded ? '' : 'forecast-planned-toolbar--collapsed'}`}
+                                >
+                                  <button
+                                    type="button"
+                                    className="forecast-planned-toggle"
+                                    onClick={() => togglePlannedExpanded(resource.id)}
+                                    aria-expanded={isPlannedExpanded}
+                                  >
+                                    <span className="expand-icon" aria-hidden>
+                                      {isPlannedExpanded ? '▼' : '▶'}
+                                    </span>
+                                    <span className="forecast-planned-title">
+                                      Prestations prévisionnelles ({gridYear})
+                                      {plannedItems.length > 0
+                                        ? ` — ${plannedItems.length} scénario${plannedItems.length > 1 ? 's' : ''}`
+                                        : ''}
+                                    </span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="forecast-planned-add-btn"
+                                    title="Ajouter une prestation prévisionnelle"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (!isPlannedExpanded) {
+                                        togglePlannedExpanded(resource.id);
+                                      }
+                                      void addPlannedDelivery(resource.id);
+                                    }}
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                                {isPlannedExpanded && plannedItems.length > 0 && (
+                                  <div className="project-months">
+                                    <table className="forecast-table forecast-planned-compact">
+                                      <tbody>
+                                        <tr className="forecast-planned-row forecast-planned-row-headers">
+                                          <th className="forecast-planned-corner forecast-planned-corner-head" scope="row">
+                                            Prestation
+                                          </th>
+                                          {months.map((month) => {
+                                            const ouv = countWorkdaysInMonth(month, holidayYmdSet);
+                                            const editable = isPlannedMonthEditable(month, gridYear);
+                                            return (
+                                              <th
+                                                key={month}
+                                                className={`forecast-planned-month-head ${editable ? '' : 'forecast-planned-month-head--locked'}`}
+                                                scope="col"
+                                              >
+                                                <span className="forecast-planned-month-primary">
+                                                  {formatMonthName(month)}
+                                                </span>
+                                                <span
+                                                  className="forecast-planned-month-workdays"
+                                                  title={`${ouv} jours ouvrés (lun–ven, fériés métropole exclus)`}
+                                                >
+                                                  {ouv}
+                                                </span>
+                                              </th>
+                                            );
+                                          })}
+                                          <th
+                                            className="forecast-planned-actions-head"
+                                            scope="col"
+                                            aria-label="Actions"
+                                          />
+                                        </tr>
+                                        {plannedItems.map((planned) => (
+                                          <tr
+                                            key={`${planned.resourceId}-${planned.scenario}`}
+                                            className="forecast-planned-row forecast-planned-row-values"
+                                          >
+                                            <th className="forecast-planned-corner" scope="row">
+                                              <div className="forecast-planned-row-head">
+                                                <span className="forecast-planned-row-label">
+                                                  P{planned.scenario}
+                                                </span>
+                                                <span className="forecast-planned-sep" aria-hidden>
+                                                  –
+                                                </span>
+                                                <input
+                                                  type="text"
+                                                  inputMode="decimal"
+                                                  className="forecast-planned-tjm-input"
+                                                  defaultValue={
+                                                    planned.tjm != null ? String(planned.tjm) : ''
+                                                  }
+                                                  key={`${planned.resourceId}-${planned.scenario}-tjm-${planned.tjm ?? 'empty'}`}
+                                                  placeholder="TJM"
+                                                  title="TJM (€)"
+                                                  onClick={(e) => e.stopPropagation()}
+                                                  onBlur={(e) => {
+                                                    void updatePlannedTjm(
+                                                      planned.resourceId,
+                                                      planned.scenario,
+                                                      e.target.value
+                                                    );
+                                                  }}
+                                                  onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                      (e.target as HTMLInputElement).blur();
+                                                    }
+                                                  }}
+                                                />
+                                                <span className="forecast-planned-sep" aria-hidden>
+                                                  –
+                                                </span>
+                                                <input
+                                                  type="text"
+                                                  className="forecast-planned-description-input"
+                                                  defaultValue={planned.description || ''}
+                                                  key={`${planned.resourceId}-${planned.scenario}-desc-${planned.description || ''}`}
+                                                  placeholder="Description"
+                                                  title="Description"
+                                                  onClick={(e) => e.stopPropagation()}
+                                                  onBlur={(e) => {
+                                                    void updatePlannedDescription(
+                                                      planned.resourceId,
+                                                      planned.scenario,
+                                                      e.target.value
+                                                    );
+                                                  }}
+                                                  onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                      (e.target as HTMLInputElement).blur();
+                                                    }
+                                                  }}
+                                                />
+                                              </div>
+                                            </th>
+                                            {months.map((month) => {
+                                              const forecastDays = planned.forecast?.[month] ?? 0;
+                                              const editable = isPlannedMonthEditable(month, gridYear);
+                                              const isEditing =
+                                                editingPlannedMonth?.resourceId === planned.resourceId &&
+                                                editingPlannedMonth?.scenario === planned.scenario &&
+                                                editingPlannedMonth?.month === month;
+                                              return (
+                                                <td
+                                                  key={month}
+                                                  className={`forecast-planned-cell ${editable ? '' : 'forecast-planned-cell--locked'}`}
+                                                >
+                                                  {!editable ? (
+                                                    <span className="forecast-planned-locked-value">
+                                                      {forecastDays > 0 ? forecastDays.toFixed(1) : '—'}
+                                                    </span>
+                                                  ) : isEditing ? (
+                                                    <input
+                                                      type="text"
+                                                      inputMode="decimal"
+                                                      value={editingInputValue}
+                                                      className="forecast-input forecast-planned-forecast-input"
+                                                      autoFocus
+                                                      onClick={(e) => e.stopPropagation()}
+                                                      onChange={(e) =>
+                                                        setEditingInputValue(
+                                                          sanitizeForecastDaysInput(e.target.value)
+                                                        )
+                                                      }
+                                                      onBlur={() => {
+                                                        void commitPlannedForecastEdit(
+                                                          planned,
+                                                          month,
+                                                          editingInputValue
+                                                        );
+                                                      }}
+                                                      onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                          (e.target as HTMLInputElement).blur();
+                                                        } else if (e.key === 'Escape') {
+                                                          setEditingPlannedMonth(null);
+                                                          setEditingInputValue('');
+                                                        }
+                                                      }}
+                                                    />
+                                                  ) : (
+                                                    <div
+                                                      className={`forecast-display forecast-planned-display ${
+                                                        forecastDays > 0 ? 'has-forecast' : 'no-forecast'
+                                                      }`}
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setEditingPlannedMonth({
+                                                          resourceId: planned.resourceId,
+                                                          scenario: planned.scenario,
+                                                          month,
+                                                        });
+                                                        setEditingInputValue('');
+                                                      }}
+                                                      title="Cliquez pour saisir le temps prévisionnel"
+                                                    >
+                                                      {forecastDays > 0 ? forecastDays.toFixed(1) : '—'}
+                                                    </div>
+                                                  )}
+                                                </td>
+                                              );
+                                            })}
+                                            <td className="forecast-planned-actions-cell">
+                                              <button
+                                                type="button"
+                                                className="forecast-planned-trash-btn"
+                                                title="Supprimer cette prestation prévisionnelle"
+                                                aria-label="Supprimer cette prestation prévisionnelle"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  void removePlannedDelivery(
+                                                    planned.resourceId,
+                                                    planned.scenario
+                                                  );
+                                                }}
+                                              >
+                                                <svg
+                                                  viewBox="0 0 20 20"
+                                                  width="14"
+                                                  height="14"
+                                                  aria-hidden="true"
+                                                  focusable="false"
+                                                >
+                                                  <path
+                                                    fill="currentColor"
+                                                    d="M6.5 2a1 1 0 0 0-1 1v1H3.75a.75.75 0 0 0 0 1.5h.71l.83 10.02A1.75 1.75 0 0 0 7.07 17.5h5.86a1.75 1.75 0 0 0 1.78-1.98l.83-10.02h.71a.75.75 0 0 0 0-1.5H14.5V3a1 1 0 0 0-1-1h-7ZM8 4h4V3.5H8V4Zm1.25 4.25a.75.75 0 0 1 1.5 0v5.5a.75.75 0 0 1-1.5 0v-5.5Zm3.5 0a.75.75 0 0 1 1.5 0v5.5a.75.75 0 0 1-1.5 0v-5.5ZM6.12 6.5l.78 9.38c.05.6.55 1.07 1.17 1.07h5.86c.62 0 1.12-.47 1.17-1.07l.78-9.38H6.12Z"
+                                                  />
+                                                </svg>
+                                              </button>
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                          {resource.projects.length === 0 && (
+                            <div className="no-projects">
+                              <p className="no-projects-message">Aucune prestation trouvée pour cette ressource</p>
+                              <p className="no-projects-details">Vérifiez que la ressource a des prestations dans la période sélectionnée ou consultez les logs du serveur.</p>
+                            </div>
+                          )}
                           {resource.projects.map((project, index) => {
                             const deliveryId = String(project.id);
                             const isDeliveryExpanded = expandedDeliveries.has(deliveryId);
@@ -1493,7 +1973,6 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                             );
                           })}
                         </div>
-                      )}
                     </div>
                   )}
                 </div>

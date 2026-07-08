@@ -28,6 +28,12 @@
   font-size: 0.9rem;
 }
 
+.home-recap-scenario-hint {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #5a8a86;
+}
+
 .home-recap-panel {
   margin: 0 1.25rem 1.25rem;
   background: #fff;

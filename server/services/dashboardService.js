@@ -4,6 +4,11 @@ const { getSupabase } = require('../../lib/supabaseClient');
 const { loadDictionaryMaps } = require('../../lib/dictionarySync');
 const { getHolidayRowsForYear } = require('../../lib/frenchHolidays');
 const { toHolidayYmdString } = require('../../lib/holidayDate');
+const {
+  getPlannedCaContribution,
+  parseScenarioFilter,
+  formatPlannedScenarioFilterLabel,
+} = require('../../lib/plannedDeliveriesService');
 const { format, parseISO, startOfMonth, endOfMonth, eachMonthOfInterval } = require('date-fns');
 
 const DEFAULT_INCOME_STATEMENT_COMMENT =
@@ -716,8 +721,9 @@ class DashboardService {
     return this.buildPennylaneIncomeStatementFromStoredRows(y, rows);
   }
 
-  async getHomeMonthlyRecap(year) {
+  async getHomeMonthlyRecap(year, scenarioFilter = 'all') {
     const y = normalizeYear(year, new Date().getFullYear());
+    const plannedScenarioFilter = parseScenarioFilter(scenarioFilter);
     const supabase = getSupabase();
     if (!supabase) {
       throw new Error('Supabase non configuré (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).');
@@ -844,16 +850,22 @@ class DashboardService {
     }
 
     const actualByMonthResource = new Map();
+    const actualByMonthDelivery = new Map();
     const resourcesWithTimesheetsByMonth = new Map();
     (timesheetsRes.data || []).forEach((r) => {
       const month = String(r.month || '');
       const resourceId = String(r.resource_id || '');
       if (!monthMap.has(month) || !eligibleResourceIds.has(resourceId)) return;
       const key = `${month}|${resourceId}`;
-      const deliveryId = Number(r.delivery_id) || 0;
+      const deliveryId = String(r.delivery_id || '');
       const prodDays = Number(r.total_days_prod) || 0;
-      if (deliveryId !== 0) {
+      if (deliveryId && deliveryId !== '0') {
         actualByMonthResource.set(key, (actualByMonthResource.get(key) || 0) + prodDays);
+        const deliveryKey = `${month}|${deliveryId}`;
+        actualByMonthDelivery.set(
+          deliveryKey,
+          (actualByMonthDelivery.get(deliveryKey) || 0) + prodDays
+        );
       }
       if (!resourcesWithTimesheetsByMonth.has(month)) {
         resourcesWithTimesheetsByMonth.set(month, new Set());
@@ -894,23 +906,63 @@ class DashboardService {
       m.margeBruteAnimaNeo = round2(m.caAnimaNeo - cost);
     });
 
-    const forecastByMonthResource = new Map();
-    const resourcesWithForecastByMonth = new Map();
-    const forecastCaInternalByMonth = new Map();
-    const forecastCaExternalByMonth = new Map();
+    const forecastByMonthDelivery = new Map();
     (forecastRes.data || []).forEach((r) => {
       const month = String(r.month || '');
       if (!monthMap.has(month)) return;
       const deliveryId = String(r.delivery_id || '');
-      const resourceId = deliveryToResourceId.get(deliveryId) || '';
-      if (!resourceId) return;
+      if (!deliveryId) return;
 
       const value = Number(r.value) || 0;
       if (value <= 0) return;
 
-      const key = `${month}|${resourceId}`;
+      const deliveryKey = `${month}|${deliveryId}`;
+      forecastByMonthDelivery.set(
+        deliveryKey,
+        (forecastByMonthDelivery.get(deliveryKey) || 0) + value
+      );
+    });
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const closedMonthIndexForCurrentYear = now.getMonth(); // 0-based; ex: juillet => 6 (juin clôturé)
+
+    const isClosedMonth = (month) => {
+      const monthNum = parseInt(String(month).slice(5, 7), 10);
+      return y < currentYear || (y === currentYear && monthNum <= closedMonthIndexForCurrentYear);
+    };
+
+    // Mois ouverts : temps saisis + prévisionnels (aligné synthèse Forecast / Report)
+    const forecastByMonthResource = new Map();
+    const resourcesWithForecastByMonth = new Map();
+    const forecastCaInternalByMonth = new Map();
+    const forecastCaExternalByMonth = new Map();
+    const openMonthDeliveryKeys = new Set();
+    forecastByMonthDelivery.forEach((_, key) => {
+      const month = key.split('|')[0];
+      if (!isClosedMonth(month)) openMonthDeliveryKeys.add(key);
+    });
+    actualByMonthDelivery.forEach((_, key) => {
+      const month = key.split('|')[0];
+      if (!isClosedMonth(month)) openMonthDeliveryKeys.add(key);
+    });
+
+    openMonthDeliveryKeys.forEach((deliveryKey) => {
+      const [month, deliveryId] = deliveryKey.split('|');
+      const actualDays = actualByMonthDelivery.get(deliveryKey) || 0;
+      const forecastDays = forecastByMonthDelivery.get(deliveryKey) || 0;
+      const effectiveDays = actualDays + forecastDays;
+      if (effectiveDays <= 0) return;
+
+      const resourceId = deliveryToResourceId.get(deliveryId) || '';
+      if (!resourceId) return;
+
       if (eligibleResourceIds.has(resourceId)) {
-        forecastByMonthResource.set(key, (forecastByMonthResource.get(key) || 0) + value);
+        const resourceKey = `${month}|${resourceId}`;
+        forecastByMonthResource.set(
+          resourceKey,
+          (forecastByMonthResource.get(resourceKey) || 0) + effectiveDays
+        );
         if (!resourcesWithForecastByMonth.has(month)) {
           resourcesWithForecastByMonth.set(month, new Set());
         }
@@ -920,10 +972,24 @@ class DashboardService {
       const delivery = deliveryById.get(deliveryId);
       const tjm = deliveryTjm(delivery);
       if (tjm == null) return;
-      const ca = value * tjm;
+      const ca = effectiveDays * tjm;
       const isExternal = resourceIsExternal.get(resourceId) === true;
       const targetMap = isExternal ? forecastCaExternalByMonth : forecastCaInternalByMonth;
       targetMap.set(month, (targetMap.get(month) || 0) + ca);
+    });
+
+    const plannedCa = await getPlannedCaContribution({
+      year: y,
+      scenarioFilter: plannedScenarioFilter,
+      eligibleResourceIds,
+      resourceIsExternal,
+      isOpenMonth: (month) => !isClosedMonth(month),
+    });
+    plannedCa.internalByMonth.forEach((ca, month) => {
+      forecastCaInternalByMonth.set(month, (forecastCaInternalByMonth.get(month) || 0) + ca);
+    });
+    plannedCa.externalByMonth.forEach((ca, month) => {
+      forecastCaExternalByMonth.set(month, (forecastCaExternalByMonth.get(month) || 0) + ca);
     });
 
     const absencesByMonthResource = new Map();
@@ -938,39 +1004,35 @@ class DashboardService {
       );
     });
 
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const closedMonthIndexForCurrentYear = now.getMonth(); // 0-based; ex: juin => 5 (mai clôturé)
-
     months.forEach((m) => {
       let actualDays = 0;
       let absencesDays = 0;
-      const monthNum = parseInt(m.month.slice(5, 7), 10);
-      const isClosedMonth = y < currentYear || (y === currentYear && monthNum <= closedMonthIndexForCurrentYear);
-      const monthlyEligibleResourceIds = isClosedMonth
+      const monthClosed = isClosedMonth(m.month);
+      const monthlyEligibleResourceIds = monthClosed
         ? (resourcesWithTimesheetsByMonth.get(m.month) || new Set())
         : (resourcesWithForecastByMonth.get(m.month) || new Set());
       const monthlyEligibleCount = monthlyEligibleResourceIds.size;
       monthlyEligibleResourceIds.forEach((resourceId) => {
         const key = `${m.month}|${resourceId}`;
-        const baseActualDays = isClosedMonth
+        const baseActualDays = monthClosed
           ? Number(actualByMonthResource.get(key) || 0)
           : Number(forecastByMonthResource.get(key) || 0);
         actualDays += baseActualDays;
         absencesDays += Number(absencesByMonthResource.get(key) || 0);
       });
+      const monthNum = parseInt(m.month.slice(5, 7), 10);
       const workdays = countWorkdaysInMonth(y, monthNum, holidaySet);
       const denominatorRaw = workdays * monthlyEligibleCount - absencesDays;
       const denominator = Math.max(0, denominatorRaw);
       m.taceBaseDays = round2(actualDays);
-      m.taceSource = isClosedMonth ? 'actual' : 'forecast';
-      m.taceIsClosedMonth = isClosedMonth;
+      m.taceSource = monthClosed ? 'actual' : 'forecast';
+      m.taceIsClosedMonth = monthClosed;
       m.workdaysInMonth = workdays;
       m.absencesInMonth = round2(absencesDays);
       m.taceDenominatorDays = denominator;
       m.tacePct = denominator > 0 ? round2((actualDays / denominator) * 100) : 0;
 
-      if (!isClosedMonth) {
+      if (!monthClosed) {
         const caAnimaNeoForecast = forecastCaInternalByMonth.get(m.month) || 0;
         const caSousTraitanceForecast = forecastCaExternalByMonth.get(m.month) || 0;
         m.caAnimaNeo = round2(caAnimaNeoForecast);
@@ -1035,9 +1097,16 @@ class DashboardService {
       meta: {
         taceEligibleResourceTypes: ['0', '3', '10'],
         taceEligibleResourcesRule:
-          'Mois clôturés: ressources 0/3/10 avec timesheet; mois non clôturés: ressources 0/3/10 avec forecast',
+          'Mois clôturés: ressources 0/3/10 avec timesheet; mois non clôturés: ressources 0/3/10 avec temps saisi et/ou prévisionnel',
         taceFormula:
-          'Mois clôturés: somme(total_days_prod) depuis timesheets_detail. Mois non clôturés: somme(value) depuis forecast_times. TACE(%) = base / ((jours_ouvres * nb_ressources_eligibles_du_mois) - conges_du_mois) * 100',
+          'Mois clôturés: somme(total_days_prod) depuis timesheets_detail. Mois non clôturés: somme(temps saisis + prévisionnels) par prestation. TACE(%) = base / ((jours_ouvres * nb_ressources_eligibles_du_mois) - conges_du_mois) * 100',
+        caForecastFormula:
+          'Mois non clôturés: Σ (jours saisis + jours prévisionnels Boond) × TJM par prestation (timesheets_detail + forecast_times) + Σ (jours prévisionnels manuels, cumul P1…Pn selon filtre) × TJM (planned_forecast)',
+        plannedScenarios: plannedCa.availableScenarios,
+        plannedScenarioFilter:
+          plannedScenarioFilter === 'none' ? 'none' : plannedScenarioFilter,
+        plannedScenarioFilterLabel: formatPlannedScenarioFilterLabel(plannedScenarioFilter),
+        plannedScenarioFilterCumulative: plannedScenarioFilter !== 'none',
         margeBruteAnimaNeoFormula:
           'CA Anima Néo (Pennylane) − Σ total_days_prod × averageDailyCost prestation (timesheets_detail, ressources type 0/3/10)',
         margeBruteSousTraitanceFormula:

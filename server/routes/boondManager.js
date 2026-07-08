@@ -770,6 +770,7 @@ router.get('/dictionary/resources', async (req, res) => {
     
     // Extraire resourceTypes depuis setting.typeOf.resource
     const resourceTypes = dict?.setting?.typeOf?.resource;
+    const resourceStates = dict?.setting?.state?.resource;
 
     if (!resourceTypes) {
       return res.status(404).json({ 
@@ -831,13 +832,32 @@ router.get('/dictionary/resources', async (req, res) => {
       }))
       .sort((a, b) => a.code - b.code);
 
+    const stateMapping = {};
+    const stateTable = (Array.isArray(resourceStates) ? resourceStates : [])
+      .filter(item => item.id !== undefined && item.id !== null && item.value !== undefined)
+      .map(item => {
+        stateMapping[item.id] = item.value;
+        stateMapping[Number(item.id)] = item.value;
+        stateMapping[String(item.id)] = item.value;
+        return {
+          code: item.id,
+          codeString: String(item.id),
+          label: item.value,
+        };
+      })
+      .sort((a, b) => a.code - b.code);
+
     res.json({
       success: true,
       resourceTypes: resourceTypes,
+      resourceStates: resourceStates || [],
       typeMapping: typeMapping,
+      stateMapping,
       typeOfTable: typeOfTable,
-      path: 'setting.typeOf.resource',
-      mappingSize: Object.keys(typeMapping).length
+      stateTable,
+      path: 'setting.typeOf.resource / setting.state.resource',
+      mappingSize: Object.keys(typeMapping).length,
+      stateMappingSize: stateTable.length,
     });
   } catch (error) {
     console.error('❌ Erreur lors de la récupération du dictionnaire resources:', error);

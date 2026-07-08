@@ -7,7 +7,7 @@ try {
   require(path.join(__dirname, '..', '..', 'lib', 'secretEnv'));
 } catch (e) {}
 
-const { getResourcesLocalEnriched } = require(path.join(__dirname, '..', '..', 'lib', 'dictionarySync'));
+const { getResourcesLocalPayload } = require(path.join(__dirname, '..', '..', 'lib', 'dictionarySync'));
 const { createVercelHandler } = require(path.join(__dirname, '..', '..', 'lib', 'errorHandler'));
 
 function sendJson(res, status, body) {
@@ -22,8 +22,14 @@ module.exports = createVercelHandler(async (req, res) => {
   }
 
   try {
-    const list = await getResourcesLocalEnriched();
-    return sendJson(res, 200, { success: true, data: list, file: 'resources', count: list.length });
+    const { resources, dictionaryOptions } = await getResourcesLocalPayload();
+    return sendJson(res, 200, {
+      success: true,
+      data: resources,
+      file: 'resources',
+      count: resources.length,
+      dictionaryOptions,
+    });
   } catch (error) {
     console.error('❌ Erreur /api/data/resources-local:', error);
     return sendJson(res, 500, { success: false, error: error.message });

@@ -32,12 +32,17 @@ interface HomeMonthlyRecapResponse {
     taceEligibleResourceTypes?: string[];
     taceEligibleResourcesCount?: number;
     taceFormula?: string;
+    plannedScenarios?: number[];
+    plannedScenarioFilter?: 'all' | number;
+    plannedScenarioFilterLabel?: string;
+    caForecastFormula?: string;
   };
 }
 
 const HomeMonthlyRecap: React.FC = () => {
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
+  const [selectedScenario, setSelectedScenario] = useState<string>('none');
   const [isBesoinsExpanded, setIsBesoinsExpanded] = useState<boolean>(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +54,10 @@ const HomeMonthlyRecap: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        const response = await apiFetch(`/api/dashboard/home-monthly-recap?year=${selectedYear}`);
+        const scenarioParam = `&scenario=${encodeURIComponent(selectedScenario || 'none')}`;
+        const response = await apiFetch(
+          `/api/dashboard/home-monthly-recap?year=${selectedYear}${scenarioParam}`
+        );
         const body = await response.json().catch(() => ({}));
         if (!response.ok) {
           throw new Error(body?.error || `Erreur ${response.status}`);
@@ -67,7 +75,21 @@ const HomeMonthlyRecap: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [selectedYear]);
+  }, [selectedYear, selectedScenario]);
+
+  const scenarioOptions = useMemo(() => {
+    const fromApi = data?.meta?.plannedScenarios || [];
+    const unique = Array.from(new Set(fromApi)).sort((a, b) => a - b);
+    return unique;
+  }, [data?.meta?.plannedScenarios]);
+
+  useEffect(() => {
+    if (selectedScenario === 'none') return;
+    const n = parseInt(selectedScenario, 10);
+    if (!Number.isFinite(n) || !scenarioOptions.includes(n)) {
+      setSelectedScenario('none');
+    }
+  }, [selectedScenario, scenarioOptions]);
 
   const availableYears = useMemo(() => {
     const years: number[] = [];
@@ -187,6 +209,20 @@ const HomeMonthlyRecap: React.FC = () => {
     <main className="app-main">
       <h1 className="home-dashboard-title">TABLEAU DE BORD ANIMA NEO</h1>
       <div className="home-recap-filters">
+        <label htmlFor="home-recap-scenario">Scénario prévi.</label>
+        <select
+          id="home-recap-scenario"
+          value={selectedScenario}
+          onChange={(e) => setSelectedScenario(e.target.value)}
+          title="Aucun = CA de base uniquement ; P1, P1 à P2… = ajout cumulatif du CA prévisionnel manuel"
+        >
+          <option value="none">Aucun</option>
+          {scenarioOptions.map((n) => (
+            <option key={n} value={String(n)}>
+              {n === 1 ? 'P1' : `P1 à P${n}`}
+            </option>
+          ))}
+        </select>
         <label htmlFor="home-recap-year">Année</label>
         <select
           id="home-recap-year"
@@ -217,14 +253,30 @@ const HomeMonthlyRecap: React.FC = () => {
                 <td colSpan={(data?.monthly?.length || 0) + 2}>Financier</td>
               </tr>
               <tr>
-                <td>CA Anima Néo</td>
+                <td title={data?.meta?.caForecastFormula}>
+                  CA Anima Néo
+                  {data?.meta?.plannedScenarioFilterLabel && (
+                      <span className="home-recap-scenario-hint">
+                        {' '}
+                        (+ prévi. {data.meta.plannedScenarioFilterLabel})
+                      </span>
+                    )}
+                </td>
                 {(data?.monthly || []).map((row) => (
                   <td key={`ca-anima-${row.month}`} className={`num ${financialMonthClass(row)}`}>{formatCurrency(row.caAnimaNeo)}</td>
                 ))}
                 <td className="num financial-month-forecast">{formatCurrency(totals.caAnimaNeo)}</td>
               </tr>
               <tr>
-                <td>CA Sous-traitance</td>
+                <td title={data?.meta?.caForecastFormula}>
+                  CA Sous-traitance
+                  {data?.meta?.plannedScenarioFilterLabel && (
+                      <span className="home-recap-scenario-hint">
+                        {' '}
+                        (+ prévi. {data.meta.plannedScenarioFilterLabel})
+                      </span>
+                    )}
+                </td>
                 {(data?.monthly || []).map((row) => (
                   <td key={`ca-st-${row.month}`} className={`num ${financialMonthClass(row)}`}>{formatCurrency(row.caSousTraitance)}</td>
                 ))}

@@ -2,6 +2,11 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import './Resources.css';
 import { apiFetch } from '../api';
 import { DATA_REFRESH_EVENT } from '../dataRefresh';
+import { hasDateRetourPrevisionnelle } from '../utils/resourceStatus';
+import {
+  archiveReturnDateIfNeeded,
+  type ResourceMetadataEntry,
+} from '../utils/resourceReturnDate';
 
 interface Resource {
   id: number;
@@ -34,13 +39,8 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   
   // État pour les métadonnées des ressources (temps, statut feu, commentaires)
-  const [resourcesMetadata, setResourcesMetadata] = useState<{
-    [resourceId: number]: {
-      tempsTravail?: string;
-      statutFeu?: 'vert' | 'orange' | 'rouge' | '';
-      commentaires?: string;
-    };
-  }>({});
+  const [resourcesMetadata, setResourcesMetadata] = useState<Record<number, ResourceMetadataEntry>>({});
+  const resourcesRef = useRef<Resource[]>([]);
   
   // Charger les filtres depuis localStorage au démarrage
   const loadFiltersFromStorage = () => {
@@ -126,12 +126,15 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.data) {
-          // Convertir les clés string en number pour correspondre aux IDs
-          const metadata: { [key: number]: any } = {};
-          Object.keys(result.data).forEach(key => {
-            metadata[Number(key)] = result.data[key];
+          const loaded: Record<number, ResourceMetadataEntry> = {};
+          Object.keys(result.data).forEach((key) => {
+            loaded[Number(key)] = result.data[key];
           });
+          const { metadata, changed } = archiveReturnDateIfNeeded(resourcesRef.current, loaded);
           setResourcesMetadata(metadata);
+          if (changed) {
+            await saveResourcesMetadata(metadata);
+          }
         }
       }
     } catch (error) {
@@ -158,7 +161,11 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
   };
 
   // Mettre à jour les métadonnées d'une ressource
-  const updateResourceMetadata = (resourceId: number, field: 'tempsTravail' | 'statutFeu' | 'commentaires', value: string) => {
+  const updateResourceMetadata = (
+    resourceId: number,
+    field: 'tempsTravail' | 'statutFeu' | 'commentaires' | 'dateRetourPrevisionnelle',
+    value: string
+  ) => {
     const updated = {
       ...resourcesMetadata,
       [resourceId]: {
@@ -220,6 +227,14 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
       }));
 
       setResources(mappedResources);
+      resourcesRef.current = mappedResources;
+      setResourcesMetadata((prev) => {
+        const { metadata, changed } = archiveReturnDateIfNeeded(mappedResources, prev);
+        if (changed) {
+          void saveResourcesMetadata(metadata);
+        }
+        return changed ? metadata : prev;
+      });
     } catch (err) {
       let errorMessage = 'Une erreur est survenue';
       if (err instanceof Error) {
@@ -337,16 +352,18 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
     setCurrentPage(1);
   }, [typeFilter, statutFilter, sortField, sortDirection]);
 
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      // Inverser la direction si on clique sur le même champ
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      // Nouveau champ, trier par ordre croissant
-      setSortField(field);
+  const handleSortSelect = (value: string) => {
+    if (value === '') {
+      setSortField(null);
       setSortDirection('asc');
+      return;
     }
+    const [field, dir] = value.split(':') as [SortField, SortDirection];
+    setSortField(field);
+    setSortDirection(dir);
   };
+
+  const sortSelectValue = sortField ? `${sortField}:${sortDirection}` : '';
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -373,15 +390,20 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
     return (
       <div className="resources-page">
         <div className="resources-header">
-          <button className="back-button" onClick={onBack}>
+          <button className="back-button" type="button" onClick={onBack}>
             ← Retour
           </button>
-          <h2>Liste des Ressources</h2>
+          <div className="resources-header-text">
+            <h2>Ressources</h2>
+            <p>Suivi des collaborateurs et reprises</p>
+          </div>
         </div>
         <div className="resources-container">
-          <div className="loading-state">
-            <div className="loading-spinner"></div>
-            <p>Chargement des ressources...</p>
+          <div className="resources-panel">
+            <div className="loading-state">
+              <div className="loading-spinner" />
+              <p>Chargement des ressources…</p>
+            </div>
           </div>
         </div>
       </div>
@@ -392,17 +414,22 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
     return (
       <div className="resources-page">
         <div className="resources-header">
-          <button className="back-button" onClick={onBack}>
+          <button className="back-button" type="button" onClick={onBack}>
             ← Retour
           </button>
-          <h2>Liste des Ressources</h2>
+          <div className="resources-header-text">
+            <h2>Ressources</h2>
+            <p>Suivi des collaborateurs et reprises</p>
+          </div>
         </div>
         <div className="resources-container">
-          <div className="error-state">
-            <p className="error-message">❌ {error}</p>
-            <button className="retry-button" onClick={fetchResources}>
-              Réessayer
-            </button>
+          <div className="resources-panel">
+            <div className="error-state">
+              <p className="error-message">{error}</p>
+              <button className="retry-button" type="button" onClick={fetchResources}>
+                Réessayer
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -412,22 +439,30 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
   return (
     <div className="resources-page">
       <div className="resources-header">
-        <button className="back-button" onClick={onBack}>
+        <button className="back-button" type="button" onClick={onBack}>
           ← Retour
         </button>
-        <h2>Liste des Ressources</h2>
+        <div className="resources-header-text">
+          <h2>Ressources</h2>
+          <p>Suivi des collaborateurs, statuts et reprises prévues</p>
+        </div>
       </div>
       <div className="resources-container">
         {resources.length === 0 ? (
-          <div className="empty-state">
-            <p className="empty-message">Aucune ressource trouvée</p>
-            <p className="empty-details">Cette vue lit la table <code>resources</code> via <code>/api/data/resources-local</code>. Vérifiez la connexion Supabase et le contenu de la table en production.</p>
+          <div className="resources-panel">
+            <div className="empty-state">
+              <p className="empty-message">Aucune ressource trouvée</p>
+              <p className="empty-details">
+                Cette vue lit la table <code>resources</code> via{' '}
+                <code>/api/data/resources-local</code>. Vérifiez la connexion Supabase et le contenu
+                de la table en production.
+              </p>
+            </div>
           </div>
         ) : (
-          <>
-            {/* Contrôles de filtre et tri */}
-            <div className="resources-controls">
-              <div className="filters-container">
+          <div className="resources-panel">
+            <div className="resources-toolbar">
+              <div className="resources-toolbar-filters">
                 {/* Filtre Type */}
                 <div className="filter-dropdown-container">
                   <button
@@ -531,132 +566,151 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
                   )}
                 </div>
               </div>
+
+              <div className="resources-toolbar-meta">
+                <span className="resources-count-badge">
+                  <strong>{filteredAndSortedResources.length}</strong>
+                  ressource{filteredAndSortedResources.length > 1 ? 's' : ''}
+                  {(typeFilter.length > 0 || statutFilter.length > 0) && (
+                    <> / {resources.length}</>
+                  )}
+                </span>
+                <div className="resources-sort">
+                  <label htmlFor="resources-sort">Tri</label>
+                  <select
+                    id="resources-sort"
+                    value={sortSelectValue}
+                    onChange={(e) => handleSortSelect(e.target.value)}
+                  >
+                    <option value="">Par défaut</option>
+                    <option value="nom:asc">Nom A → Z</option>
+                    <option value="nom:desc">Nom Z → A</option>
+                    <option value="prenom:asc">Prénom A → Z</option>
+                    <option value="prenom:desc">Prénom Z → A</option>
+                    <option value="type:asc">Type A → Z</option>
+                    <option value="statut:asc">Statut A → Z</option>
+                  </select>
+                </div>
+              </div>
             </div>
 
-            <div className="table-wrapper">
-              <table className="resources-table">
-                <thead>
-                  <tr>
-                    <th 
-                      className="sortable"
-                      onClick={() => handleSort('nom')}
-                    >
-                      Nom
-                      {sortField === 'nom' && (
-                        <span className="sort-indicator">
-                          {sortDirection === 'asc' ? ' ↑' : ' ↓'}
-                        </span>
-                      )}
-                    </th>
-                    <th 
-                      className="sortable"
-                      onClick={() => handleSort('prenom')}
-                    >
-                      Prénom
-                      {sortField === 'prenom' && (
-                        <span className="sort-indicator">
-                          {sortDirection === 'asc' ? ' ↑' : ' ↓'}
-                        </span>
-                      )}
-                    </th>
-                    <th 
-                      className="sortable"
-                      onClick={() => handleSort('type')}
-                    >
-                      Type
-                      {sortField === 'type' && (
-                        <span className="sort-indicator">
-                          {sortDirection === 'asc' ? ' ↑' : ' ↓'}
-                        </span>
-                      )}
-                    </th>
-                    <th 
-                      className="sortable"
-                      onClick={() => handleSort('statut')}
-                    >
-                      Statut
-                      {sortField === 'statut' && (
-                        <span className="sort-indicator">
-                          {sortDirection === 'asc' ? ' ↑' : ' ↓'}
-                        </span>
-                      )}
-                    </th>
-                    <th>Tps</th>
-                    <th>St</th>
-                    <th>Commentaires</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {currentResources.length === 0 ? (
+            {currentResources.length === 0 ? (
+              <p className="no-results">Aucune ressource ne correspond aux filtres sélectionnés</p>
+            ) : (
+              <div className="resources-table-wrap">
+                <table className="resources-table">
+                  <thead>
                     <tr>
-                      <td colSpan={7} className="no-results">
-                        Aucune ressource ne correspond aux filtres sélectionnés
-                      </td>
+                      <th className="col-collaborateur">Collaborateur</th>
+                      <th className="col-statut">Statut</th>
+                      <th className="col-suivi">Suivi</th>
+                      <th className="col-commentaires">Commentaires</th>
                     </tr>
-                  ) : (
-                    currentResources.map((resource) => {
+                  </thead>
+                  <tbody>
+                    {currentResources.map((resource) => {
                       const metadata = resourcesMetadata[resource.id] || {};
+                      const showDateRetour = hasDateRetourPrevisionnelle(resource.statut);
                       return (
                         <tr key={resource.id}>
-                          <td>{resource.nom || 'N/A'}</td>
-                          <td>{resource.prenom || 'N/A'}</td>
-                          <td>
-                            <span className={`type-badge ${resource.type}`}>
-                              {resource.type}
-                            </span>
+                          <td className="col-collaborateur">
+                            <div className="resource-name-block">
+                              <span className="resource-prenom">{resource.prenom || '—'}</span>
+                              <span className="resource-nom">{resource.nom || '—'}</span>
+                              <span className="resource-type-badge">{resource.type || 'N/A'}</span>
+                            </div>
                           </td>
-                          <td>
+                          <td className="col-statut">
                             {resource.statut ? (
-                              <span className={`type-badge ${resource.statut}`}>
+                              <span
+                                className={`statut-badge${showDateRetour ? ' statut-badge--retour' : ''}`}
+                              >
                                 {resource.statut}
                               </span>
                             ) : (
-                              <span className="type-badge">N/A</span>
+                              <span className="statut-badge statut-badge--na">N/A</span>
+                            )}
+                            {showDateRetour && (
+                              <label className="resource-reprise-field">
+                                <span className="resource-field-label">Retour prévisionnel</span>
+                                <input
+                                  type="date"
+                                  className="resource-input-date-retour"
+                                  value={metadata.dateRetourPrevisionnelle || ''}
+                                  onChange={(e) =>
+                                    updateResourceMetadata(
+                                      resource.id,
+                                      'dateRetourPrevisionnelle',
+                                      e.target.value
+                                    )
+                                  }
+                                  title="Date de retour prévisionnelle"
+                                />
+                              </label>
                             )}
                           </td>
-                          <td>
-                            <input
-                              type="text"
-                              className="resource-input-temps"
-                              value={metadata.tempsTravail !== undefined && metadata.tempsTravail !== null ? metadata.tempsTravail : '100%'}
-                              onChange={(e) => updateResourceMetadata(resource.id, 'tempsTravail', e.target.value)}
-                              placeholder="100%"
-                            />
+                          <td className="col-suivi">
+                            <div className="resource-suivi-fields">
+                              <label className="resource-meta-field">
+                                <span className="resource-field-label">Temps</span>
+                                <input
+                                  type="text"
+                                  className="resource-input-temps"
+                                  value={
+                                    metadata.tempsTravail !== undefined &&
+                                    metadata.tempsTravail !== null
+                                      ? metadata.tempsTravail
+                                      : '100%'
+                                  }
+                                  onChange={(e) =>
+                                    updateResourceMetadata(resource.id, 'tempsTravail', e.target.value)
+                                  }
+                                  placeholder="100%"
+                                />
+                              </label>
+                              <label className="resource-meta-field">
+                                <span className="resource-field-label">Signal</span>
+                                <select
+                                  className={`resource-select-statut ${metadata.statutFeu || ''}`}
+                                  value={metadata.statutFeu || ''}
+                                  onChange={(e) =>
+                                    updateResourceMetadata(
+                                      resource.id,
+                                      'statutFeu',
+                                      e.target.value as 'vert' | 'orange' | 'rouge' | ''
+                                    )
+                                  }
+                                  aria-label="Signal feu"
+                                >
+                                  <option value="">—</option>
+                                  <option value="vert">🟢</option>
+                                  <option value="orange">🟠</option>
+                                  <option value="rouge">🔴</option>
+                                </select>
+                              </label>
+                            </div>
                           </td>
-                          <td>
-                            <select
-                              className={`resource-select-statut ${metadata.statutFeu || ''}`}
-                              value={metadata.statutFeu || ''}
-                              onChange={(e) => updateResourceMetadata(resource.id, 'statutFeu', e.target.value as 'vert' | 'orange' | 'rouge' | '')}
-                            >
-                              <option value="">-</option>
-                              <option value="vert">🟢</option>
-                              <option value="orange">🟠</option>
-                              <option value="rouge">🔴</option>
-                            </select>
-                          </td>
-                          <td>
+                          <td className="col-commentaires">
                             <textarea
                               className="resource-textarea-commentaires"
                               value={metadata.commentaires || ''}
-                              onChange={(e) => updateResourceMetadata(resource.id, 'commentaires', e.target.value)}
-                              placeholder="Commentaires..."
+                              onChange={(e) =>
+                                updateResourceMetadata(resource.id, 'commentaires', e.target.value)
+                              }
+                              placeholder="Notes, contexte, suivi…"
                               maxLength={6000}
-                              rows={3}
+                              rows={2}
                             />
                           </td>
                         </tr>
                       );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
-        {/* Pagination */}
-        <div className="pagination-container">
+            <div className="pagination-container">
           <div className="pagination-info">
             <span>
               Affichage de {filteredAndSortedResources.length > 0 ? startIndex + 1 : 0} à {Math.min(endIndex, filteredAndSortedResources.length)} sur {filteredAndSortedResources.length} ressource{filteredAndSortedResources.length > 1 ? 's' : ''}
@@ -695,11 +749,15 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
           </div>
         </div>
 
-        <div className="resources-summary">
-          <p>Total : <strong>{filteredAndSortedResources.length}</strong> ressource{filteredAndSortedResources.length > 1 ? 's' : ''}
-          {(typeFilter.length > 0 || statutFilter.length > 0) && ` (${resources.length} au total)`}
-          </p>
-        </div>
+            <div className="resources-summary">
+              <p>
+                Total : <strong>{filteredAndSortedResources.length}</strong> ressource
+                {filteredAndSortedResources.length > 1 ? 's' : ''}
+                {(typeFilter.length > 0 || statutFilter.length > 0) && ` (${resources.length} au total)`}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -322,6 +322,42 @@
   min-width: 80px;
 }
 
+.report-table-cell--before-return {
+  background: #e8e8e8 !important;
+  color: #999 !important;
+  font-weight: normal !important;
+}
+
+.report-scenario-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.report-scenario-filter label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #2C5F5D;
+}
+
+.report-scenario-filter select {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #A6C9C8;
+  border-radius: 8px;
+  background: white;
+  color: #2C5F5D;
+  font-size: 0.9rem;
+  font-weight: 600;
+  min-width: 140px;
+  cursor: pointer;
+}
+
+.report-scenario-filter select:focus {
+  outline: none;
+  border-color: #7BA8A6;
+  box-shadow: 0 0 0 2px rgba(166, 201, 200, 0.35);
+}
+
 .report-table tbody tr:hover {
   background: #f0f8f8;
 }

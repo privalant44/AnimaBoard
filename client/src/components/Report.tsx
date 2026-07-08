@@ -5,6 +5,15 @@ import { DATA_REFRESH_EVENT } from '../dataRefresh';
 import { useUserAccess } from '../auth/useUserAccess';
 import { PERMISSIONS } from '../auth/roles';
 import { isAuthEnabled } from '../auth/msalConfig';
+import {
+  buildScenarioFilterOptions,
+  formatPlannedScenarioFilterLabel,
+  getPlannedDaysForMonth,
+  parseScenarioFilter,
+  type PlannedForecastItem,
+} from '../utils/plannedScenarios';
+import { hasDateRetourPrevisionnelle, isMonthBeforeProvisionalReturn } from '../utils/resourceStatus';
+import { getActiveReturnDate, type ResourceMetadataEntry } from '../utils/resourceReturnDate';
 
 interface Project {
   id: string | number;
@@ -70,16 +79,19 @@ const loadReportFiltersFromStorage = () => {
   try {
     const savedTypeFilter = localStorage.getItem('report_typeFilter');
     const savedStatutFilter = localStorage.getItem('report_statutFilter');
+    const savedScenarioFilter = localStorage.getItem('report_scenarioFilter');
     
     return {
       typeFilter: savedTypeFilter ? JSON.parse(savedTypeFilter) : [],
-      statutFilter: savedStatutFilter ? JSON.parse(savedStatutFilter) : []
+      statutFilter: savedStatutFilter ? JSON.parse(savedStatutFilter) : [],
+      scenarioFilter: savedScenarioFilter || 'none',
     };
   } catch (error) {
     console.error('Erreur lors du chargement des filtres depuis localStorage:', error);
     return {
       typeFilter: [],
-      statutFilter: []
+      statutFilter: [],
+      scenarioFilter: 'none',
     };
   }
 };
@@ -103,10 +115,15 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
       };
     };
   }>({});
+  const [plannedDeliveriesByResource, setPlannedDeliveriesByResource] = useState<{
+    [resourceId: string]: PlannedForecastItem[];
+  }>({});
+  const [resourcesMetadata, setResourcesMetadata] = useState<Record<number, ResourceMetadataEntry>>({});
   
   // États pour les filtres
   const [typeFilter, setTypeFilter] = useState<string[]>(savedFilters.typeFilter);
   const [statutFilter, setStatutFilter] = useState<string[]>(savedFilters.statutFilter);
+  const [scenarioFilter, setScenarioFilter] = useState<string>(savedFilters.scenarioFilter);
   const [typeDropdownOpen, setTypeDropdownOpen] = useState<boolean>(false);
   const [statutDropdownOpen, setStatutDropdownOpen] = useState<boolean>(false);
   const [activeReport, setActiveReport] = useState<ReportSection>(initialReport || 'menu');
@@ -136,6 +153,23 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
   };
 
   // Charger toutes les données utiles à la vue Report en un seul appel.
+  const loadResourcesMetadata = useCallback(async () => {
+    try {
+      const response = await apiFetch('/api/data/resources-metadata');
+      if (!response.ok) return;
+      const result = await response.json();
+      if (result.success && result.data) {
+        const metadata: Record<number, ResourceMetadataEntry> = {};
+        Object.keys(result.data).forEach((key) => {
+          metadata[Number(key)] = result.data[key];
+        });
+        setResourcesMetadata(metadata);
+      }
+    } catch (error) {
+      console.warn('⚠️  Impossible de charger les métadonnées des ressources:', error);
+    }
+  }, []);
+
   const loadReportBootstrap = useCallback(async () => {
     try {
       setLoading(true);
@@ -167,6 +201,7 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
 
       // Agrégat saisi déjà indexé par resourceId/deliveryId/mois.
       setTimesheetsAggregate(payload.timesheetsAggregate || {});
+      setPlannedDeliveriesByResource(payload.plannedDeliveriesByResource || {});
 
       // Grouper les prestations par ressource
       const deliveriesByResource: { [key: string]: Project[] } = {};
@@ -238,7 +273,9 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
   }, []);
 
   const loadReportBootstrapRef = useRef(loadReportBootstrap);
+  const loadResourcesMetadataRef = useRef(loadResourcesMetadata);
   loadReportBootstrapRef.current = loadReportBootstrap;
+  loadResourcesMetadataRef.current = loadResourcesMetadata;
 
   useEffect(() => {
     if (!initialReport) return;
@@ -248,6 +285,7 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
   useEffect(() => {
     const onRefresh = () => {
       void loadReportBootstrapRef.current();
+      void loadResourcesMetadataRef.current();
     };
     window.addEventListener(DATA_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(DATA_REFRESH_EVENT, onRefresh);
@@ -255,7 +293,8 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
 
   useEffect(() => {
     void loadReportBootstrap();
-  }, [loadReportBootstrap]);
+    void loadResourcesMetadata();
+  }, [loadReportBootstrap, loadResourcesMetadata]);
 
   const loadIncomeStatement = useCallback(
     async (forceSync = false) => {
@@ -348,6 +387,37 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
     }
   }, [statutFilter]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem('report_scenarioFilter', scenarioFilter);
+    } catch (error) {
+      console.error('Erreur lors de la sauvegarde du filtre scénario:', error);
+    }
+  }, [scenarioFilter]);
+
+  const parsedScenarioFilter = useMemo(() => parseScenarioFilter(scenarioFilter), [scenarioFilter]);
+
+  const scenarioOptions = useMemo(() => {
+    const set = new Set<number>();
+    Object.values(plannedDeliveriesByResource).forEach((items) => {
+      items.forEach((item) => set.add(item.scenario));
+    });
+    return Array.from(set).sort((a, b) => a - b);
+  }, [plannedDeliveriesByResource]);
+
+  useEffect(() => {
+    if (scenarioFilter === 'none') return;
+    const n = parseInt(scenarioFilter, 10);
+    if (!Number.isFinite(n) || !scenarioOptions.includes(n)) {
+      setScenarioFilter('none');
+    }
+  }, [scenarioFilter, scenarioOptions]);
+
+  const scenarioFilterSelectOptions = useMemo(
+    () => buildScenarioFilterOptions(scenarioOptions.length ? Math.max(...scenarioOptions) : 0),
+    [scenarioOptions]
+  );
+
   // Filtrer les ressources par type et statut
   const filteredResources = useMemo(() => {
     let filtered = resources;
@@ -404,14 +474,10 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
     };
   }, []);
 
-  // Calculer la valeur totale (saisis + prévisionnels) pour une ressource et un mois
-  const getTotalValue = (resourceId: number, month: string): number => {
-    const resource = resources.find(r => r.id === resourceId);
+  // Jours saisis uniquement (sans prévisionnel Boond ni scénarios manuels)
+  const getActualDays = (resourceId: number, month: string): number => {
     const resourceIdStr = String(resourceId);
-    let totalActual = 0; // Jours saisis
-    let totalForecast = 0; // Jours prévisionnels
-
-    // Parcourir toutes les prestations de la ressource dans timesheetsAggregate
+    let totalActual = 0;
     const resourceData = timesheetsAggregate[resourceIdStr];
     if (resourceData) {
       Object.keys(resourceData).forEach((deliveryId) => {
@@ -421,20 +487,39 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
         }
       });
     }
+    return totalActual;
+  };
 
-    // Parcourir les prestations de la ressource pour les prévisions
+  // Calculer la valeur totale (saisis + prévisionnels Boond + scénarios manuels) pour une ressource et un mois
+  const getTotalValue = (resourceId: number, month: string): number => {
+    const resource = resources.find(r => r.id === resourceId);
+    let totalActual = getActualDays(resourceId, month);
+    let totalForecast = 0;
+
     if (resource && resource.projects) {
       resource.projects.forEach((project) => {
         const deliveryId = String(project.id);
         const deliveryForecast = forecastData[deliveryId];
         if (deliveryForecast && deliveryForecast.forecast) {
-          const monthValue = deliveryForecast.forecast[month] || 0;
-          totalForecast += monthValue;
+          totalForecast += deliveryForecast.forecast[month] || 0;
         }
       });
     }
 
-    return totalActual + totalForecast;
+    const plannedDays = getPlannedDaysForMonth(
+      plannedDeliveriesByResource[String(resourceId)],
+      month,
+      parsedScenarioFilter
+    );
+
+    return totalActual + totalForecast + plannedDays;
+  };
+
+  const shouldGrayCell = (resource: ResourceWithProjects, month: string): boolean => {
+    if (!hasDateRetourPrevisionnelle(resource.statut)) return false;
+    const returnDate = getActiveReturnDate(resource.statut, resourcesMetadata[resource.id]);
+    if (!returnDate || !isMonthBeforeProvisionalReturn(month, returnDate)) return false;
+    return getActualDays(resource.id, month) === 0;
   };
 
   // Fonction pour convertir hex en RGB
@@ -902,12 +987,34 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
             </button>
             <div className="report-title">
               <h3>Synthèse Forecast - {new Date().getFullYear()}</h3>
-              <p className="report-subtitle">Vue par ressource et par mois (jours saisis + prévisionnels)</p>
+              <p className="report-subtitle">
+                Vue par ressource et par mois (jours saisis + prévisionnels
+                {parsedScenarioFilter !== 'none' && (
+                  <> + scénarios {formatPlannedScenarioFilterLabel(parsedScenarioFilter)}</>
+                )}
+                )
+              </p>
             </div>
 
-        {/* Filtres Type et Statut */}
+        {/* Filtres Type, Statut et Scénario */}
         <div className="report-filters">
           <div className="filters-container">
+            <div className="report-scenario-filter">
+              <label htmlFor="report-scenario-filter">Scénario prévi.</label>
+              <select
+                id="report-scenario-filter"
+                value={scenarioFilter}
+                onChange={(e) => setScenarioFilter(e.target.value)}
+                title="Aucun = base uniquement ; P1, P1 à P2… = ajout cumulatif des jours prévisionnels manuels"
+              >
+                {scenarioFilterSelectOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="filter-dropdown-container">
               <button
                 className="filter-button"
@@ -1037,20 +1144,30 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
                       {resource.prenom} {resource.nom}
                     </td>
                     {months.map((month) => {
-                      const value = getTotalValue(resource.id, month);
-                      const color = getCellColor(value);
-                      const isDark = isDarkColor(color);
+                      const grayCell = shouldGrayCell(resource, month);
+                      const value = grayCell ? 0 : getTotalValue(resource.id, month);
+                      const color = grayCell ? undefined : getCellColor(value);
+                      const isDark = color ? isDarkColor(color) : false;
                       return (
                         <td
                           key={month}
-                          className="report-table-cell value-cell"
-                          style={{ 
-                            backgroundColor: color, 
-                            color: isDark ? 'white' : 'black',
-                            fontWeight: isDark ? 'bold' : 'normal'
-                          }}
+                          className={`report-table-cell value-cell${grayCell ? ' report-table-cell--before-return' : ''}`}
+                          style={
+                            grayCell
+                              ? undefined
+                              : {
+                                  backgroundColor: color,
+                                  color: isDark ? 'white' : 'black',
+                                  fontWeight: isDark ? 'bold' : 'normal',
+                                }
+                          }
+                          title={
+                            grayCell
+                              ? 'Retour planifié — pas de saisie attendue avant la date de retour prévisionnelle'
+                              : undefined
+                          }
                         >
-                          {value > 0 ? value.toFixed(1) : '0'}
+                          {grayCell ? '—' : value > 0 ? value.toFixed(1) : '0'}
                         </td>
                       );
                     })}

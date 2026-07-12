@@ -185,6 +185,7 @@ function parseDeliverySyncOptionsFromBody(body = {}) {
     endId,
     fullScan: true,
     skipYearFilter: true,
+    explicitRange: true,
   };
 }
 
@@ -208,8 +209,8 @@ function normalizeSyncOptions(options = {}) {
 }
 
 function buildIdSet(options, endId, maxDbId, idsFromDb) {
-  const ids = new Set(idsFromDb);
   const startId = resolveStartId(options);
+  const ids = options.explicitRange ? new Set() : new Set(idsFromDb);
 
   if (options.fullScan) {
     for (let id = startId; id <= endId; id += 1) ids.add(id);
@@ -283,7 +284,10 @@ async function syncDeliveriesYear(rawOptions = {}) {
   const baseURL = DEFAULT_BASE_URL;
   const year = options.year;
 
-  console.log(`\n🚀 Sync prestations Boond — actives sur ${year}\n`);
+  const rangeLabel = options.explicitRange
+    ? `plage ${options.startId} → ${options.endId}`
+    : `actives sur ${year}`;
+  console.log(`\n🚀 Sync prestations Boond — ${rangeLabel}\n`);
   console.log('='.repeat(72));
 
   const endId =
@@ -294,11 +298,13 @@ async function syncDeliveriesYear(rawOptions = {}) {
       delayMs: options.delayMs,
     }));
 
-  const [idsFromDb, idsWithNullDates, maxDbId] = await Promise.all([
-    getDeliveryIdsFromDbForYear(year),
-    getDeliveryIdsWithNullCreationDate(),
-    getMaxDeliveryIdFromDb(),
-  ]);
+  const [idsFromDb, idsWithNullDates, maxDbId] = options.explicitRange
+    ? [[], [], 0]
+    : await Promise.all([
+        getDeliveryIdsFromDbForYear(year),
+        getDeliveryIdsWithNullCreationDate(),
+        getMaxDeliveryIdFromDb(),
+      ]);
 
   const idsToFetch = buildIdSet(options, endId, maxDbId, [
     ...idsFromDb,
@@ -306,16 +312,20 @@ async function syncDeliveriesYear(rawOptions = {}) {
   ]);
   const sortedIds = prioritizeIds(idsToFetch, maxDbId);
 
-  console.log(`📡 Plage Boond détectée : ${options.startId} → ${endId}`);
-  console.log(`📦 En base pour ${year} : ${idsFromDb.length} prestation(s)`);
-  console.log(`📦 Max ID en base : ${maxDbId || 0}`);
-  if (idsWithNullDates.length > 0) {
-    console.log(`⚠️  Sans creation_date en base : ${idsWithNullDates.length} (backfill Boond)`);
+  console.log(`📡 Plage Boond : ${options.startId} → ${endId}`);
+  if (options.explicitRange) {
+    console.log(`🔎 IDs à interroger : ${sortedIds.length} (plage explicite)`);
+  } else {
+    console.log(`📦 En base pour ${year} : ${idsFromDb.length} prestation(s)`);
+    console.log(`📦 Max ID en base : ${maxDbId || 0}`);
+    if (idsWithNullDates.length > 0) {
+      console.log(`⚠️  Sans creation_date en base : ${idsWithNullDates.length} (backfill Boond)`);
+    }
+    console.log(`🔎 IDs à interroger : ${sortedIds.length}`);
+    if (options.fullScan) console.log('   (mode full-scan)');
+    else if (options.scanNew === false) console.log('   (mode no-scan-new)');
+    else console.log(`   (refresh base + scan ${Math.max(options.startId, maxDbId + 1)} → ${endId})`);
   }
-  console.log(`🔎 IDs à interroger : ${sortedIds.length}`);
-  if (options.fullScan) console.log('   (mode full-scan)');
-  else if (options.scanNew === false) console.log('   (mode no-scan-new)');
-  else console.log(`   (refresh base + scan ${Math.max(options.startId, maxDbId + 1)} → ${endId})`);
   console.log('');
 
   const deliveries = [];
@@ -392,6 +402,7 @@ async function syncDeliveriesYear(rawOptions = {}) {
     fullScan: options.fullScan,
     scanNew: options.scanNew,
     skipYearFilter: options.skipYearFilter === true,
+    explicitRange: options.explicitRange === true,
   };
 
   await saveResults(deliveries, projectsMap, metadata);

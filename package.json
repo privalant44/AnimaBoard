@@ -56,6 +56,8 @@
     "jwks-rsa": "^3.2.2"
   },
   "devDependencies": {
+    "@cucumber/cucumber": "^13.0.0",
+    "@playwright/test": "^1.61.1",
     "concurrently": "^8.2.2",
     "nodemon": "^2.0.22",
     "supabase": "^2.78.1"

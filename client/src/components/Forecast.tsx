@@ -299,8 +299,15 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
   // Données prévisionnelles et jours commandés indexés par prestation
   const [forecastByDeliveryId, setForecastByDeliveryId] = useState<Record<string, Record<string, number>>>({});
   const [orderedDaysByDeliveryId, setOrderedDaysByDeliveryId] = useState<Record<string, number>>({});
-  const [editingMonth, setEditingMonth] = useState<{ deliveryId: string | number; month: string } | null>(null);
+  const [editingMonth, setEditingMonth] = useState<{
+    deliveryId: string | number;
+    resourceId: number;
+    month: string;
+  } | null>(null);
   const [editingInputValue, setEditingInputValue] = useState('');
+  /** Évite un double commit blur + sélection d'une autre cellule. */
+  const skipBlurCommitRef = useRef(false);
+  const editingMonthRef = useRef(editingMonth);
   
   // État pour l'agrégat des timesheets
   const [timesheetsAggregate, setTimesheetsAggregate] = useState<{
@@ -324,9 +331,28 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
     scenario: number;
     month: string;
   } | null>(null);
+  const editingPlannedMonthRef = useRef(editingPlannedMonth);
   /** Dates fériées YYYY-MM-DD (table french_public_holiday via API). */
   const [frenchHolidayDates, setFrenchHolidayDates] = useState<string[]>([]);
   const holidayYmdSet = useMemo(() => new Set(frenchHolidayDates), [frenchHolidayDates]);
+
+  useEffect(() => {
+    editingMonthRef.current = editingMonth;
+  }, [editingMonth]);
+
+  useEffect(() => {
+    editingPlannedMonthRef.current = editingPlannedMonth;
+  }, [editingPlannedMonth]);
+
+  /** Mois jan–déc de l’année en cours (aligné avec les absences Boond synchronisées). */
+  const gridYear = new Date().getFullYear();
+  const gridMonths = useMemo(() => {
+    const months: string[] = [];
+    for (let month = 1; month <= 12; month++) {
+      months.push(`${gridYear}-${String(month).padStart(2, '0')}`);
+    }
+    return months;
+  }, [gridYear]);
 
   const fetchForecast = useCallback(async (period?: ForecastPeriodOverride) => {
     const filterStart = period?.startDate ?? startDate;
@@ -803,8 +829,11 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         }
       }));
 
-      setEditingMonth(null);
-      setEditingInputValue('');
+      const current = editingMonthRef.current;
+      if (current?.deliveryId === deliveryId && current?.month === month) {
+        setEditingMonth(null);
+        setEditingInputValue('');
+      }
     } catch (error) {
       console.error(`❌ Erreur lors de la sauvegarde du temps prévisionnel:`, error);
       alert(normalizeApiError(error, apiUrl('/api/data/forecast-times')));
@@ -821,12 +850,15 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
   );
 
   const commitForecastEdit = useCallback(
-    (deliveryId: string | number, resourceId: number, month: string, rawInput: string) => {
+    (deliveryId: string | number, resourceId: number, month: string, rawInput: string): boolean => {
       const trimmed = rawInput.trim();
       if (!trimmed) {
-        setEditingMonth(null);
-        setEditingInputValue('');
-        return;
+        const current = editingMonthRef.current;
+        if (current?.deliveryId === deliveryId && current?.month === month) {
+          setEditingMonth(null);
+          setEditingInputValue('');
+        }
+        return true;
       }
 
       const parsed = parseForecastDaysInput(rawInput);
@@ -834,7 +866,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         alert(
           'Le nombre de jours doit être un entier, un quart de jour (0,25) ou une demi-journée (0,5).'
         );
-        return;
+        return false;
       }
 
       const maxDays = getMaxForecastDaysForMonth(resourceId, month);
@@ -842,10 +874,11 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         alert(
           `Le nombre de jours saisi (${formatForecastDaysFr(parsed)} j) dépasse le maximum autorisé : ${formatForecastDaysFr(maxDays)} j (jours ouvrés du mois moins les absences).`
         );
-        return;
+        return false;
       }
 
-      saveForecastTime(deliveryId, month, parsed);
+      void saveForecastTime(deliveryId, month, parsed);
+      return true;
     },
     [getMaxForecastDaysForMonth, saveForecastTime]
   );
@@ -963,25 +996,37 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
     [savePlannedDelivery]
   );
 
-  const commitPlannedForecastEdit = useCallback(
-    async (planned: PlannedScenario, month: string, rawInput: string) => {
-      const trimmed = rawInput.trim();
-      if (!trimmed) {
-        try {
-          const updated = await savePlannedDelivery({
-            resourceId: planned.resourceId,
-            scenario: planned.scenario,
-            month,
-            days: null,
-          });
-          if (updated) patchPlannedScenarioInState(updated);
-        } catch (error) {
-          console.error('❌ Erreur suppression temps prévisionnel:', error);
-          alert(normalizeApiError(error, apiUrl('/api/data/planned-deliveries')));
-        }
+  const persistPlannedForecastEdit = useCallback(
+    async (planned: PlannedScenario, month: string, days: number | null) => {
+      const updated = await savePlannedDelivery({
+        resourceId: planned.resourceId,
+        scenario: planned.scenario,
+        month,
+        days,
+      });
+      if (updated) patchPlannedScenarioInState(updated);
+      const current = editingPlannedMonthRef.current;
+      if (
+        current?.resourceId === planned.resourceId &&
+        current?.scenario === planned.scenario &&
+        current?.month === month
+      ) {
         setEditingPlannedMonth(null);
         setEditingInputValue('');
-        return;
+      }
+    },
+    [savePlannedDelivery, patchPlannedScenarioInState]
+  );
+
+  const commitPlannedForecastEdit = useCallback(
+    (planned: PlannedScenario, month: string, rawInput: string): boolean => {
+      const trimmed = rawInput.trim();
+      if (!trimmed) {
+        void persistPlannedForecastEdit(planned, month, null).catch((error) => {
+          console.error('❌ Erreur suppression temps prévisionnel:', error);
+          alert(normalizeApiError(error, apiUrl('/api/data/planned-deliveries')));
+        });
+        return true;
       }
 
       const parsed = parseForecastDaysInput(rawInput);
@@ -989,7 +1034,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         alert(
           'Le nombre de jours doit être un entier, un quart de jour (0,25) ou une demi-journée (0,5).'
         );
-        return;
+        return false;
       }
 
       const maxDays = getMaxForecastDaysForMonth(planned.resourceId, month);
@@ -997,37 +1042,201 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         alert(
           `Le nombre de jours saisi (${formatForecastDaysFr(parsed)} j) dépasse le maximum autorisé : ${formatForecastDaysFr(maxDays)} j (jours ouvrés du mois moins les absences).`
         );
+        return false;
+      }
+
+      void persistPlannedForecastEdit(planned, month, parsed).catch((error) => {
+        console.error('❌ Erreur sauvegarde temps prévisionnel:', error);
+        alert(normalizeApiError(error, apiUrl('/api/data/planned-deliveries')));
+      });
+      return true;
+    },
+    [getMaxForecastDaysForMonth, persistPlannedForecastEdit]
+  );
+
+  const findPlannedScenario = useCallback(
+    (resourceId: number, scenario: number): PlannedScenario | undefined => {
+      return getPlannedMapForResource(plannedDeliveriesByResource, resourceId).find(
+        (p) => p.resourceId === resourceId && p.scenario === scenario
+      );
+    },
+    [plannedDeliveriesByResource]
+  );
+
+  const beginDeliveryForecastEdit = useCallback(
+    (deliveryId: string | number, resourceId: number, month: string) => {
+      const target = { deliveryId, resourceId, month };
+      const editing = editingMonthRef.current;
+      if (
+        editing?.deliveryId === deliveryId &&
+        editing?.resourceId === resourceId &&
+        editing?.month === month
+      ) {
         return;
       }
 
-      try {
-        const updated = await savePlannedDelivery({
-          resourceId: planned.resourceId,
-          scenario: planned.scenario,
-          month,
-          days: parsed,
-        });
-        if (!updated) return;
-        patchPlannedScenarioInState(updated);
-        setEditingPlannedMonth(null);
-        setEditingInputValue('');
-      } catch (error) {
-        console.error('❌ Erreur sauvegarde temps prévisionnel:', error);
-        alert(normalizeApiError(error, apiUrl('/api/data/planned-deliveries')));
+      const plannedEditing = editingPlannedMonthRef.current;
+      if (plannedEditing) {
+        const planned = findPlannedScenario(plannedEditing.resourceId, plannedEditing.scenario);
+        if (
+          planned &&
+          !commitPlannedForecastEdit(planned, plannedEditing.month, editingInputValue)
+        ) {
+          return;
+        }
+        skipBlurCommitRef.current = true;
       }
+
+      if (editing) {
+        if (!commitForecastEdit(editing.deliveryId, editing.resourceId, editing.month, editingInputValue)) {
+          return;
+        }
+        skipBlurCommitRef.current = true;
+      }
+
+      setEditingPlannedMonth(null);
+      setEditingMonth(target);
+      setEditingInputValue('');
     },
-    [getMaxForecastDaysForMonth, savePlannedDelivery, patchPlannedScenarioInState]
+    [editingInputValue, commitForecastEdit, commitPlannedForecastEdit, findPlannedScenario]
   );
 
-  /** Mois jan–déc de l’année en cours (aligné avec les absences Boond synchronisées). */
-  const gridYear = new Date().getFullYear();
-  const gridMonths = useMemo(() => {
-    const months: string[] = [];
-    for (let month = 1; month <= 12; month++) {
-      months.push(`${gridYear}-${String(month).padStart(2, '0')}`);
-    }
-    return months;
-  }, [gridYear]);
+  const beginPlannedForecastEdit = useCallback(
+    (planned: PlannedScenario, month: string) => {
+      const target = {
+        resourceId: planned.resourceId,
+        scenario: planned.scenario,
+        month,
+      };
+      const editing = editingPlannedMonthRef.current;
+      if (
+        editing?.resourceId === target.resourceId &&
+        editing?.scenario === target.scenario &&
+        editing?.month === month
+      ) {
+        return;
+      }
+
+      const deliveryEditing = editingMonthRef.current;
+      if (deliveryEditing) {
+        if (
+          !commitForecastEdit(
+            deliveryEditing.deliveryId,
+            deliveryEditing.resourceId,
+            deliveryEditing.month,
+            editingInputValue
+          )
+        ) {
+          return;
+        }
+        skipBlurCommitRef.current = true;
+      }
+
+      if (editing) {
+        const currentPlanned = findPlannedScenario(editing.resourceId, editing.scenario);
+        if (
+          currentPlanned &&
+          !commitPlannedForecastEdit(currentPlanned, editing.month, editingInputValue)
+        ) {
+          return;
+        }
+        skipBlurCommitRef.current = true;
+      }
+
+      setEditingMonth(null);
+      setEditingPlannedMonth(target);
+      setEditingInputValue('');
+    },
+    [editingInputValue, commitForecastEdit, commitPlannedForecastEdit, findPlannedScenario]
+  );
+
+  const handleDeliveryForecastBlur = useCallback(
+    (deliveryId: string | number, resourceId: number, month: string) => {
+      if (skipBlurCommitRef.current) {
+        skipBlurCommitRef.current = false;
+        return;
+      }
+      commitForecastEdit(deliveryId, resourceId, month, editingInputValue);
+    },
+    [commitForecastEdit, editingInputValue]
+  );
+
+  const handlePlannedForecastBlur = useCallback(
+    (planned: PlannedScenario, month: string) => {
+      if (skipBlurCommitRef.current) {
+        skipBlurCommitRef.current = false;
+        return;
+      }
+      commitPlannedForecastEdit(planned, month, editingInputValue);
+    },
+    [commitPlannedForecastEdit, editingInputValue]
+  );
+
+  const handleDeliveryForecastKeyDown = useCallback(
+    (
+      e: React.KeyboardEvent<HTMLInputElement>,
+      deliveryId: string | number,
+      resourceId: number,
+      month: string
+    ) => {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const monthIdx = gridMonths.indexOf(month);
+        const nextIdx = e.shiftKey ? monthIdx - 1 : monthIdx + 1;
+        if (nextIdx < 0 || nextIdx >= gridMonths.length) return;
+        if (!commitForecastEdit(deliveryId, resourceId, month, editingInputValue)) return;
+        skipBlurCommitRef.current = true;
+        beginDeliveryForecastEdit(deliveryId, resourceId, gridMonths[nextIdx]);
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (!commitForecastEdit(deliveryId, resourceId, month, editingInputValue)) return;
+        skipBlurCommitRef.current = true;
+        setEditingMonth(null);
+        setEditingInputValue('');
+        return;
+      }
+      if (e.key === 'Escape') {
+        setEditingMonth(null);
+        setEditingInputValue('');
+      }
+    },
+    [gridMonths, commitForecastEdit, editingInputValue, beginDeliveryForecastEdit]
+  );
+
+  const handlePlannedForecastKeyDown = useCallback(
+    (
+      e: React.KeyboardEvent<HTMLInputElement>,
+      planned: PlannedScenario,
+      month: string,
+      editableMonths: string[]
+    ) => {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const monthIdx = editableMonths.indexOf(month);
+        const nextIdx = e.shiftKey ? monthIdx - 1 : monthIdx + 1;
+        if (nextIdx < 0 || nextIdx >= editableMonths.length) return;
+        if (!commitPlannedForecastEdit(planned, month, editingInputValue)) return;
+        skipBlurCommitRef.current = true;
+        beginPlannedForecastEdit(planned, editableMonths[nextIdx]);
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (!commitPlannedForecastEdit(planned, month, editingInputValue)) return;
+        skipBlurCommitRef.current = true;
+        setEditingPlannedMonth(null);
+        setEditingInputValue('');
+        return;
+      }
+      if (e.key === 'Escape') {
+        setEditingPlannedMonth(null);
+        setEditingInputValue('');
+      }
+    },
+    [commitPlannedForecastEdit, editingInputValue, beginPlannedForecastEdit]
+  );
 
   const previousYear = gridYear - 1;
 
@@ -1532,6 +1741,9 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                               resource.id
                             );
                             const months = gridMonths;
+                            const editablePlannedMonths = months.filter((m) =>
+                              isPlannedMonthEditable(m, gridYear)
+                            );
                             const isPlannedExpanded = !collapsedPlannedResources.has(resource.id);
                             return (
                               <div className="project-card forecast-planned-block">
@@ -1696,35 +1908,25 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                                           sanitizeForecastDaysInput(e.target.value)
                                                         )
                                                       }
-                                                      onBlur={() => {
-                                                        void commitPlannedForecastEdit(
+                                                      onBlur={() => handlePlannedForecastBlur(planned, month)}
+                                                      onKeyDown={(e) =>
+                                                        handlePlannedForecastKeyDown(
+                                                          e,
                                                           planned,
                                                           month,
-                                                          editingInputValue
-                                                        );
-                                                      }}
-                                                      onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') {
-                                                          (e.target as HTMLInputElement).blur();
-                                                        } else if (e.key === 'Escape') {
-                                                          setEditingPlannedMonth(null);
-                                                          setEditingInputValue('');
-                                                        }
-                                                      }}
+                                                          editablePlannedMonths
+                                                        )
+                                                      }
                                                     />
                                                   ) : (
                                                     <div
                                                       className={`forecast-display forecast-planned-display ${
                                                         forecastDays > 0 ? 'has-forecast' : 'no-forecast'
                                                       }`}
-                                                      onClick={(e) => {
+                                                      onMouseDown={(e) => {
+                                                        e.preventDefault();
                                                         e.stopPropagation();
-                                                        setEditingPlannedMonth({
-                                                          resourceId: planned.resourceId,
-                                                          scenario: planned.scenario,
-                                                          month,
-                                                        });
-                                                        setEditingInputValue('');
+                                                        beginPlannedForecastEdit(planned, month);
                                                       }}
                                                       title="Cliquez pour saisir le temps prévisionnel"
                                                     >
@@ -1889,7 +2091,10 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                         {gridMonths.map((month) => {
                                           const forecastDays = forecastTimes[month] ?? 0;
                                           const actualDays = actualTimes[month] ?? 0;
-                                          const isEditing = editingMonth?.deliveryId === project.id && editingMonth?.month === month;
+                                          const isEditing =
+                                            editingMonth?.deliveryId === project.id &&
+                                            editingMonth?.resourceId === resource.id &&
+                                            editingMonth?.month === month;
                                           
                                           // Vérifier si le mois est au-delà de la date de fin
                                           const monthDate = new Date(month + '-01');
@@ -1926,24 +2131,24 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                                   autoFocus
                                                   style={isBeyondEndDate ? { backgroundColor: '#F26B69', color: 'white' } : {}}
                                                   onChange={(e) => setEditingInputValue(sanitizeForecastDaysInput(e.target.value))}
-                                                  onBlur={() => {
-                                                    commitForecastEdit(project.id, resource.id, month, editingInputValue);
-                                                  }}
-                                                  onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') {
-                                                      (e.target as HTMLInputElement).blur();
-                                                    } else if (e.key === 'Escape') {
-                                                      setEditingMonth(null);
-                                                      setEditingInputValue('');
-                                                    }
-                                                  }}
+                                                  onBlur={() =>
+                                                    handleDeliveryForecastBlur(project.id, resource.id, month)
+                                                  }
+                                                  onKeyDown={(e) =>
+                                                    handleDeliveryForecastKeyDown(
+                                                      e,
+                                                      project.id,
+                                                      resource.id,
+                                                      month
+                                                    )
+                                                  }
                                                 />
                                               ) : showForecastDelta ? (
                                                 <div
                                                   className={`forecast-display forecast-display-delta ${isBeyondEndDate ? 'beyond-end-date' : ''}`}
-                                                  onClick={() => {
-                                                    setEditingMonth({ deliveryId: project.id, month });
-                                                    setEditingInputValue('');
+                                                  onMouseDown={(e) => {
+                                                    e.preventDefault();
+                                                    beginDeliveryForecastEdit(project.id, resource.id, month);
                                                   }}
                                                   title={`Δ saisi − prévi : ${deltaDisplayText} (saisi ${actualDays.toFixed(1)}, prévi ${forecastDays.toFixed(1)}) — cliquer pour modifier`}
                                                 >
@@ -1952,9 +2157,9 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                               ) : (
                                                 <div
                                                   className={`forecast-display ${forecastDays > 0 ? 'has-forecast' : 'no-forecast'} ${isBeyondEndDate ? 'beyond-end-date' : ''}`}
-                                                  onClick={() => {
-                                                    setEditingMonth({ deliveryId: project.id, month });
-                                                    setEditingInputValue('');
+                                                  onMouseDown={(e) => {
+                                                    e.preventDefault();
+                                                    beginDeliveryForecastEdit(project.id, resource.id, month);
                                                   }}
                                                   title={isBeyondEndDate ? 'Mois au-delà de la date de fin - saisie possible' : 'Cliquez pour modifier'}
                                                 >

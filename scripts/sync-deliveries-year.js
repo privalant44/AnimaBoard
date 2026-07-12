@@ -147,6 +147,47 @@ function resolveStartId(options) {
   return Number.isFinite(startId) && startId > 0 ? startId : 1;
 }
 
+function parsePositiveInt(value) {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return NaN;
+  return Math.floor(n);
+}
+
+/**
+ * Options depuis le corps JSON de POST /api/boondmanager/sync/deliveries.
+ * Si startId et endId sont fournis : scan complet de la plage (création ou mise à jour).
+ * Sinon : comportement incrémental par défaut (année courante).
+ */
+function parseDeliverySyncOptionsFromBody(body = {}) {
+  const startId = parsePositiveInt(body.startId ?? body.start_id);
+  const endId = parsePositiveInt(body.endId ?? body.end_id);
+
+  if (Number.isNaN(startId)) {
+    throw new Error('Numéro de début de prestation invalide (entier positif attendu)');
+  }
+  if (Number.isNaN(endId)) {
+    throw new Error('Numéro de fin de prestation invalide (entier positif attendu)');
+  }
+  if ((startId == null) !== (endId == null)) {
+    throw new Error(
+      'Renseignez à la fois le numéro de début et le numéro de fin, ou laissez les deux vides'
+    );
+  }
+  if (startId == null) return {};
+
+  if (startId > endId) {
+    throw new Error('Le numéro de début doit être inférieur ou égal au numéro de fin');
+  }
+
+  return {
+    startId,
+    endId,
+    fullScan: true,
+    skipYearFilter: true,
+  };
+}
+
 function normalizeSyncOptions(options = {}) {
   const year = Number(options.year ?? new Date().getFullYear());
   if (!Number.isFinite(year)) {
@@ -308,7 +349,7 @@ async function syncDeliveriesYear(rawOptions = {}) {
       if (result.status === 404) {
         notFound += 1;
       } else if (result.delivery) {
-        if (doesDeliveryOverlapYear(result.delivery, year)) {
+        if (options.skipYearFilter || doesDeliveryOverlapYear(result.delivery, year)) {
           deliveries.push(result.delivery);
           saved += 1;
           if (result.project && !projectsMap[result.project.id]) {
@@ -350,6 +391,7 @@ async function syncDeliveriesYear(rawOptions = {}) {
     idsNullCreationDateCount: idsWithNullDates.length,
     fullScan: options.fullScan,
     scanNew: options.scanNew,
+    skipYearFilter: options.skipYearFilter === true,
   };
 
   await saveResults(deliveries, projectsMap, metadata);
@@ -368,6 +410,7 @@ async function syncDeliveriesYear(rawOptions = {}) {
 module.exports = syncDeliveriesYear;
 module.exports.DEFAULT_SYNC_DELIVERIES_OPTIONS = DEFAULT_SYNC_DELIVERIES_OPTIONS;
 module.exports.normalizeSyncOptions = normalizeSyncOptions;
+module.exports.parseDeliverySyncOptionsFromBody = parseDeliverySyncOptionsFromBody;
 
 if (require.main === module) {
   const cliArgs = parseArgs(process.argv);

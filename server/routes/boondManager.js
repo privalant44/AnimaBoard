@@ -975,14 +975,37 @@ router.post('/sync/resources', async (req, res) => {
 router.post('/sync/deliveries', async (req, res) => {
   try {
     console.log('🔄 Synchronisation des prestations demandée...');
+    const {
+      parseDeliverySyncOptionsFromBody,
+    } = require('../../scripts/sync-deliveries-year');
     const syncDeliveriesYear = require('../../scripts/sync-deliveries-year');
-    const result = await syncDeliveriesYear();
+
+    let syncOptions;
+    try {
+      syncOptions = parseDeliverySyncOptionsFromBody(req.body || {});
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Paramètres de synchronisation invalides',
+        error: error.message,
+      });
+    }
+
+    if (syncOptions.startId != null) {
+      console.log(`   Plage demandée : ${syncOptions.startId} → ${syncOptions.endId}`);
+    }
+
+    const result = await syncDeliveriesYear(syncOptions);
     const count = result?.metadata?.savedCount ?? result?.data?.length ?? 0;
     const year = result?.metadata?.targetYear ?? new Date().getFullYear();
-    console.log(`✅ Synchronisation des prestations terminée: ${count} prestation(s) pour ${year}`);
+    const rangeMessage =
+      syncOptions.startId != null && syncOptions.endId != null
+        ? ` (plage ${syncOptions.startId}–${syncOptions.endId})`
+        : '';
+    console.log(`✅ Synchronisation des prestations terminée: ${count} prestation(s)${rangeMessage || ` pour ${year}`}`);
     res.json({
       success: true,
-      message: `Synchronisation réussie: ${count} prestation(s) pour ${year}`,
+      message: `Synchronisation réussie: ${count} prestation(s)${rangeMessage || ` pour ${year}`}`,
       count,
       metadata: result?.metadata,
     });

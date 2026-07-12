@@ -100,16 +100,37 @@ async function handleDeliveriesSync(req, res) {
   }
   if (!assertBoondPasswordReady(res)) return;
 
+  const {
+    parseDeliverySyncOptionsFromBody,
+  } = require(path.join(__dirname, '..', '..', 'scripts', 'sync-deliveries-year'));
   const syncDeliveriesYear = require(path.join(__dirname, '..', '..', 'scripts', 'sync-deliveries-year'));
-  const result = await syncDeliveriesYear();
+
+  let syncOptions;
+  try {
+    syncOptions = parseDeliverySyncOptionsFromBody(readJsonBody(req));
+  } catch (error) {
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(400).json({
+      success: false,
+      error: error.message || 'Paramètres de synchronisation invalides',
+    });
+  }
+
+  const result = await syncDeliveriesYear(syncOptions);
   const count = result?.metadata?.savedCount ?? result?.data?.length ?? 0;
   const year = result?.metadata?.targetYear ?? new Date().getFullYear();
+  const idRange = result?.metadata?.idRange;
+  const rangeMessage =
+    syncOptions.startId != null && syncOptions.endId != null
+      ? ` (plage ${syncOptions.startId}–${syncOptions.endId})`
+      : '';
   res.setHeader('Content-Type', 'application/json');
   return res.status(200).json({
     success: true,
-    message: `Synchronisation réussie: ${count} prestation(s) pour ${year}`,
+    message: `Synchronisation réussie: ${count} prestation(s)${rangeMessage || ` pour ${year}`}`,
     count,
     metadata: result?.metadata,
+    idRange,
   });
 }
 

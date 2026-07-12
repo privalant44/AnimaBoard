@@ -305,6 +305,12 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
     month: string;
   } | null>(null);
   const [editingInputValue, setEditingInputValue] = useState('');
+  /** Valeur courante de l'input (ref pour commit synchrone au clic / Tab). */
+  const editingInputValueRef = useRef('');
+  const setForecastEditingInput = useCallback((value: string) => {
+    editingInputValueRef.current = value;
+    setEditingInputValue(value);
+  }, []);
   /** Évite un double commit blur + sélection d'une autre cellule. */
   const skipBlurCommitRef = useRef(false);
   const editingMonthRef = useRef(editingMonth);
@@ -832,13 +838,13 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       const current = editingMonthRef.current;
       if (current?.deliveryId === deliveryId && current?.month === month) {
         setEditingMonth(null);
-        setEditingInputValue('');
+        setForecastEditingInput('');
       }
     } catch (error) {
       console.error(`❌ Erreur lors de la sauvegarde du temps prévisionnel:`, error);
       alert(normalizeApiError(error, apiUrl('/api/data/forecast-times')));
     }
-  }, []);
+  }, [setForecastEditingInput]);
 
   const getMaxForecastDaysForMonth = useCallback(
     (resourceId: number, month: string): number => {
@@ -856,7 +862,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         const current = editingMonthRef.current;
         if (current?.deliveryId === deliveryId && current?.month === month) {
           setEditingMonth(null);
-          setEditingInputValue('');
+          setForecastEditingInput('');
         }
         return true;
       }
@@ -880,7 +886,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       void saveForecastTime(deliveryId, month, parsed);
       return true;
     },
-    [getMaxForecastDaysForMonth, saveForecastTime]
+    [getMaxForecastDaysForMonth, saveForecastTime, setForecastEditingInput]
   );
 
   const savePlannedDelivery = useCallback(
@@ -1012,10 +1018,10 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         current?.month === month
       ) {
         setEditingPlannedMonth(null);
-        setEditingInputValue('');
+        setForecastEditingInput('');
       }
     },
-    [savePlannedDelivery, patchPlannedScenarioInState]
+    [savePlannedDelivery, patchPlannedScenarioInState, setForecastEditingInput]
   );
 
   const commitPlannedForecastEdit = useCallback(
@@ -1080,7 +1086,11 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         const planned = findPlannedScenario(plannedEditing.resourceId, plannedEditing.scenario);
         if (
           planned &&
-          !commitPlannedForecastEdit(planned, plannedEditing.month, editingInputValue)
+          !commitPlannedForecastEdit(
+            planned,
+            plannedEditing.month,
+            editingInputValueRef.current
+          )
         ) {
           return;
         }
@@ -1088,7 +1098,14 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       }
 
       if (editing) {
-        if (!commitForecastEdit(editing.deliveryId, editing.resourceId, editing.month, editingInputValue)) {
+        if (
+          !commitForecastEdit(
+            editing.deliveryId,
+            editing.resourceId,
+            editing.month,
+            editingInputValueRef.current
+          )
+        ) {
           return;
         }
         skipBlurCommitRef.current = true;
@@ -1096,9 +1113,9 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
 
       setEditingPlannedMonth(null);
       setEditingMonth(target);
-      setEditingInputValue('');
+      setForecastEditingInput('');
     },
-    [editingInputValue, commitForecastEdit, commitPlannedForecastEdit, findPlannedScenario]
+    [commitForecastEdit, commitPlannedForecastEdit, findPlannedScenario, setForecastEditingInput]
   );
 
   const beginPlannedForecastEdit = useCallback(
@@ -1124,7 +1141,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
             deliveryEditing.deliveryId,
             deliveryEditing.resourceId,
             deliveryEditing.month,
-            editingInputValue
+            editingInputValueRef.current
           )
         ) {
           return;
@@ -1136,7 +1153,11 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         const currentPlanned = findPlannedScenario(editing.resourceId, editing.scenario);
         if (
           currentPlanned &&
-          !commitPlannedForecastEdit(currentPlanned, editing.month, editingInputValue)
+          !commitPlannedForecastEdit(
+            currentPlanned,
+            editing.month,
+            editingInputValueRef.current
+          )
         ) {
           return;
         }
@@ -1145,9 +1166,9 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
 
       setEditingMonth(null);
       setEditingPlannedMonth(target);
-      setEditingInputValue('');
+      setForecastEditingInput('');
     },
-    [editingInputValue, commitForecastEdit, commitPlannedForecastEdit, findPlannedScenario]
+    [commitForecastEdit, commitPlannedForecastEdit, findPlannedScenario, setForecastEditingInput]
   );
 
   const handleDeliveryForecastBlur = useCallback(
@@ -1156,9 +1177,9 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         skipBlurCommitRef.current = false;
         return;
       }
-      commitForecastEdit(deliveryId, resourceId, month, editingInputValue);
+      commitForecastEdit(deliveryId, resourceId, month, editingInputValueRef.current);
     },
-    [commitForecastEdit, editingInputValue]
+    [commitForecastEdit]
   );
 
   const handlePlannedForecastBlur = useCallback(
@@ -1167,9 +1188,9 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         skipBlurCommitRef.current = false;
         return;
       }
-      commitPlannedForecastEdit(planned, month, editingInputValue);
+      commitPlannedForecastEdit(planned, month, editingInputValueRef.current);
     },
-    [commitPlannedForecastEdit, editingInputValue]
+    [commitPlannedForecastEdit]
   );
 
   const handleDeliveryForecastKeyDown = useCallback(
@@ -1184,25 +1205,25 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         const monthIdx = gridMonths.indexOf(month);
         const nextIdx = e.shiftKey ? monthIdx - 1 : monthIdx + 1;
         if (nextIdx < 0 || nextIdx >= gridMonths.length) return;
-        if (!commitForecastEdit(deliveryId, resourceId, month, editingInputValue)) return;
-        skipBlurCommitRef.current = true;
         beginDeliveryForecastEdit(deliveryId, resourceId, gridMonths[nextIdx]);
         return;
       }
       if (e.key === 'Enter') {
         e.preventDefault();
-        if (!commitForecastEdit(deliveryId, resourceId, month, editingInputValue)) return;
+        if (!commitForecastEdit(deliveryId, resourceId, month, editingInputValueRef.current)) {
+          return;
+        }
         skipBlurCommitRef.current = true;
         setEditingMonth(null);
-        setEditingInputValue('');
+        setForecastEditingInput('');
         return;
       }
       if (e.key === 'Escape') {
         setEditingMonth(null);
-        setEditingInputValue('');
+        setForecastEditingInput('');
       }
     },
-    [gridMonths, commitForecastEdit, editingInputValue, beginDeliveryForecastEdit]
+    [gridMonths, commitForecastEdit, beginDeliveryForecastEdit, setForecastEditingInput]
   );
 
   const handlePlannedForecastKeyDown = useCallback(
@@ -1217,25 +1238,23 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         const monthIdx = editableMonths.indexOf(month);
         const nextIdx = e.shiftKey ? monthIdx - 1 : monthIdx + 1;
         if (nextIdx < 0 || nextIdx >= editableMonths.length) return;
-        if (!commitPlannedForecastEdit(planned, month, editingInputValue)) return;
-        skipBlurCommitRef.current = true;
         beginPlannedForecastEdit(planned, editableMonths[nextIdx]);
         return;
       }
       if (e.key === 'Enter') {
         e.preventDefault();
-        if (!commitPlannedForecastEdit(planned, month, editingInputValue)) return;
+        if (!commitPlannedForecastEdit(planned, month, editingInputValueRef.current)) return;
         skipBlurCommitRef.current = true;
         setEditingPlannedMonth(null);
-        setEditingInputValue('');
+        setForecastEditingInput('');
         return;
       }
       if (e.key === 'Escape') {
         setEditingPlannedMonth(null);
-        setEditingInputValue('');
+        setForecastEditingInput('');
       }
     },
-    [commitPlannedForecastEdit, editingInputValue, beginPlannedForecastEdit]
+    [commitPlannedForecastEdit, beginPlannedForecastEdit, setForecastEditingInput]
   );
 
   const previousYear = gridYear - 1;
@@ -1904,7 +1923,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                                       autoFocus
                                                       onClick={(e) => e.stopPropagation()}
                                                       onChange={(e) =>
-                                                        setEditingInputValue(
+                                                        setForecastEditingInput(
                                                           sanitizeForecastDaysInput(e.target.value)
                                                         )
                                                       }
@@ -2130,7 +2149,11 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                                   className={`forecast-input ${isBeyondEndDate ? 'beyond-end-date-input' : ''}`}
                                                   autoFocus
                                                   style={isBeyondEndDate ? { backgroundColor: '#F26B69', color: 'white' } : {}}
-                                                  onChange={(e) => setEditingInputValue(sanitizeForecastDaysInput(e.target.value))}
+                                                  onChange={(e) =>
+                                                    setForecastEditingInput(
+                                                      sanitizeForecastDaysInput(e.target.value)
+                                                    )
+                                                  }
                                                   onBlur={() =>
                                                     handleDeliveryForecastBlur(project.id, resource.id, month)
                                                   }

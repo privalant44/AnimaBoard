@@ -9,6 +9,10 @@ const {
   uploadCompanyLogo,
   deleteCompanyLogo,
 } = require('../lib/logoService');
+const {
+  getTreasuryPlanSettings,
+  saveTreasuryPlanSettings,
+} = require('../lib/treasuryPlanService');
 
 function getRoutePath(req) {
   const routeParam = req.query && req.query.route;
@@ -61,8 +65,31 @@ async function handleLogo(req, res) {
   return res.status(405).json({ success: false, error: 'Method Not Allowed' });
 }
 
+async function handleGetTreasuryPlan(req, res) {
+  const settings = await getTreasuryPlanSettings();
+  res.setHeader('Content-Type', 'application/json');
+  return res.status(200).json({ success: true, ...settings });
+}
+
+async function handlePostTreasuryPlan(req, res) {
+  const settings = await saveTreasuryPlanSettings(req.body || {});
+  res.setHeader('Content-Type', 'application/json');
+  return res.status(200).json({ success: true, ...settings });
+}
+
+async function handleTreasuryPlan(req, res) {
+  if (req.method === 'GET') return handleGetTreasuryPlan(req, res);
+
+  const ok = await enforceAuthAndAuthorize(req, res);
+  if (!ok) return;
+
+  if (req.method === 'POST') return handlePostTreasuryPlan(req, res);
+  return res.status(405).json({ success: false, error: 'Method Not Allowed' });
+}
+
 const ROUTES = {
   logo: handleLogo,
+  'treasury-plan': handleTreasuryPlan,
 };
 
 const handler = createVercelHandler(

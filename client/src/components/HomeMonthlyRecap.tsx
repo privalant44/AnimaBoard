@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '../api';
+import HomeTreasuryPlanChart, { TreasuryPlanMonthRow } from './HomeTreasuryPlanChart';
 import './HomeMonthlyRecap.css';
 
 interface HomeMonthlyRow {
@@ -48,6 +49,13 @@ const HomeMonthlyRecap: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<HomeMonthlyRecapResponse | null>(null);
+  const [treasuryLoading, setTreasuryLoading] = useState(true);
+  const [treasuryError, setTreasuryError] = useState<string | null>(null);
+  const [treasuryMonthly, setTreasuryMonthly] = useState<TreasuryPlanMonthRow[]>([]);
+  const [treasurySettings, setTreasurySettings] = useState({
+    averagePaymentDelayDays: 30,
+    initialBalance: 0,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -71,6 +79,41 @@ const HomeMonthlyRecap: React.FC = () => {
         }
       } finally {
         if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedYear, selectedScenario]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setTreasuryLoading(true);
+      setTreasuryError(null);
+      try {
+        const scenarioParam = `&scenario=${encodeURIComponent(selectedScenario || 'none')}`;
+        const response = await apiFetch(
+          `/api/dashboard/treasury-plan?year=${selectedYear}${scenarioParam}`
+        );
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(body?.error || `Erreur ${response.status}`);
+        }
+        if (!cancelled) {
+          setTreasuryMonthly(Array.isArray(body.monthly) ? body.monthly : []);
+          setTreasurySettings({
+            averagePaymentDelayDays: Number(body?.settings?.averagePaymentDelayDays) || 30,
+            initialBalance: Number(body?.settings?.initialBalance) || 0,
+          });
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setTreasuryError(e instanceof Error ? e.message : 'Erreur inconnue');
+          setTreasuryMonthly([]);
+        }
+      } finally {
+        if (!cancelled) setTreasuryLoading(false);
       }
     })();
     return () => {
@@ -429,6 +472,13 @@ const HomeMonthlyRecap: React.FC = () => {
           </table>
         </div>
       </div>
+      <HomeTreasuryPlanChart
+        monthly={treasuryMonthly}
+        averagePaymentDelayDays={treasurySettings.averagePaymentDelayDays}
+        initialBalance={treasurySettings.initialBalance}
+        loading={treasuryLoading}
+        error={treasuryError}
+      />
     </main>
   );
 };

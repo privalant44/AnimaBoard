@@ -13,6 +13,7 @@ try {
 } catch (e) {}
 
 const dashboardService = require(path.join(__dirname, '..', 'server', 'services', 'dashboardService'));
+const { getTreasuryPlanData } = require(path.join(__dirname, '..', 'lib', 'treasuryPlanService'));
 const { createVercelHandler } = require(path.join(__dirname, '..', 'lib', 'errorHandler'));
 
 function sendJson(res, status, body) {
@@ -58,6 +59,13 @@ async function readJsonBody(req) {
 
 module.exports = createVercelHandler(async (req, res) => {
   const route = getRoutePath(req);
+
+  if (route === 'treasury-plan' && req.method === 'GET') {
+    const year = req.query.year != null ? req.query.year : undefined;
+    const scenario = req.query.scenario != null ? req.query.scenario : 'none';
+    const data = await getTreasuryPlanData(year, scenario, dashboardService);
+    return sendJson(res, 200, data);
+  }
 
   if (route === 'home-monthly-recap' && req.method === 'GET') {
     const year = req.query.year != null ? req.query.year : undefined;

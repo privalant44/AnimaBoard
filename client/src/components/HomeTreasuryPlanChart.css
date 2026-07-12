@@ -1,0 +1,30 @@
+.home-treasury-chart {
+  margin: 0 1.25rem 1.25rem;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+  padding: 1rem 1rem 1.25rem;
+}
+
+.home-treasury-chart-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+  color: #2c5f5d;
+  font-weight: 700;
+}
+
+.home-treasury-chart-subtitle {
+  margin: 0 0 0.85rem;
+  font-size: 0.85rem;
+  color: #5a8a86;
+}
+
+.home-treasury-chart-state {
+  margin: 0;
+  color: #5a8a86;
+  font-size: 0.9rem;
+}
+
+.home-treasury-chart-state--error {
+  color: #b42318;
+}

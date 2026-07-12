@@ -22,4 +22,24 @@ router.delete('/logo', async (req, res, next) => {
   }
 });
 
+router.get('/treasury-plan', async (req, res, next) => {
+  try {
+    const { getTreasuryPlanSettings } = require('../../lib/treasuryPlanService');
+    const settings = await getTreasuryPlanSettings();
+    res.json({ success: true, ...settings });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/treasury-plan', async (req, res, next) => {
+  try {
+    const { saveTreasuryPlanSettings } = require('../../lib/treasuryPlanService');
+    const settings = await saveTreasuryPlanSettings(req.body || {});
+    res.json({ success: true, ...settings });
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;

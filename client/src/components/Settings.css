@@ -614,3 +614,58 @@
   color: #2c5f5d;
   font-weight: 600;
 }
+
+.settings-treasury-form .settings-section {
+  margin-bottom: 1.25rem;
+}
+
+.settings-treasury-form label {
+  display: block;
+  font-weight: 600;
+  color: #2c5f5d;
+  margin-bottom: 0.35rem;
+}
+
+.settings-treasury-form input {
+  width: 100%;
+  max-width: 280px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #c6d8d6;
+  border-radius: 8px;
+  font-size: 0.95rem;
+}
+
+.settings-field-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  color: #5a8a86;
+}
+
+.settings-error {
+  color: #b42318;
+  margin: 0.5rem 0;
+}
+
+.settings-success {
+  color: #027a48;
+  margin: 0.5rem 0;
+}
+
+.settings-action-button {
+  border: none;
+  background: #2c5f5d;
+  color: #fff;
+  border-radius: 8px;
+  padding: 0.6rem 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-action-button:hover:not(:disabled) {
+  background: #174a48;
+}
+
+.settings-action-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}

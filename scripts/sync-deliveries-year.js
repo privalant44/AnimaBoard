@@ -147,6 +147,48 @@ function resolveStartId(options) {
   return Number.isFinite(startId) && startId > 0 ? startId : 1;
 }
 
+function parsePositiveInt(value) {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return NaN;
+  return Math.floor(n);
+}
+
+/**
+ * Options depuis le corps JSON de POST /api/boondmanager/sync/deliveries.
+ * Si startId et endId sont fournis : scan complet de la plage (création ou mise à jour).
+ * Sinon : comportement incrémental par défaut (année courante).
+ */
+function parseDeliverySyncOptionsFromBody(body = {}) {
+  const startId = parsePositiveInt(body.startId ?? body.start_id);
+  const endId = parsePositiveInt(body.endId ?? body.end_id);
+
+  if (Number.isNaN(startId)) {
+    throw new Error('Numéro de début de prestation invalide (entier positif attendu)');
+  }
+  if (Number.isNaN(endId)) {
+    throw new Error('Numéro de fin de prestation invalide (entier positif attendu)');
+  }
+  if ((startId == null) !== (endId == null)) {
+    throw new Error(
+      'Renseignez à la fois le numéro de début et le numéro de fin, ou laissez les deux vides'
+    );
+  }
+  if (startId == null) return {};
+
+  if (startId > endId) {
+    throw new Error('Le numéro de début doit être inférieur ou égal au numéro de fin');
+  }
+
+  return {
+    startId,
+    endId,
+    fullScan: true,
+    skipYearFilter: true,
+    explicitRange: true,
+  };
+}
+
 function normalizeSyncOptions(options = {}) {
   const year = Number(options.year ?? new Date().getFullYear());
   if (!Number.isFinite(year)) {
@@ -167,8 +209,8 @@ function normalizeSyncOptions(options = {}) {
 }
 
 function buildIdSet(options, endId, maxDbId, idsFromDb) {
-  const ids = new Set(idsFromDb);
   const startId = resolveStartId(options);
+  const ids = options.explicitRange ? new Set() : new Set(idsFromDb);
 
   if (options.fullScan) {
     for (let id = startId; id <= endId; id += 1) ids.add(id);
@@ -242,7 +284,10 @@ async function syncDeliveriesYear(rawOptions = {}) {
   const baseURL = DEFAULT_BASE_URL;
   const year = options.year;
 
-  console.log(`\n🚀 Sync prestations Boond — actives sur ${year}\n`);
+  const rangeLabel = options.explicitRange
+    ? `plage ${options.startId} → ${options.endId}`
+    : `actives sur ${year}`;
+  console.log(`\n🚀 Sync prestations Boond — ${rangeLabel}\n`);
   console.log('='.repeat(72));
 
   const endId =
@@ -253,11 +298,13 @@ async function syncDeliveriesYear(rawOptions = {}) {
       delayMs: options.delayMs,
     }));
 
-  const [idsFromDb, idsWithNullDates, maxDbId] = await Promise.all([
-    getDeliveryIdsFromDbForYear(year),
-    getDeliveryIdsWithNullCreationDate(),
-    getMaxDeliveryIdFromDb(),
-  ]);
+  const [idsFromDb, idsWithNullDates, maxDbId] = options.explicitRange
+    ? [[], [], 0]
+    : await Promise.all([
+        getDeliveryIdsFromDbForYear(year),
+        getDeliveryIdsWithNullCreationDate(),
+        getMaxDeliveryIdFromDb(),
+      ]);
 
   const idsToFetch = buildIdSet(options, endId, maxDbId, [
     ...idsFromDb,
@@ -265,16 +312,20 @@ async function syncDeliveriesYear(rawOptions = {}) {
   ]);
   const sortedIds = prioritizeIds(idsToFetch, maxDbId);
 
-  console.log(`📡 Plage Boond détectée : ${options.startId} → ${endId}`);
-  console.log(`📦 En base pour ${year} : ${idsFromDb.length} prestation(s)`);
-  console.log(`📦 Max ID en base : ${maxDbId || 0}`);
-  if (idsWithNullDates.length > 0) {
-    console.log(`⚠️  Sans creation_date en base : ${idsWithNullDates.length} (backfill Boond)`);
+  console.log(`📡 Plage Boond : ${options.startId} → ${endId}`);
+  if (options.explicitRange) {
+    console.log(`🔎 IDs à interroger : ${sortedIds.length} (plage explicite)`);
+  } else {
+    console.log(`📦 En base pour ${year} : ${idsFromDb.length} prestation(s)`);
+    console.log(`📦 Max ID en base : ${maxDbId || 0}`);
+    if (idsWithNullDates.length > 0) {
+      console.log(`⚠️  Sans creation_date en base : ${idsWithNullDates.length} (backfill Boond)`);
+    }
+    console.log(`🔎 IDs à interroger : ${sortedIds.length}`);
+    if (options.fullScan) console.log('   (mode full-scan)');
+    else if (options.scanNew === false) console.log('   (mode no-scan-new)');
+    else console.log(`   (refresh base + scan ${Math.max(options.startId, maxDbId + 1)} → ${endId})`);
   }
-  console.log(`🔎 IDs à interroger : ${sortedIds.length}`);
-  if (options.fullScan) console.log('   (mode full-scan)');
-  else if (options.scanNew === false) console.log('   (mode no-scan-new)');
-  else console.log(`   (refresh base + scan ${Math.max(options.startId, maxDbId + 1)} → ${endId})`);
   console.log('');
 
   const deliveries = [];
@@ -308,7 +359,7 @@ async function syncDeliveriesYear(rawOptions = {}) {
       if (result.status === 404) {
         notFound += 1;
       } else if (result.delivery) {
-        if (doesDeliveryOverlapYear(result.delivery, year)) {
+        if (options.skipYearFilter || doesDeliveryOverlapYear(result.delivery, year)) {
           deliveries.push(result.delivery);
           saved += 1;
           if (result.project && !projectsMap[result.project.id]) {
@@ -350,6 +401,8 @@ async function syncDeliveriesYear(rawOptions = {}) {
     idsNullCreationDateCount: idsWithNullDates.length,
     fullScan: options.fullScan,
     scanNew: options.scanNew,
+    skipYearFilter: options.skipYearFilter === true,
+    explicitRange: options.explicitRange === true,
   };
 
   await saveResults(deliveries, projectsMap, metadata);
@@ -368,6 +421,7 @@ async function syncDeliveriesYear(rawOptions = {}) {
 module.exports = syncDeliveriesYear;
 module.exports.DEFAULT_SYNC_DELIVERIES_OPTIONS = DEFAULT_SYNC_DELIVERIES_OPTIONS;
 module.exports.normalizeSyncOptions = normalizeSyncOptions;
+module.exports.parseDeliverySyncOptionsFromBody = parseDeliverySyncOptionsFromBody;
 
 if (require.main === module) {
   const cliArgs = parseArgs(process.argv);

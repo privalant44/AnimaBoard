@@ -46,6 +46,8 @@ const SettingsDataSyncPanel: React.FC<SettingsDataSyncPanelProps> = ({ onBack, o
 
   const [syncingResources, setSyncingResources] = useState(false);
   const [syncingDeliveries, setSyncingDeliveries] = useState(false);
+  const [deliveriesStartId, setDeliveriesStartId] = useState('');
+  const [deliveriesEndId, setDeliveriesEndId] = useState('');
   const [syncingTimesheets, setSyncingTimesheets] = useState(false);
   const [syncingAbsences, setSyncingAbsences] = useState(false);
   const [syncingBesoins, setSyncingBesoins] = useState(false);
@@ -198,12 +200,56 @@ const SettingsDataSyncPanel: React.FC<SettingsDataSyncPanelProps> = ({ onBack, o
     setSyncingDeliveries(true);
     setSyncResult(null);
 
+    const startRaw = deliveriesStartId.trim();
+    const endRaw = deliveriesEndId.trim();
+    const hasStart = startRaw.length > 0;
+    const hasEnd = endRaw.length > 0;
+
+    if (hasStart !== hasEnd) {
+      setSyncResult({
+        type: 'deliveries',
+        success: false,
+        message:
+          'Renseignez à la fois le numéro de début et le numéro de fin, ou laissez les deux vides pour une actualisation standard.',
+      });
+      setSyncingDeliveries(false);
+      return;
+    }
+
+    let startId: number | undefined;
+    let endId: number | undefined;
+    if (hasStart && hasEnd) {
+      startId = Number.parseInt(startRaw, 10);
+      endId = Number.parseInt(endRaw, 10);
+      if (!Number.isFinite(startId) || startId <= 0 || !Number.isFinite(endId) || endId <= 0) {
+        setSyncResult({
+          type: 'deliveries',
+          success: false,
+          message: 'Les numéros de prestation doivent être des entiers positifs.',
+        });
+        setSyncingDeliveries(false);
+        return;
+      }
+      if (startId > endId) {
+        setSyncResult({
+          type: 'deliveries',
+          success: false,
+          message: 'Le numéro de début doit être inférieur ou égal au numéro de fin.',
+        });
+        setSyncingDeliveries(false);
+        return;
+      }
+    }
+
     try {
+      const body =
+        startId != null && endId != null ? JSON.stringify({ startId, endId }) : undefined;
       const response = await apiFetch('/api/boondmanager/sync/deliveries', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        body,
       });
 
       const data = await parseApiJson<SyncApiResponse>(response);
@@ -498,14 +544,50 @@ const SettingsDataSyncPanel: React.FC<SettingsDataSyncPanelProps> = ({ onBack, o
               {syncingDictionary ? '⏳ Synchronisation en cours…' : '📖 Synchroniser le dictionnaire'}
             </button>
 
-            <button
-              type="button"
-              className="sync-button sync-button--sync"
-              onClick={syncDeliveries}
-              disabled={isBusy}
-            >
-              {syncingDeliveries ? '⏳ Extraction en cours…' : '📋 Actualiser les prestations'}
-            </button>
+            <div className="sync-data-deliveries-row">
+              <div className="sync-data-deliveries-range">
+                <label className="sync-data-range-field">
+                  <span className="sync-data-range-label">N° début</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    className="sync-data-range-input"
+                    value={deliveriesStartId}
+                    onChange={(e) => setDeliveriesStartId(e.target.value)}
+                    placeholder="Optionnel"
+                    disabled={isBusy}
+                    aria-label="Numéro de début de prestation"
+                  />
+                </label>
+                <label className="sync-data-range-field">
+                  <span className="sync-data-range-label">N° fin</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    className="sync-data-range-input"
+                    value={deliveriesEndId}
+                    onChange={(e) => setDeliveriesEndId(e.target.value)}
+                    placeholder="Optionnel"
+                    disabled={isBusy}
+                    aria-label="Numéro de fin de prestation"
+                  />
+                </label>
+              </div>
+              <button
+                type="button"
+                className="sync-button sync-button--sync"
+                onClick={syncDeliveries}
+                disabled={isBusy}
+              >
+                {syncingDeliveries ? '⏳ Extraction en cours…' : '📋 Actualiser les prestations'}
+              </button>
+            </div>
+            <p className="sync-data-range-hint">
+              Laissez les numéros vides pour l’actualisation incrémentale (année en cours). Renseignez une plage
+              pour charger ou mettre à jour les prestations Boond correspondantes.
+            </p>
 
             <button
               type="button"

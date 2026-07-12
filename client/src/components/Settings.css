@@ -444,6 +444,62 @@
   max-width: 520px;
 }
 
+.sync-data-deliveries-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  grid-column: 1 / -1;
+}
+
+.sync-data-deliveries-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.sync-data-range-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 120px;
+  flex: 1;
+  max-width: 180px;
+}
+
+.sync-data-range-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.sync-data-range-input {
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  background: #fff;
+}
+
+.sync-data-range-input:focus {
+  outline: 2px solid #2c5f5d;
+  outline-offset: 1px;
+  border-color: #2c5f5d;
+}
+
+.sync-data-range-input:disabled {
+  background: #f3f4f6;
+  cursor: not-allowed;
+}
+
+.sync-data-range-hint {
+  margin: -0.25rem 0 0;
+  grid-column: 1 / -1;
+  color: #6b7280;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
 .sync-buttons-section {
   display: flex;
   gap: 1rem;

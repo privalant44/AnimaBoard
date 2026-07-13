@@ -55,8 +55,13 @@ module.exports = createVercelHandler(async (req, res) => {
     return res.status(400).json({ success: false, error: 'resourceId est requis' });
   }
 
+  if (!body.scenario) {
+    return res.status(400).json({ success: false, error: 'scenario est requis' });
+  }
+
   const created = await createPlannedDelivery({
     resourceId: body.resourceId,
+    scenario: body.scenario,
     tjm: body.tjm,
     description: body.description,
   });

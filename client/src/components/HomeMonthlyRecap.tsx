@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '../api';
 import HomeTreasuryPlanChart, { TreasuryPlanMonthRow } from './HomeTreasuryPlanChart';
 import './HomeMonthlyRecap.css';
@@ -26,6 +26,12 @@ interface HomeMonthlyRow {
   delaiMoyenReponseCount?: number;
 }
 
+interface ForecastScenarioMeta {
+  number: number;
+  title: string;
+  description: string;
+}
+
 interface HomeMonthlyRecapResponse {
   year: number;
   monthly: HomeMonthlyRow[];
@@ -34,6 +40,7 @@ interface HomeMonthlyRecapResponse {
     taceEligibleResourcesCount?: number;
     taceFormula?: string;
     plannedScenarios?: number[];
+    forecastScenarios?: ForecastScenarioMeta[];
     plannedScenarioFilter?: 'all' | number;
     plannedScenarioFilterLabel?: string;
     caForecastFormula?: string;
@@ -122,10 +129,30 @@ const HomeMonthlyRecap: React.FC = () => {
   }, [selectedYear, selectedScenario]);
 
   const scenarioOptions = useMemo(() => {
+    const fromCatalog = data?.meta?.forecastScenarios || [];
+    if (fromCatalog.length > 0) {
+      return fromCatalog
+        .map((s) => Number(s.number))
+        .filter((n) => Number.isFinite(n) && n > 0)
+        .sort((a, b) => a - b);
+    }
     const fromApi = data?.meta?.plannedScenarios || [];
     const unique = Array.from(new Set(fromApi)).sort((a, b) => a - b);
     return unique;
-  }, [data?.meta?.plannedScenarios]);
+  }, [data?.meta?.forecastScenarios, data?.meta?.plannedScenarios]);
+
+  const scenarioLabel = useCallback(
+    (n: number): string => {
+      const catalog = data?.meta?.forecastScenarios || [];
+      const formatOne = (num: number): string => {
+        const entry = catalog.find((s) => s.number === num);
+        return entry?.title?.trim() ? `${num} — ${entry.title.trim()}` : `P${num}`;
+      };
+      if (n <= 1) return formatOne(1);
+      return `${formatOne(1)} à ${formatOne(n)}`;
+    },
+    [data?.meta?.forecastScenarios]
+  );
 
   useEffect(() => {
     if (selectedScenario === 'none') return;
@@ -253,17 +280,17 @@ const HomeMonthlyRecap: React.FC = () => {
     <main className="app-main">
       <h1 className="home-dashboard-title">TABLEAU DE BORD ANIMA NEO</h1>
       <div className="home-recap-filters">
-        <label htmlFor="home-recap-scenario">Scénario prévi.</label>
+        <label htmlFor="home-recap-scenario">Scénario</label>
         <select
           id="home-recap-scenario"
           value={selectedScenario}
           onChange={(e) => setSelectedScenario(e.target.value)}
-          title="Aucun = CA de base uniquement ; P1, P1 à P2… = ajout cumulatif du CA prévisionnel manuel"
+          title="Aucun = CA de base uniquement ; scénario sélectionné = ajout cumulatif du CA prévisionnel manuel"
         >
           <option value="none">Aucun</option>
           {scenarioOptions.map((n) => (
             <option key={n} value={String(n)}>
-              {n === 1 ? 'P1' : `P1 à P${n}`}
+              {scenarioLabel(n)}
             </option>
           ))}
         </select>

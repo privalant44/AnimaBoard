@@ -2,11 +2,7 @@
  * POST /api/data/planned-deliveries — créer / mettre à jour / supprimer un scénario prévisionnel
  */
 const { createVercelHandler } = require('../../lib/errorHandler');
-const {
-  createPlannedDelivery,
-  updatePlannedDelivery,
-  deletePlannedDelivery,
-} = require('../../lib/plannedDeliveriesService');
+const { handlePlannedDeliveryPost } = require('../../lib/plannedDeliveriesService');
 
 function readJsonBody(req) {
   if (req.body && typeof req.body === 'object') return req.body;
@@ -26,49 +22,10 @@ module.exports = createVercelHandler(async (req, res) => {
   }
 
   const body = readJsonBody(req);
-
-  if (body.delete && body.resourceId && body.scenario) {
-    await deletePlannedDelivery({
-      resourceId: body.resourceId,
-      scenario: body.scenario,
-    });
-    return res.status(200).json({ success: true, message: 'Prestation prévisionnelle supprimée' });
-  }
-
-  if (body.resourceId && body.scenario) {
-    const updated = await updatePlannedDelivery({
-      resourceId: body.resourceId,
-      scenario: body.scenario,
-      tjm: body.tjm,
-      description: body.description,
-      month: body.month,
-      days: body.days,
-    });
-    return res.status(200).json({
-      success: true,
-      message: 'Prestation prévisionnelle mise à jour',
-      data: updated,
-    });
-  }
-
-  if (!body.resourceId) {
-    return res.status(400).json({ success: false, error: 'resourceId est requis' });
-  }
-
-  if (!body.scenario) {
-    return res.status(400).json({ success: false, error: 'scenario est requis' });
-  }
-
-  const created = await createPlannedDelivery({
-    resourceId: body.resourceId,
-    scenario: body.scenario,
-    tjm: body.tjm,
-    description: body.description,
-  });
+  const result = await handlePlannedDeliveryPost(body);
 
   return res.status(200).json({
     success: true,
-    message: 'Prestation prévisionnelle créée',
-    data: created,
+    ...result,
   });
 }, { statusCode: 500, message: 'Erreur planned-deliveries' });

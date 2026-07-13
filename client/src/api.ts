@@ -2,24 +2,53 @@
  * Base URL de l'API. En dev, laisser vide : les URLs /api/* passent par le proxy (même hôte que le client).
  * Définir REACT_APP_API_URL=http://127.0.0.1:3000 seulement si le proxy échoue. En prod, vide = URLs relatives.
  */
-const explicitApiBase = process.env.REACT_APP_API_URL || '';
+/** Vide en dev : URLs relatives /api/* → setupProxy.js (127.0.0.1:3000). */
+export const API_BASE = process.env.REACT_APP_API_URL || '';
 
-function getDevFallbackBase(): string {
-  if (process.env.NODE_ENV === 'production') return '';
-  if (typeof window === 'undefined') return '';
-  const host = window.location.hostname;
-  const isLocalHost = host === 'localhost' || host === '127.0.0.1';
-  // En dev local, le client tourne sur 3001 et l'API sur 3000.
-  if (isLocalHost && window.location.port === '3001') {
-    return 'http://localhost:3000';
-  }
-  return '';
+if (
+  process.env.NODE_ENV !== 'production' &&
+  typeof window !== 'undefined' &&
+  /\/\/localhost:3000/i.test(API_BASE)
+) {
+  console.warn(
+    '[api] REACT_APP_API_URL pointe sur localhost:3000 — sur Windows, préférez laisser vide (proxy CRA) ou http://127.0.0.1:3000.'
+  );
 }
-
-export const API_BASE = explicitApiBase || getDevFallbackBase();
 
 export function apiUrl(path: string): string {
   return API_BASE + path;
+}
+
+/** URL affichée dans les messages d'erreur (origine du navigateur + chemin relatif en dev). */
+export function describeApiEndpoint(path: string): string {
+  const resolved = apiUrl(path);
+  if (resolved.startsWith('http')) return resolved;
+  if (typeof window !== 'undefined') return `${window.location.origin}${resolved}`;
+  return resolved;
+}
+
+export function normalizeApiError(err: unknown, endpointHint?: string): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/failed to fetch|networkerror|load failed|fetch failed/i.test(msg)) {
+    const isDev = process.env.NODE_ENV !== 'production';
+    const devHint = isDev
+      ? 'En dev local : ouvrez http://localhost:3001 et lancez npm run dev (API Express sur le port 3000). Laissez REACT_APP_API_URL vide pour utiliser le proxy.'
+      : 'Vérifiez que le serveur API est démarré et que la route existe (notamment en déploiement Vercel).';
+    return [
+      'Impossible de joindre l’API (erreur réseau).',
+      endpointHint ? `Endpoint: ${endpointHint}.` : '',
+      devHint,
+    ]
+      .filter(Boolean)
+      .join(' ');
+  }
+  if (/JSON\.parse|unexpected character|SyntaxError/i.test(msg)) {
+    const isDev = process.env.NODE_ENV !== 'production';
+    return isDev
+      ? 'Réponse invalide du serveur : l’API n’a pas renvoyé de JSON. Vérifiez les logs du terminal npm run dev.'
+      : 'Réponse invalide du serveur : l’API n’a pas renvoyé de JSON (erreur ou timeout Vercel). Vérifiez les logs du déploiement.';
+  }
+  return msg;
 }
 
 type TokenGetter = () => Promise<string | null>;

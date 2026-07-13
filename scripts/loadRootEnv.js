@@ -8,7 +8,9 @@ const dotenv = require('dotenv');
 const root = path.join(__dirname, '..');
 
 function loadRootEnv() {
-  dotenv.config({ path: path.join(root, '.env') });
+  // override: true — le .env local prime sur des variables shell obsolètes (ex. SUPABASE_URL).
+  dotenv.config({ path: path.join(root, '.env'), override: true });
+  // client/.env.local : ne pas écraser les variables déjà définies par .env racine.
   dotenv.config({ path: path.join(root, 'client', '.env.local') });
 }
 

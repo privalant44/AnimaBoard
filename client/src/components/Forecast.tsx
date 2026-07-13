@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import './Forecast.css';
 import { DATA_REFRESH_EVENT } from '../dataRefresh';
-import { apiFetch, apiUrl } from '../api';
+import { apiFetch, describeApiEndpoint, normalizeApiError } from '../api';
 import ForecastScenarios, { ForecastScenario } from './ForecastScenarios';
 import {
   countWorkdaysInMonth,
@@ -61,23 +61,6 @@ async function safeParseJson(res: Response): Promise<any> {
     const friendly = `Réponse invalide du serveur (${res.status}): JSON attendu. Vérifiez les logs Vercel.`;
     throw new Error(friendly);
   }
-}
-
-function normalizeApiError(err: unknown, endpointHint?: string): string {
-  const msg = err instanceof Error ? err.message : String(err);
-  if (/failed to fetch|networkerror|load failed|fetch failed/i.test(msg)) {
-    return [
-      'Impossible de joindre l’API (erreur réseau).',
-      endpointHint ? `Endpoint: ${endpointHint}.` : '',
-      'Vérifiez que le serveur API est démarré et que la route existe (notamment en déploiement Vercel).'
-    ]
-      .filter(Boolean)
-      .join(' ');
-  }
-  if (/JSON\.parse|unexpected character|SyntaxError/i.test(msg)) {
-    return 'Réponse invalide du serveur: l\'API n\'a pas renvoyé de JSON (erreur ou timeout Vercel). Vérifiez les logs du déploiement.';
-  }
-  return msg;
 }
 
 function safeParseLocalStorage<T>(raw: string | null, fallback: T): T {
@@ -543,7 +526,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
 
       setResources(resourcesWithProjects);
     } catch (err) {
-      const errorMessage = normalizeApiError(err, '/api/data/forecast-bootstrap');
+      const errorMessage = normalizeApiError(err, describeApiEndpoint('/api/data/forecast-bootstrap'));
       setError(errorMessage);
       console.error('❌ Error fetching forecast:', err);
       setAbsenceByResource({});
@@ -856,7 +839,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       }
     } catch (error) {
       console.error(`❌ Erreur lors de la sauvegarde du temps prévisionnel:`, error);
-      alert(normalizeApiError(error, apiUrl('/api/data/forecast-times')));
+      alert(normalizeApiError(error, describeApiEndpoint('/api/data/forecast-times')));
     }
   }, [setForecastEditingInput]);
 
@@ -1007,7 +990,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       setPendingPlannedAdd(null);
     } catch (error) {
       console.error('❌ Erreur création prestation prévisionnelle:', error);
-      alert(normalizeApiError(error, apiUrl('/api/data/planned-deliveries')));
+      alert(normalizeApiError(error, describeApiEndpoint('/api/data/planned-deliveries')));
     }
   }, [
     pendingPlannedAdd,
@@ -1031,7 +1014,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         patchPlannedScenarioInState(updated);
       } catch (error) {
         console.error('❌ Erreur mise à jour TJM:', error);
-        alert(normalizeApiError(error, apiUrl('/api/data/planned-deliveries')));
+        alert(normalizeApiError(error, describeApiEndpoint('/api/data/planned-deliveries')));
       }
     },
     [savePlannedDelivery, patchPlannedScenarioInState]
@@ -1049,7 +1032,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         patchPlannedScenarioInState(updated);
       } catch (error) {
         console.error('❌ Erreur mise à jour description:', error);
-        alert(normalizeApiError(error, apiUrl('/api/data/planned-deliveries')));
+        alert(normalizeApiError(error, describeApiEndpoint('/api/data/planned-deliveries')));
       }
     },
     [savePlannedDelivery, patchPlannedScenarioInState]
@@ -1068,7 +1051,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         });
       } catch (error) {
         console.error('❌ Erreur suppression prestation prévisionnelle:', error);
-        alert(normalizeApiError(error, apiUrl('/api/data/planned-deliveries')));
+        alert(normalizeApiError(error, describeApiEndpoint('/api/data/planned-deliveries')));
       }
     },
     [savePlannedDelivery]
@@ -1102,7 +1085,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       if (!trimmed) {
         void persistPlannedForecastEdit(planned, month, null).catch((error) => {
           console.error('❌ Erreur suppression temps prévisionnel:', error);
-          alert(normalizeApiError(error, apiUrl('/api/data/planned-deliveries')));
+          alert(normalizeApiError(error, describeApiEndpoint('/api/data/planned-deliveries')));
         });
         return true;
       }
@@ -1125,7 +1108,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
 
       void persistPlannedForecastEdit(planned, month, parsed).catch((error) => {
         console.error('❌ Erreur sauvegarde temps prévisionnel:', error);
-        alert(normalizeApiError(error, apiUrl('/api/data/planned-deliveries')));
+        alert(normalizeApiError(error, describeApiEndpoint('/api/data/planned-deliveries')));
       });
       return true;
     },

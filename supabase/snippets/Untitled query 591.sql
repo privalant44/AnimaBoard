@@ -1,18 +1,15 @@
--- Journal des exécutions du batch quotidien (cron + lancement manuel)
+-- Catalogue global des scénarios prévisionnels (numéro, titre, description)
 
-create table if not exists public.batch_sync_logs (
-  id bigserial primary key,
-  run_date date not null,
-  started_at timestamptz not null,
-  finished_at timestamptz,
-  duration_ms integer,
-  success boolean not null default false,
-  trigger_source text not null default 'cron',
-  triggered_by text,
-  steps jsonb not null default '[]',
-  error_message text,
-  created_at timestamptz not null default now()
+create table if not exists public.forecast_scenarios (
+  number integer primary key check (number > 0),
+  title text not null default '',
+  description text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
-create index if not exists idx_batch_sync_logs_run_date on public.batch_sync_logs (run_date desc);
-create index if not exists idx_batch_sync_logs_started_at on public.batch_sync_logs (started_at desc);
+alter table public.forecast_scenarios enable row level security;
+
+drop policy if exists "Service role full access" on public.forecast_scenarios;
+create policy "Service role full access" on public.forecast_scenarios
+  for all using (true) with check (true);

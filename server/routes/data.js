@@ -16,6 +16,11 @@ const {
   updatePlannedDelivery,
   deletePlannedDelivery,
 } = require('../../lib/plannedDeliveriesService');
+const {
+  listForecastScenarios,
+  upsertForecastScenario,
+  deleteForecastScenario,
+} = require('../../lib/forecastScenariosService');
 
 // Helper: réponse standard avec data
 function okData(res, data, fileLabel = null, count = null) {
@@ -303,8 +308,12 @@ router.post('/planned-deliveries', async (req, res) => {
     if (!body.resourceId) {
       return res.status(400).json({ success: false, error: 'resourceId est requis' });
     }
+    if (!body.scenario) {
+      return res.status(400).json({ success: false, error: 'scenario est requis' });
+    }
     const created = await createPlannedDelivery({
       resourceId: body.resourceId,
+      scenario: body.scenario,
       tjm: body.tjm,
       description: body.description,
     });
@@ -312,6 +321,41 @@ router.post('/planned-deliveries', async (req, res) => {
   } catch (error) {
     const status = error.status || 500;
     if (status >= 500) console.error('❌ Erreur /api/data/planned-deliveries:', error);
+    return res.status(status).json({ success: false, error: error.message });
+  }
+});
+
+// --- Catalogue scénarios prévisionnels (forecast_scenarios)
+router.get('/forecast-scenarios', async (req, res) => {
+  try {
+    const data = await listForecastScenarios();
+    return okData(res, data, 'forecast-scenarios', data.length);
+  } catch (error) {
+    const status = error.status || 500;
+    if (status >= 500) console.error('❌ Erreur GET /api/data/forecast-scenarios:', error);
+    return res.status(status).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/forecast-scenarios', async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (body.delete && body.number) {
+      await deleteForecastScenario(body.number);
+      return res.json({ success: true, message: 'Scénario supprimé' });
+    }
+    if (!body.number) {
+      return res.status(400).json({ success: false, error: 'number est requis' });
+    }
+    const saved = await upsertForecastScenario({
+      number: body.number,
+      title: body.title,
+      description: body.description,
+    });
+    return res.json({ success: true, message: 'Scénario enregistré', data: saved });
+  } catch (error) {
+    const status = error.status || 500;
+    if (status >= 500) console.error('❌ Erreur POST /api/data/forecast-scenarios:', error);
     return res.status(status).json({ success: false, error: error.message });
   }
 });

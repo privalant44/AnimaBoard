@@ -7,8 +7,11 @@ const { toHolidayYmdString } = require('../../lib/holidayDate');
 const {
   getPlannedCaContribution,
   parseScenarioFilter,
-  formatPlannedScenarioFilterLabel,
 } = require('../../lib/plannedDeliveriesService');
+const {
+  listForecastScenarios,
+  formatPlannedScenarioFilterLabel,
+} = require('../../lib/forecastScenariosService');
 const { format, parseISO, startOfMonth, endOfMonth, eachMonthOfInterval } = require('date-fns');
 
 const DEFAULT_INCOME_STATEMENT_COMMENT =
@@ -1034,6 +1037,14 @@ class DashboardService {
       isOpenMonth: (month) => !isClosedMonth(month),
       averageDailyCostByResource: avgDailyCostByResource,
     });
+
+    let forecastScenarioCatalog = [];
+    try {
+      forecastScenarioCatalog = await listForecastScenarios();
+    } catch (e) {
+      console.warn('⚠️ forecast_scenarios:', e.message || e);
+    }
+
     plannedCa.internalByMonth.forEach((ca, month) => {
       forecastCaInternalByMonth.set(month, (forecastCaInternalByMonth.get(month) || 0) + ca);
     });
@@ -1169,9 +1180,13 @@ class DashboardService {
         resultatForecastFormula:
           'Mois non clôturés: résultat Pennylane + (CA prévisionnel total − CA Pennylane) ; charges Pennylane inchangées',
         plannedScenarios: plannedCa.availableScenarios,
+        forecastScenarios: forecastScenarioCatalog,
         plannedScenarioFilter:
           plannedScenarioFilter === 'none' ? 'none' : plannedScenarioFilter,
-        plannedScenarioFilterLabel: formatPlannedScenarioFilterLabel(plannedScenarioFilter),
+        plannedScenarioFilterLabel: formatPlannedScenarioFilterLabel(
+          plannedScenarioFilter,
+          forecastScenarioCatalog
+        ),
         plannedScenarioFilterCumulative: plannedScenarioFilter !== 'none',
         margeBruteAnimaNeoFormula:
           'Mois clôturés: CA Anima Néo (Pennylane) − Σ total_days_prod × averageDailyCost (timesheets_detail). Mois non clôturés: CA prévisionnel − Σ (jours saisis + prévisionnels Boond + scénarios manuels) × coût journalier prestation/ressource',

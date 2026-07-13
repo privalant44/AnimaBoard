@@ -1,0 +1,189 @@
+.forecast-scenarios-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(44, 95, 93, 0.45);
+  z-index: 1100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 2rem 1rem;
+  overflow-y: auto;
+}
+
+.forecast-scenarios-panel {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  width: min(920px, 100%);
+  max-height: calc(100vh - 4rem);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.forecast-scenarios-header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #e8ecec;
+  background: #fafafa;
+}
+
+.forecast-scenarios-header h2 {
+  margin: 0;
+  color: #2c5f5d;
+  font-size: 1.75rem;
+}
+
+.forecast-scenarios-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+}
+
+.forecast-scenarios-state {
+  color: #555;
+  margin: 0;
+}
+
+.forecast-scenarios-state--error {
+  color: #b42318;
+}
+
+.forecast-scenarios-retry {
+  margin-left: 0.75rem;
+  padding: 0.25rem 0.75rem;
+  cursor: pointer;
+}
+
+.forecast-scenarios-form {
+  background: #f7fafa;
+  border: 1px solid #d8e8e7;
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.forecast-scenarios-form h3,
+.forecast-scenarios-list-wrap h3 {
+  margin: 0 0 1rem;
+  color: #2c5f5d;
+  font-size: 1.1rem;
+}
+
+.forecast-scenarios-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.85rem;
+}
+
+.forecast-scenarios-form-row label {
+  font-weight: 600;
+  color: #444;
+  font-size: 0.9rem;
+}
+
+.forecast-scenarios-form-row input,
+.forecast-scenarios-form-row textarea {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #c5d9d8;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.forecast-scenarios-form-row input:focus,
+.forecast-scenarios-form-row textarea:focus {
+  outline: none;
+  border-color: #7ba8a6;
+  box-shadow: 0 0 0 2px rgba(166, 201, 200, 0.35);
+}
+
+.forecast-scenarios-form-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
+.forecast-scenarios-save-btn {
+  padding: 0.55rem 1.25rem;
+  background: #2c5f5d;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.forecast-scenarios-save-btn:hover:not(:disabled) {
+  background: #1f4543;
+}
+
+.forecast-scenarios-save-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.forecast-scenarios-cancel-btn {
+  padding: 0.55rem 1.25rem;
+  background: white;
+  color: #444;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.forecast-scenarios-empty {
+  color: #666;
+  font-style: italic;
+  margin: 0;
+}
+
+.forecast-scenarios-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.forecast-scenarios-table th,
+.forecast-scenarios-table td {
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid #e8ecec;
+  text-align: left;
+  vertical-align: top;
+}
+
+.forecast-scenarios-table th {
+  background: #f0f6f6;
+  color: #2c5f5d;
+  font-weight: 600;
+}
+
+.forecast-scenarios-actions {
+  white-space: nowrap;
+}
+
+.forecast-scenarios-actions button {
+  margin-right: 0.5rem;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid #c5d9d8;
+  background: white;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.forecast-scenarios-actions button:hover {
+  background: #f0f6f6;
+}
+
+.forecast-scenarios-delete-btn {
+  color: #b42318;
+  border-color: #f5c2c0 !important;
+}
+
+.forecast-scenarios-delete-btn:hover {
+  background: #fef3f2 !important;
+}

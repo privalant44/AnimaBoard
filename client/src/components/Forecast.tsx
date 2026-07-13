@@ -2,11 +2,18 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import './Forecast.css';
 import { DATA_REFRESH_EVENT } from '../dataRefresh';
 import { apiFetch, apiUrl } from '../api';
+import ForecastScenarios, { ForecastScenario } from './ForecastScenarios';
 import {
   countWorkdaysInMonth,
   countWorkdaysInYear,
   holidaySetFromApiRows
 } from '../utils/workdays';
+
+function getScenarioDisplayLabel(number: number, catalog: ForecastScenario[]): string {
+  const entry = catalog.find((s) => s.number === number);
+  if (entry?.title?.trim()) return `${number} — ${entry.title.trim()}`;
+  return String(number);
+}
 
 interface Project {
   id: string | number;
@@ -332,6 +339,12 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
   const [plannedDeliveriesByResource, setPlannedDeliveriesByResource] = useState<
     Record<string, PlannedScenario[]>
   >({});
+  const [forecastScenarios, setForecastScenarios] = useState<ForecastScenario[]>([]);
+  const [scenariosOpen, setScenariosOpen] = useState(false);
+  const [pendingPlannedAdd, setPendingPlannedAdd] = useState<{
+    resourceId: number;
+    scenarioInput: string;
+  } | null>(null);
   const [editingPlannedMonth, setEditingPlannedMonth] = useState<{
     resourceId: number;
     scenario: number;
@@ -384,6 +397,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       setTimesheetsAggregate(payload.timesheetsAggregate || {});
       setAbsenceByResource(payload.absenceByResource || {});
       setPlannedDeliveriesByResource(payload.plannedDeliveriesByResource || {});
+      setForecastScenarios(Array.isArray(payload.forecastScenarios) ? payload.forecastScenarios : []);
       const holidayDateList = Array.from(
         holidaySetFromApiRows(Array.isArray(payload.holidays) ? payload.holidays : [])
       );
@@ -931,19 +945,77 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
     });
   }, []);
 
-  const addPlannedDelivery = useCallback(
-    async (resourceId: number) => {
-      try {
-        const created = await savePlannedDelivery({ resourceId });
-        if (!created) return;
-        patchPlannedScenarioInState(created);
-      } catch (error) {
-        console.error('❌ Erreur création prestation prévisionnelle:', error);
-        alert(normalizeApiError(error, apiUrl('/api/data/planned-deliveries')));
+  const reloadForecastScenarios = useCallback(async () => {
+    try {
+      const response = await apiFetch('/api/data/forecast-scenarios');
+      const body = await safeParseJson(response);
+      if (response.ok && body?.success) {
+        setForecastScenarios(Array.isArray(body.data) ? body.data : []);
       }
+    } catch (e) {
+      console.warn('⚠️ forecast-scenarios:', e);
+    }
+  }, []);
+
+  const addPlannedDelivery = useCallback(
+    (resourceId: number) => {
+      if (forecastScenarios.length === 0) {
+        alert(
+          'Aucun scénario défini. Créez d’abord un scénario via le bouton « Scénarios » en haut de la page.'
+        );
+        setScenariosOpen(true);
+        return;
+      }
+      if (collapsedPlannedResources.has(resourceId)) {
+        setCollapsedPlannedResources((prev) => {
+          const next = new Set(prev);
+          next.delete(resourceId);
+          return next;
+        });
+      }
+      setPendingPlannedAdd({ resourceId, scenarioInput: '' });
     },
-    [savePlannedDelivery, patchPlannedScenarioInState]
+    [forecastScenarios.length, collapsedPlannedResources]
   );
+
+  const confirmPendingPlannedAdd = useCallback(async () => {
+    if (!pendingPlannedAdd) return;
+    const scenario = parseInt(pendingPlannedAdd.scenarioInput.trim(), 10);
+    if (!Number.isFinite(scenario) || scenario <= 0) {
+      alert('Saisissez un numéro de scénario valide.');
+      return;
+    }
+    if (!forecastScenarios.some((s) => s.number === scenario)) {
+      alert(`Le scénario n°${scenario} n’existe pas. Créez-le via « Scénarios ».`);
+      return;
+    }
+    const existing = getPlannedMapForResource(
+      plannedDeliveriesByResource,
+      pendingPlannedAdd.resourceId
+    );
+    if (existing.some((p) => p.scenario === scenario)) {
+      alert(`Ce collaborateur a déjà une prestation pour le scénario ${scenario}.`);
+      return;
+    }
+    try {
+      const created = await savePlannedDelivery({
+        resourceId: pendingPlannedAdd.resourceId,
+        scenario,
+      });
+      if (!created) return;
+      patchPlannedScenarioInState(created);
+      setPendingPlannedAdd(null);
+    } catch (error) {
+      console.error('❌ Erreur création prestation prévisionnelle:', error);
+      alert(normalizeApiError(error, apiUrl('/api/data/planned-deliveries')));
+    }
+  }, [
+    pendingPlannedAdd,
+    forecastScenarios,
+    plannedDeliveriesByResource,
+    savePlannedDelivery,
+    patchPlannedScenarioInState,
+  ]);
 
   const updatePlannedTjm = useCallback(
     async (resourceId: number, scenario: number, rawTjm: string) => {
@@ -1417,6 +1489,13 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
           <button className="back-button" onClick={onBack}>
             ← Retour
           </button>
+          <button
+            type="button"
+            className="forecast-scenarios-btn"
+            onClick={() => setScenariosOpen(true)}
+          >
+            Scénarios
+          </button>
           <h2>Forecast</h2>
         </div>
         <div className="forecast-container">
@@ -1435,6 +1514,13 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         <div className="forecast-header">
           <button className="back-button" onClick={onBack}>
             ← Retour
+          </button>
+          <button
+            type="button"
+            className="forecast-scenarios-btn"
+            onClick={() => setScenariosOpen(true)}
+          >
+            Scénarios
           </button>
           <h2>Forecast</h2>
         </div>
@@ -1455,6 +1541,13 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
       <div className="forecast-header">
         <button className="back-button" onClick={onBack}>
           ← Retour
+        </button>
+        <button
+          type="button"
+          className="forecast-scenarios-btn"
+          onClick={() => setScenariosOpen(true)}
+        >
+          Scénarios
         </button>
         <h2>Forecast</h2>
       </div>
@@ -1800,7 +1893,61 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                     +
                                   </button>
                                 </div>
-                                {isPlannedExpanded && plannedItems.length > 0 && (
+                                {pendingPlannedAdd?.resourceId === resource.id && (
+                                  <div className="forecast-planned-add-form">
+                                    <label htmlFor={`planned-scenario-${resource.id}`}>N° scénario</label>
+                                    <input
+                                      id={`planned-scenario-${resource.id}`}
+                                      type="number"
+                                      min={1}
+                                      step={1}
+                                      className="forecast-planned-scenario-input"
+                                      list={`scenario-options-${resource.id}`}
+                                      value={pendingPlannedAdd.scenarioInput}
+                                      onChange={(e) =>
+                                        setPendingPlannedAdd({
+                                          resourceId: resource.id,
+                                          scenarioInput: e.target.value,
+                                        })
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          e.preventDefault();
+                                          void confirmPendingPlannedAdd();
+                                        }
+                                        if (e.key === 'Escape') setPendingPlannedAdd(null);
+                                      }}
+                                      placeholder="Ex. 1"
+                                      autoFocus
+                                    />
+                                    <datalist id={`scenario-options-${resource.id}`}>
+                                      {forecastScenarios.map((s) => (
+                                        <option
+                                          key={s.number}
+                                          value={String(s.number)}
+                                          label={s.title ? `${s.number} — ${s.title}` : String(s.number)}
+                                        />
+                                      ))}
+                                    </datalist>
+                                    <button
+                                      type="button"
+                                      className="forecast-planned-add-confirm-btn"
+                                      onClick={() => void confirmPendingPlannedAdd()}
+                                    >
+                                      Créer
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="forecast-planned-add-cancel-btn"
+                                      onClick={() => setPendingPlannedAdd(null)}
+                                    >
+                                      Annuler
+                                    </button>
+                                  </div>
+                                )}
+                                {isPlannedExpanded &&
+                                  (plannedItems.length > 0 ||
+                                    pendingPlannedAdd?.resourceId === resource.id) && (
                                   <div className="project-months">
                                     <table className="forecast-table forecast-planned-compact">
                                       <tbody>
@@ -1842,9 +1989,35 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
                                           >
                                             <th className="forecast-planned-corner" scope="row">
                                               <div className="forecast-planned-row-head">
-                                                <span className="forecast-planned-row-label">
-                                                  P{planned.scenario}
-                                                </span>
+                                                <input
+                                                  type="number"
+                                                  className="forecast-planned-scenario-input"
+                                                  value={planned.scenario}
+                                                  readOnly
+                                                  title={getScenarioDisplayLabel(
+                                                    planned.scenario,
+                                                    forecastScenarios
+                                                  )}
+                                                  aria-label={`Scénario ${planned.scenario}`}
+                                                />
+                                                {forecastScenarios.find(
+                                                  (s) => s.number === planned.scenario
+                                                )?.title && (
+                                                  <span
+                                                    className="forecast-planned-scenario-title"
+                                                    title={
+                                                      forecastScenarios.find(
+                                                        (s) => s.number === planned.scenario
+                                                      )?.description || ''
+                                                    }
+                                                  >
+                                                    {
+                                                      forecastScenarios.find(
+                                                        (s) => s.number === planned.scenario
+                                                      )?.title
+                                                    }
+                                                  </span>
+                                                )}
                                                 <span className="forecast-planned-sep" aria-hidden>
                                                   –
                                                 </span>
@@ -2254,6 +2427,12 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
           </>
         )}
       </div>
+      {scenariosOpen && (
+        <ForecastScenarios
+          onClose={() => setScenariosOpen(false)}
+          onChanged={() => void reloadForecastScenarios()}
+        />
+      )}
     </div>
   );
 };

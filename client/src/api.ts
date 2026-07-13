@@ -5,6 +5,16 @@
 /** Vide en dev : URLs relatives /api/* → setupProxy.js (127.0.0.1:3000). */
 export const API_BASE = process.env.REACT_APP_API_URL || '';
 
+if (
+  process.env.NODE_ENV !== 'production' &&
+  typeof window !== 'undefined' &&
+  /\/\/localhost:3000/i.test(API_BASE)
+) {
+  console.warn(
+    '[api] REACT_APP_API_URL pointe sur localhost:3000 — sur Windows, préférez laisser vide (proxy CRA) ou http://127.0.0.1:3000.'
+  );
+}
+
 export function apiUrl(path: string): string {
   return API_BASE + path;
 }

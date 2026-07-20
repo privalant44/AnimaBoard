@@ -766,6 +766,7 @@ class DashboardService {
         taceIsClosedMonth: true,
         workdaysInMonth: 0,
         absencesInMonth: 0,
+        taceEligibleResourcesCount: 0,
         taceDenominatorDays: 0,
         tacePct: 0,
         besoinsCrees: 0,
@@ -807,11 +808,13 @@ class DashboardService {
     });
 
     // 2) TACE constaté mensuel:
-    // TACE(%) = somme(total_days_prod timesheets_detail du mois) / (jours_ouvres_du_mois * nb_ressources_type_0_3_10) * 100
+    // TACE(%) = base / ((jours_ouvres * nb_ressources_type_0_3_10) - conges) * 100
+    // Le dénominateur inclut TOUTES les ressources éligibles (pas seulement celles avec activité),
+    // sinon un effectif peu staffé affiche un TACE artificiellement élevé.
     const eligibleTypeCodes = new Set(['0', '3', '10']);
     const [resourcesRes, timesheetsRes, forecastRes, deliveriesRes, holidaysRes, absencesRes] =
       await Promise.all([
-        supabase.from('resources').select('id,type_of'),
+        supabase.from('resources').select('id,type_of,is_visible'),
         supabase
           .from('timesheets_detail')
           .select('resource_id,month,delivery_id,total_days_prod')
@@ -851,6 +854,7 @@ class DashboardService {
     const eligibleResourceIds = new Set(
       (resourcesRes.data || [])
         .filter((r) => {
+          if (r?.is_visible === false) return false;
           const t = r?.type_of == null ? null : String(r.type_of);
           return t != null && eligibleTypeCodes.has(t);
         })
@@ -875,7 +879,6 @@ class DashboardService {
 
     const actualByMonthResource = new Map();
     const actualByMonthDelivery = new Map();
-    const resourcesWithTimesheetsByMonth = new Map();
     (timesheetsRes.data || []).forEach((r) => {
       const month = String(r.month || '');
       const resourceId = String(r.resource_id || '');
@@ -891,10 +894,6 @@ class DashboardService {
           (actualByMonthDelivery.get(deliveryKey) || 0) + prodDays
         );
       }
-      if (!resourcesWithTimesheetsByMonth.has(month)) {
-        resourcesWithTimesheetsByMonth.set(month, new Set());
-      }
-      resourcesWithTimesheetsByMonth.get(month).add(resourceId);
     });
 
     const deliveryToResourceId = new Map();
@@ -973,7 +972,6 @@ class DashboardService {
 
     // Mois ouverts : temps saisis + prévisionnels (aligné synthèse Forecast / Report)
     const forecastByMonthResource = new Map();
-    const resourcesWithForecastByMonth = new Map();
     const forecastCaInternalByMonth = new Map();
     const forecastCaExternalByMonth = new Map();
     const forecastProdCostInternalByMonth = new Map();
@@ -1005,10 +1003,6 @@ class DashboardService {
           resourceKey,
           (forecastByMonthResource.get(resourceKey) || 0) + effectiveDays
         );
-        if (!resourcesWithForecastByMonth.has(month)) {
-          resourcesWithForecastByMonth.set(month, new Set());
-        }
-        resourcesWithForecastByMonth.get(month).add(resourceId);
       }
 
       const delivery = deliveryById.get(deliveryId);
@@ -1060,10 +1054,6 @@ class DashboardService {
         resourceKey,
         (forecastByMonthResource.get(resourceKey) || 0) + days
       );
-      if (!resourcesWithForecastByMonth.has(month)) {
-        resourcesWithForecastByMonth.set(month, new Set());
-      }
-      resourcesWithForecastByMonth.get(month).add(resourceId);
     });
 
     const absencesByMonthResource = new Map();
@@ -1082,11 +1072,9 @@ class DashboardService {
       let actualDays = 0;
       let absencesDays = 0;
       const monthClosed = isClosedMonth(m.month);
-      const monthlyEligibleResourceIds = monthClosed
-        ? (resourcesWithTimesheetsByMonth.get(m.month) || new Set())
-        : (resourcesWithForecastByMonth.get(m.month) || new Set());
-      const monthlyEligibleCount = monthlyEligibleResourceIds.size;
-      monthlyEligibleResourceIds.forEach((resourceId) => {
+      // Capacité = toutes les ressources éligibles visibles (types 0/3/10), y compris sans activité.
+      const monthlyEligibleCount = eligibleResourceIds.size;
+      eligibleResourceIds.forEach((resourceId) => {
         const key = `${m.month}|${resourceId}`;
         const baseActualDays = monthClosed
           ? Number(actualByMonthResource.get(key) || 0)
@@ -1103,6 +1091,7 @@ class DashboardService {
       m.taceIsClosedMonth = monthClosed;
       m.workdaysInMonth = workdays;
       m.absencesInMonth = round2(absencesDays);
+      m.taceEligibleResourcesCount = monthlyEligibleCount;
       m.taceDenominatorDays = denominator;
       m.tacePct = denominator > 0 ? round2((actualDays / denominator) * 100) : 0;
 
@@ -1186,9 +1175,9 @@ class DashboardService {
       meta: {
         taceEligibleResourceTypes: ['0', '3', '10'],
         taceEligibleResourcesRule:
-          'Mois clôturés: ressources 0/3/10 avec timesheet; mois non clôturés: ressources 0/3/10 avec temps saisi et/ou prévisionnel',
+          'Toutes les ressources visibles de type 0/3/10 (y compris sans activité sur le mois)',
         taceFormula:
-          'Mois clôturés: somme(total_days_prod) depuis timesheets_detail. Mois non clôturés: somme(temps saisis + prévisionnels Boond) par prestation + jours prévisionnels manuels (planned_forecast, cumul P1…Pn selon filtre). TACE(%) = base / ((jours_ouvres * nb_ressources_eligibles_du_mois) - conges_du_mois) * 100',
+          'Mois clôturés: somme(total_days_prod) depuis timesheets_detail. Mois non clôturés: somme(temps saisis + prévisionnels Boond) par prestation + jours prévisionnels manuels (planned_forecast, cumul P1…Pn selon filtre). TACE(%) = base / ((jours_ouvres * nb_ressources_eligibles_visibles) - conges_du_mois) * 100',
         caForecastFormula:
           'Mois non clôturés: Σ (jours saisis + jours prévisionnels Boond) × TJM par prestation (timesheets_detail + forecast_times) + Σ (jours prévisionnels manuels, cumul P1…Pn selon filtre) × TJM (planned_forecast)',
         resultatForecastFormula:

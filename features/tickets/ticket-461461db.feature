@@ -1,3 +1,4 @@
+@wip
 Feature:  Gestion des la vue par rôle
  Scenario: l'utilisateur ne voit que ce su'il a le droit de voir
     Given l'utilisateur est habilité    

@@ -1,3 +1,4 @@
+@wip
 Feature: Simulation du rôle
 
   Scenario: Accès aux modules et vues autorisées

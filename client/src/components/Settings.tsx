@@ -5,6 +5,7 @@ import SettingsDataSyncPanel from './settings/SettingsDataSyncPanel';
 import SettingsDiagnosticsPanel from './settings/SettingsDiagnosticsPanel';
 import SettingsBatchLogsPanel from './settings/SettingsBatchLogsPanel';
 import SettingsUsersPanel from './settings/SettingsUsersPanel';
+import SettingsTreasuryPlanPanel from './settings/SettingsTreasuryPlanPanel';
 import './Settings.css';
 
 interface SettingsProps {
@@ -12,7 +13,7 @@ interface SettingsProps {
   currentLogo: string | null;
 }
 
-type SettingsView = 'hub' | 'data-sync' | 'diagnostics' | 'batch-logs' | 'users';
+type SettingsView = 'hub' | 'data-sync' | 'diagnostics' | 'batch-logs' | 'users' | 'treasury-plan';
 
 const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
   const auth = useAuth();
@@ -72,6 +73,16 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
     );
   }
 
+  if (view === 'treasury-plan') {
+    return (
+      <div className="settings-page">
+        <div className="settings-container">
+          <SettingsTreasuryPlanPanel onBack={() => setView('hub')} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="settings-page">
       <div className="settings-container">
@@ -89,8 +100,17 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
             <span className="settings-hub-card-icon" aria-hidden="true">{'\u{1F4CB}'}</span>
             <span className="settings-hub-card-title">Journaux batch</span>
           </button>
+          <button type="button" className="settings-hub-card" onClick={() => setView('treasury-plan')}>
+            <span className="settings-hub-card-icon" aria-hidden="true">{'\u{1F4B0}'}</span>
+            <span className="settings-hub-card-title">Plan de trésorerie</span>
+          </button>
           {canManageUsers && (
-            <button type="button" className="settings-hub-card" onClick={() => setView('users')}>
+            <button
+              type="button"
+              className="settings-hub-card"
+              onClick={() => setView('users')}
+              data-testid="settings-hub-users"
+            >
               <span className="settings-hub-card-icon" aria-hidden="true">{'\u{1F465}'}</span>
               <span className="settings-hub-card-title">Administration utilisateurs</span>
             </button>

@@ -1,5 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '../api';
+import { useAuth } from '../auth/AuthProvider';
+import { isAuthEnabled } from '../auth/msalConfig';
+import { PERMISSIONS } from '../auth/roles';
+import HomeTreasuryPlanChart, { TreasuryPlanMonthRow } from './HomeTreasuryPlanChart';
 import './HomeMonthlyRecap.css';
 
 interface HomeMonthlyRow {
@@ -25,6 +29,12 @@ interface HomeMonthlyRow {
   delaiMoyenReponseCount?: number;
 }
 
+interface ForecastScenarioMeta {
+  number: number;
+  title: string;
+  description: string;
+}
+
 interface HomeMonthlyRecapResponse {
   year: number;
   monthly: HomeMonthlyRow[];
@@ -33,6 +43,7 @@ interface HomeMonthlyRecapResponse {
     taceEligibleResourcesCount?: number;
     taceFormula?: string;
     plannedScenarios?: number[];
+    forecastScenarios?: ForecastScenarioMeta[];
     plannedScenarioFilter?: 'all' | number;
     plannedScenarioFilterLabel?: string;
     caForecastFormula?: string;
@@ -41,6 +52,11 @@ interface HomeMonthlyRecapResponse {
 }
 
 const HomeMonthlyRecap: React.FC = () => {
+  const auth = useAuth();
+  const authOn = isAuthEnabled();
+  const canFinancial = !authOn || auth?.canView(PERMISSIONS.VIEW_HOME_FINANCIAL);
+  const canBesoins = !authOn || auth?.canView(PERMISSIONS.VIEW_HOME_BESOINS);
+  const canTreasury = !authOn || auth?.canView(PERMISSIONS.VIEW_HOME_TREASURY);
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [selectedScenario, setSelectedScenario] = useState<string>('none');
@@ -48,6 +64,13 @@ const HomeMonthlyRecap: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<HomeMonthlyRecapResponse | null>(null);
+  const [treasuryLoading, setTreasuryLoading] = useState(true);
+  const [treasuryError, setTreasuryError] = useState<string | null>(null);
+  const [treasuryMonthly, setTreasuryMonthly] = useState<TreasuryPlanMonthRow[]>([]);
+  const [treasurySettings, setTreasurySettings] = useState({
+    averagePaymentDelayDays: 30,
+    initialBalance: 0,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -78,11 +101,71 @@ const HomeMonthlyRecap: React.FC = () => {
     };
   }, [selectedYear, selectedScenario]);
 
+  useEffect(() => {
+    if (!canTreasury) {
+      setTreasuryLoading(false);
+      setTreasuryMonthly([]);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      setTreasuryLoading(true);
+      setTreasuryError(null);
+      try {
+        const scenarioParam = `&scenario=${encodeURIComponent(selectedScenario || 'none')}`;
+        const response = await apiFetch(
+          `/api/dashboard/treasury-plan?year=${selectedYear}${scenarioParam}`
+        );
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(body?.error || `Erreur ${response.status}`);
+        }
+        if (!cancelled) {
+          setTreasuryMonthly(Array.isArray(body.monthly) ? body.monthly : []);
+          setTreasurySettings({
+            averagePaymentDelayDays: Number(body?.settings?.averagePaymentDelayDays) || 30,
+            initialBalance: Number(body?.settings?.initialBalance) || 0,
+          });
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setTreasuryError(e instanceof Error ? e.message : 'Erreur inconnue');
+          setTreasuryMonthly([]);
+        }
+      } finally {
+        if (!cancelled) setTreasuryLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedYear, selectedScenario, canTreasury]);
+
   const scenarioOptions = useMemo(() => {
+    const fromCatalog = data?.meta?.forecastScenarios || [];
+    if (fromCatalog.length > 0) {
+      return fromCatalog
+        .map((s) => Number(s.number))
+        .filter((n) => Number.isFinite(n) && n > 0)
+        .sort((a, b) => a - b);
+    }
     const fromApi = data?.meta?.plannedScenarios || [];
     const unique = Array.from(new Set(fromApi)).sort((a, b) => a - b);
     return unique;
-  }, [data?.meta?.plannedScenarios]);
+  }, [data?.meta?.forecastScenarios, data?.meta?.plannedScenarios]);
+
+  const scenarioLabel = useCallback(
+    (n: number): string => {
+      const catalog = data?.meta?.forecastScenarios || [];
+      const formatOne = (num: number): string => {
+        const entry = catalog.find((s) => s.number === num);
+        return entry?.title?.trim() ? `${num} — ${entry.title.trim()}` : `P${num}`;
+      };
+      if (n <= 1) return formatOne(1);
+      return `${formatOne(1)} à ${formatOne(n)}`;
+    },
+    [data?.meta?.forecastScenarios]
+  );
 
   useEffect(() => {
     if (selectedScenario === 'none') return;
@@ -206,21 +289,31 @@ const HomeMonthlyRecap: React.FC = () => {
     );
   }
 
+  if (!canFinancial && !canBesoins && !canTreasury) {
+    return (
+      <main className="app-main" data-testid="home-no-access">
+        <div className="home-recap-panel">
+          <p className="home-recap-state">Aucune vue accueil autorisée pour votre profil.</p>
+        </div>
+      </main>
+    );
+  }
+
   return (
-    <main className="app-main">
+    <main className="app-main" data-testid="home-dashboard">
       <h1 className="home-dashboard-title">TABLEAU DE BORD ANIMA NEO</h1>
       <div className="home-recap-filters">
-        <label htmlFor="home-recap-scenario">Scénario prévi.</label>
+        <label htmlFor="home-recap-scenario">Scénario</label>
         <select
           id="home-recap-scenario"
           value={selectedScenario}
           onChange={(e) => setSelectedScenario(e.target.value)}
-          title="Aucun = CA de base uniquement ; P1, P1 à P2… = ajout cumulatif du CA prévisionnel manuel"
+          title="Aucun = CA de base uniquement ; scénario sélectionné = ajout cumulatif du CA prévisionnel manuel"
         >
           <option value="none">Aucun</option>
           {scenarioOptions.map((n) => (
             <option key={n} value={String(n)}>
-              {n === 1 ? 'P1' : `P1 à P${n}`}
+              {scenarioLabel(n)}
             </option>
           ))}
         </select>
@@ -250,7 +343,9 @@ const HomeMonthlyRecap: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              <tr className="section-row">
+              {canFinancial && (
+                <>
+              <tr className="section-row" data-testid="home-view-financial">
                 <td colSpan={(data?.monthly?.length || 0) + 2}>Financier</td>
               </tr>
               <tr>
@@ -348,8 +443,12 @@ const HomeMonthlyRecap: React.FC = () => {
                 ))}
                 <td className="num financial-month-forecast">{formatPct(totals.tacePct)}</td>
               </tr>
+                </>
+              )}
 
-              <tr className="section-row">
+              {canBesoins && (
+                <>
+              <tr className="section-row" data-testid="home-view-besoins">
                 <td colSpan={(data?.monthly?.length || 0) + 2}>
                   <div className="section-header">
                     <button
@@ -425,10 +524,23 @@ const HomeMonthlyRecap: React.FC = () => {
                   </tr>
                 </>
               )}
+                </>
+              )}
             </tbody>
           </table>
         </div>
       </div>
+      {canTreasury && (
+      <div data-testid="home-view-treasury">
+      <HomeTreasuryPlanChart
+        monthly={treasuryMonthly}
+        averagePaymentDelayDays={treasurySettings.averagePaymentDelayDays}
+        initialBalance={treasurySettings.initialBalance}
+        loading={treasuryLoading}
+        error={treasuryError}
+      />
+      </div>
+      )}
     </main>
   );
 };

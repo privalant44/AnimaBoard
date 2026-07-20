@@ -46,6 +46,24 @@
   color: #2C5F5D;
   margin: 0;
   font-size: 2rem;
+  margin-left: auto;
+}
+
+.forecast-scenarios-btn {
+  padding: 0.75rem 1.25rem;
+  background: white;
+  color: #2C5F5D;
+  border: 2px solid #A6C9C8;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.forecast-scenarios-btn:hover {
+  background: #f0f6f6;
+  border-color: #7BA8A6;
 }
 
 .forecast-container {
@@ -811,6 +829,63 @@
 .forecast-planned-add-btn:hover {
   background: #2c5f5d;
   color: #fff;
+}
+
+.forecast-planned-add-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.65rem 0.75rem;
+  margin: 0.35rem 0 0.5rem;
+  background: #fff8e8;
+  border: 1px solid #e8d49a;
+  border-radius: 6px;
+  font-size: 0.82rem;
+}
+
+.forecast-planned-add-form label {
+  font-weight: 600;
+  color: #2c5f5d;
+}
+
+.forecast-planned-scenario-input {
+  width: 3.5rem;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid #b8d4cf;
+  border-radius: 4px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.forecast-planned-scenario-title {
+  font-size: 0.75rem;
+  color: #5a7a77;
+  max-width: 6rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.forecast-planned-add-confirm-btn,
+.forecast-planned-add-cancel-btn {
+  padding: 0.3rem 0.65rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  border: 1px solid #b8d4cf;
+}
+
+.forecast-planned-add-confirm-btn {
+  background: #2c5f5d;
+  color: white;
+  border-color: #2c5f5d;
+}
+
+.forecast-planned-add-cancel-btn {
+  background: white;
+  color: #555;
 }
 
 .forecast-planned-compact {

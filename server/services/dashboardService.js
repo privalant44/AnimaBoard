@@ -7,8 +7,11 @@ const { toHolidayYmdString } = require('../../lib/holidayDate');
 const {
   getPlannedCaContribution,
   parseScenarioFilter,
-  formatPlannedScenarioFilterLabel,
 } = require('../../lib/plannedDeliveriesService');
+const {
+  listForecastScenarios,
+  formatPlannedScenarioFilterLabel,
+} = require('../../lib/forecastScenariosService');
 const { format, parseISO, startOfMonth, endOfMonth, eachMonthOfInterval } = require('date-fns');
 
 const DEFAULT_INCOME_STATEMENT_COMMENT =
@@ -800,7 +803,7 @@ class DashboardService {
           : {};
       const charges611 = chargesSumByLedgerAccountRef(byAccount, SOUS_TRAITANCE_CHARGE_ACCOUNT);
       bucket.sousTraitanceCharges611 = round2(charges611);
-      bucket.margeBruteSousTraitance = round2(bucket.caSousTraitance - charges611);
+      // margeBruteSousTraitance : voir section timesheets ci-dessous
     });
 
     // 2) TACE constaté mensuel:
@@ -904,14 +907,23 @@ class DashboardService {
       deliveryToResourceId.set(deliveryId, resourceId);
     });
 
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const closedMonthIndexForCurrentYear = now.getMonth(); // 0-based; ex: juillet => 6 (juin clôturé)
+
+    const isClosedMonth = (month) => {
+      const monthNum = parseInt(String(month).slice(5, 7), 10);
+      return y < currentYear || (y === currentYear && monthNum <= closedMonthIndexForCurrentYear);
+    };
+
     // Marge brute Anima Néo = CA Anima Néo − Σ (total_days_prod × averageDailyCost) par prestation
     const prodCostByMonth = new Map();
+    const prodCostExternalByMonth = new Map();
     (timesheetsRes.data || []).forEach((r) => {
       const month = String(r.month || '');
       const resourceId = String(r.resource_id || '');
       const deliveryId = String(r.delivery_id || '');
-      if (!monthMap.has(month) || !eligibleResourceIds.has(resourceId)) return;
-      if (!deliveryId || deliveryId === '0') return;
+      if (!monthMap.has(month) || !deliveryId || deliveryId === '0') return;
 
       const days = Number(r.total_days_prod) || 0;
       if (days <= 0) return;
@@ -920,11 +932,26 @@ class DashboardService {
       const dailyCost = deliveryAverageDailyCost(delivery);
       if (dailyCost == null) return;
 
+      const isExternal = resourceIsExternal.get(resourceId) === true;
+      if (isExternal) {
+        prodCostExternalByMonth.set(
+          month,
+          (prodCostExternalByMonth.get(month) || 0) + days * dailyCost
+        );
+        return;
+      }
+      if (!eligibleResourceIds.has(resourceId)) return;
+
       prodCostByMonth.set(month, (prodCostByMonth.get(month) || 0) + days * dailyCost);
     });
     months.forEach((m) => {
-      const cost = prodCostByMonth.get(m.month) || 0;
-      m.margeBruteAnimaNeo = round2(m.caAnimaNeo - cost);
+      const costInternal = prodCostByMonth.get(m.month) || 0;
+      m.margeBruteAnimaNeo = round2(m.caAnimaNeo - costInternal);
+      if (isClosedMonth(m.month)) {
+        const costExternal = prodCostExternalByMonth.get(m.month) || 0;
+        m.sousTraitanceCharges611 = round2(costExternal);
+        m.margeBruteSousTraitance = round2(m.caSousTraitance - costExternal);
+      }
     });
 
     const forecastByMonthDelivery = new Map();
@@ -943,15 +970,6 @@ class DashboardService {
         (forecastByMonthDelivery.get(deliveryKey) || 0) + value
       );
     });
-
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const closedMonthIndexForCurrentYear = now.getMonth(); // 0-based; ex: juillet => 6 (juin clôturé)
-
-    const isClosedMonth = (month) => {
-      const monthNum = parseInt(String(month).slice(5, 7), 10);
-      return y < currentYear || (y === currentYear && monthNum <= closedMonthIndexForCurrentYear);
-    };
 
     // Mois ouverts : temps saisis + prévisionnels (aligné synthèse Forecast / Report)
     const forecastByMonthResource = new Map();
@@ -1019,6 +1037,14 @@ class DashboardService {
       isOpenMonth: (month) => !isClosedMonth(month),
       averageDailyCostByResource: avgDailyCostByResource,
     });
+
+    let forecastScenarioCatalog = [];
+    try {
+      forecastScenarioCatalog = await listForecastScenarios();
+    } catch (e) {
+      console.warn('⚠️ forecast_scenarios:', e.message || e);
+    }
+
     plannedCa.internalByMonth.forEach((ca, month) => {
       forecastCaInternalByMonth.set(month, (forecastCaInternalByMonth.get(month) || 0) + ca);
     });
@@ -1067,11 +1093,8 @@ class DashboardService {
       m.tacePct = denominator > 0 ? round2((actualDays / denominator) * 100) : 0;
 
       if (!monthClosed) {
-        const baseCaAnimaNeo = m.caAnimaNeo;
-        const baseCaSousTraitance = m.caSousTraitance;
-        const baseCaTotal = round2(baseCaAnimaNeo + baseCaSousTraitance);
+        const baseCaTotal = round2(m.caAnimaNeo + m.caSousTraitance);
         const baseResultat = m.resultat;
-        const baseCharges611 = m.sousTraitanceCharges611;
         const caAnimaNeoForecast = forecastCaInternalByMonth.get(m.month) || 0;
         const caSousTraitanceForecast = forecastCaExternalByMonth.get(m.month) || 0;
         m.caAnimaNeo = round2(caAnimaNeoForecast);
@@ -1084,19 +1107,11 @@ class DashboardService {
           (plannedCa.internalCostByMonth.get(m.month) || 0);
         m.margeBruteAnimaNeo = round2(m.caAnimaNeo - forecastProdCostInternal);
 
-        let forecastCharges611 = baseCharges611;
-        if (baseCaSousTraitance > 0) {
-          forecastCharges611 = round2(
-            baseCharges611 * (m.caSousTraitance / baseCaSousTraitance)
-          );
-        } else if (m.caSousTraitance > 0) {
-          forecastCharges611 = round2(
-            (forecastProdCostExternalByMonth.get(m.month) || 0) +
-              (plannedCa.externalCostByMonth.get(m.month) || 0)
-          );
-        }
-        m.sousTraitanceCharges611 = forecastCharges611;
-        m.margeBruteSousTraitance = round2(m.caSousTraitance - forecastCharges611);
+        const forecastProdCostExternal =
+          (forecastProdCostExternalByMonth.get(m.month) || 0) +
+          (plannedCa.externalCostByMonth.get(m.month) || 0);
+        m.sousTraitanceCharges611 = round2(forecastProdCostExternal);
+        m.margeBruteSousTraitance = round2(m.caSousTraitance - forecastProdCostExternal);
       }
     });
 
@@ -1165,14 +1180,18 @@ class DashboardService {
         resultatForecastFormula:
           'Mois non clôturés: résultat Pennylane + (CA prévisionnel total − CA Pennylane) ; charges Pennylane inchangées',
         plannedScenarios: plannedCa.availableScenarios,
+        forecastScenarios: forecastScenarioCatalog,
         plannedScenarioFilter:
           plannedScenarioFilter === 'none' ? 'none' : plannedScenarioFilter,
-        plannedScenarioFilterLabel: formatPlannedScenarioFilterLabel(plannedScenarioFilter),
+        plannedScenarioFilterLabel: formatPlannedScenarioFilterLabel(
+          plannedScenarioFilter,
+          forecastScenarioCatalog
+        ),
         plannedScenarioFilterCumulative: plannedScenarioFilter !== 'none',
         margeBruteAnimaNeoFormula:
           'Mois clôturés: CA Anima Néo (Pennylane) − Σ total_days_prod × averageDailyCost (timesheets_detail). Mois non clôturés: CA prévisionnel − Σ (jours saisis + prévisionnels Boond + scénarios manuels) × coût journalier prestation/ressource',
         margeBruteSousTraitanceFormula:
-          'Mois clôturés: CA sous-traitance − charges 6110000 (Pennylane). Mois non clôturés: CA prévisionnel − charges 611 proratisées au CA ou coût journalier externe si pas de base Pennylane',
+          'Mois clôturés: CA sous-traitance (Pennylane) − Σ total_days_prod × averageDailyCost (timesheets_detail, ressources externes). Mois non clôturés: CA prévisionnel − Σ (jours saisis + prévisionnels Boond + scénarios manuels) × coût journalier prestation/ressource',
       },
     };
   }

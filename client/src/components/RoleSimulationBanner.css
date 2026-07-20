@@ -1,0 +1,31 @@
+.role-simulation-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem 1rem;
+  padding: 0.55rem 1rem;
+  background: #000;
+  border-bottom: 1px solid #000;
+  color: #fff;
+  font-size: 0.9rem;
+  z-index: 20;
+}
+
+.role-simulation-banner-title {
+  font-weight: 600;
+}
+
+.role-simulation-banner-button {
+  border: 1px solid #fff;
+  background: transparent;
+  color: #fff;
+  border-radius: 6px;
+  padding: 0.35rem 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.role-simulation-banner-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}

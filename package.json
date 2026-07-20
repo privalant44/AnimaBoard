@@ -34,7 +34,11 @@
     "rebuild-deliveries-from-min-range-stage": "node scripts/rebuild-deliveries-from-min-range-stage.js",
     "db:export-dev": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-dev-to-prod.ps1 -Action Export",
     "db:import-prod": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-dev-to-prod.ps1 -Action Import",
-    "db:clone-dev-to-prod": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-dev-to-prod.ps1 -Action Clone"
+    "db:clone-dev-to-prod": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-dev-to-prod.ps1 -Action Clone",
+    "db:clone-prod-to-dev": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-prod-to-dev.ps1 -Action Clone",
+    "test": "node scripts/run-bdd-tests.js",
+    "test:bdd": "node scripts/run-bdd-tests.js",
+    "test:unit-bdd": "cucumber-js"
   },
   "keywords": [
     "dashboard",

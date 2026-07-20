@@ -98,8 +98,12 @@ const loadReportFiltersFromStorage = () => {
 
 const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
   const userAccess = useUserAccess(isAuthEnabled());
+  const canViewForecastReport =
+    !isAuthEnabled() || userAccess.canView(PERMISSIONS.VIEW_REPORT_FORECAST);
   const canViewPennylane =
-    !isAuthEnabled() || userAccess.can(PERMISSIONS.DATA_FINANCE);
+    !isAuthEnabled() ||
+    userAccess.canView(PERMISSIONS.VIEW_REPORT_INCOME) ||
+    userAccess.can(PERMISSIONS.DATA_FINANCE);
 
   // Charger les filtres depuis localStorage au démarrage
   const savedFilters = loadReportFiltersFromStorage();
@@ -671,26 +675,30 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
           </button>
         </div>
       </div>
-      <div className="report-container">
+      <div className="report-container" data-testid="report-page">
         {activeReport === 'menu' ? (
           <div className="report-menu">
             <p className="report-menu-intro">Sélectionnez un rapport à afficher.</p>
             <div className="report-menu-buttons">
+              {canViewForecastReport && (
               <button
                 type="button"
                 className="report-menu-button"
                 onClick={() => setActiveReport('forecast-year')}
+                data-testid="report-view-forecast"
               >
                 <span className="report-menu-button-title">Synthèse Forecast</span>
                 <span className="report-menu-button-desc">
                   Année {new Date().getFullYear()} — par ressource et par mois (jours saisis + prévisionnels)
                 </span>
               </button>
+              )}
               {canViewPennylane && (
                 <button
                   type="button"
                   className="report-menu-button"
                   onClick={() => setActiveReport('pennylane-pl')}
+                  data-testid="report-view-income"
                 >
                   <span className="report-menu-button-title">Compte de Résultat</span>
                   <span className="report-menu-button-desc">

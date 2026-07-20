@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const dashboardService = require('../services/dashboardService');
+const { getTreasuryPlanData } = require('../../lib/treasuryPlanService');
 
 // Récupérer toutes les métriques du tableau de bord
 router.get('/metrics', async (req, res) => {
@@ -70,6 +71,19 @@ router.post('/income-statement/init', async (req, res) => {
     res.json({ ok: true, years: result });
   } catch (error) {
     console.error('❌ Erreur income-statement init:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Plan de trésorerie (CA forecast décalé + solde cumulé)
+router.get('/treasury-plan', async (req, res) => {
+  try {
+    const year = req.query.year != null ? req.query.year : undefined;
+    const scenario = req.query.scenario != null ? req.query.scenario : 'none';
+    const data = await getTreasuryPlanData(year, scenario, dashboardService);
+    res.json(data);
+  } catch (error) {
+    console.error('❌ Erreur treasury-plan:', error);
     res.status(500).json({ error: error.message });
   }
 });

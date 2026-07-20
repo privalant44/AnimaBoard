@@ -19,6 +19,12 @@ const {
   deleteUserRole,
 } = require(path.join(__dirname, '..', 'lib', 'userRoles'));
 const {
+  listRolePermissionMatrix,
+  updateRolePermissions,
+  buildRolePreview,
+} = require(path.join(__dirname, '..', 'lib', 'rolePermissions'));
+const { PERMISSIONS, roleHasPermission } = require(path.join(__dirname, '..', 'lib', 'roles'));
+const {
   authenticateLocal,
   signLocalToken,
   isLocalAuthConfigured,
@@ -128,6 +134,42 @@ module.exports = async (req, res) => {
             authMethod: 'local',
           },
         });
+      }
+
+      if (route === 'role-permissions' && req.method === 'GET') {
+        const access = req.access;
+        if (!access || !roleHasPermission(access.role, PERMISSIONS.USERS_MANAGE)) {
+          return res.status(403).json({ success: false, error: 'Accès réservé aux administrateurs' });
+        }
+        const payload = await listRolePermissionMatrix();
+        return res.status(200).json({ success: true, ...payload });
+      }
+
+      const rolePermissionsPreviewMatch = route.match(/^role-permissions\/([^/]+)\/preview$/);
+      if (rolePermissionsPreviewMatch && req.method === 'GET') {
+        const access = req.access;
+        if (!access || !roleHasPermission(access.role, PERMISSIONS.USERS_MANAGE)) {
+          return res.status(403).json({ success: false, error: 'Accès réservé aux administrateurs' });
+        }
+        const role = decodeURIComponent(rolePermissionsPreviewMatch[1]).trim().toLowerCase();
+        try {
+          const preview = await buildRolePreview(role);
+          return res.status(200).json({ success: true, ...preview });
+        } catch (err) {
+          return res.status(400).json({ success: false, error: err.message });
+        }
+      }
+
+      const rolePermissionsMatch = route.match(/^role-permissions\/([^/]+)$/);
+      if (rolePermissionsMatch && req.method === 'PUT') {
+        const access = req.access;
+        if (!access || !roleHasPermission(access.role, PERMISSIONS.USERS_MANAGE)) {
+          return res.status(403).json({ success: false, error: 'Accès réservé aux administrateurs' });
+        }
+        const role = decodeURIComponent(rolePermissionsMatch[1]).trim().toLowerCase();
+        const body = readJsonBody(req);
+        const effective = await updateRolePermissions(role, body.permissions);
+        return res.status(200).json({ success: true, role, permissions: effective });
       }
 
       if (route === 'users' && req.method === 'GET') {

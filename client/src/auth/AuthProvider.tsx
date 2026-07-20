@@ -42,44 +42,45 @@ import {
 
 } from './localSession';
 
-import type { AppRole, AppTab, Permission } from './roles';
-
+import type { AppRole, AppTab, Permission, ViewPermission } from './roles';
+import {
+  canAccessTab,
+  canAccessView,
+  hasPermission,
+  PERMISSIONS,
+  ROLE_LABELS,
+  shouldRestrictForecastToPersonal,
+} from './roles';
+import { getStoredSimulatedRole, setStoredSimulatedRole } from './roleSimulation';
 import { useUserAccess } from './useUserAccess';
 
-
+type RolePreviewPayload = {
+  role: AppRole;
+  roleLabel: string;
+  permissions: string[];
+};
 
 export type AuthContextValue = {
-
   account: AccountInfo | null;
-
   displayName: string;
-
   email: string;
-
   authMethod: 'microsoft' | 'local';
-
   logout: () => void;
-
   role: AppRole | null;
-
   roleLabel: string;
-
   permissions: string[];
-
+  realRole: AppRole | null;
   accessLoading: boolean;
-
   accessError: string | null;
-
   can: (permission: Permission) => boolean;
-
-  canView: (view: import('./roles').ViewPermission) => boolean;
-
+  canView: (view: ViewPermission) => boolean;
   canTab: (tab: AppTab) => boolean;
-
   restrictForecastToPersonal: boolean;
-
   refreshAccess: () => Promise<void>;
-
+  isSimulating: boolean;
+  simulatedRole: AppRole | null;
+  startRoleSimulation: (role: AppRole) => void;
+  stopRoleSimulation: () => void;
 };
 
 
@@ -97,78 +98,149 @@ export function useAuth(): AuthContextValue | null {
 
 
 function AuthenticatedShell({
-
   base,
-
   children,
-
 }: {
-
   base: Omit<
-
     AuthContextValue,
-
-    'role' | 'roleLabel' | 'permissions' | 'accessLoading' | 'accessError' | 'can' | 'canView' | 'canTab' | 'restrictForecastToPersonal' | 'refreshAccess'
-
+    | 'role'
+    | 'roleLabel'
+    | 'permissions'
+    | 'realRole'
+    | 'accessLoading'
+    | 'accessError'
+    | 'can'
+    | 'canView'
+    | 'canTab'
+    | 'restrictForecastToPersonal'
+    | 'refreshAccess'
+    | 'isSimulating'
+    | 'simulatedRole'
+    | 'startRoleSimulation'
+    | 'stopRoleSimulation'
   >;
-
   children: React.ReactNode;
-
 }) {
-
   const access = useUserAccess(true);
+  const [simulatedRole, setSimulatedRole] = useState<AppRole | null>(() => getStoredSimulatedRole());
+  const [simulatedPreview, setSimulatedPreview] = useState<RolePreviewPayload | null>(null);
 
+  const canSimulate =
+    access.role === 'admin' || hasPermission(access.permissions, PERMISSIONS.USERS_MANAGE);
 
+  const loadSimulationPreview = useCallback(async (role: AppRole) => {
+    try {
+      const res = await apiFetch(`/api/auth/role-permissions/${encodeURIComponent(role)}/preview`);
+      const data = (await res.json().catch(() => ({}))) as RolePreviewPayload & { error?: string };
+      if (!res.ok || !data.role || !Array.isArray(data.permissions)) {
+        setSimulatedPreview(null);
+        setSimulatedRole(null);
+        setStoredSimulatedRole(null);
+        return;
+      }
+      setSimulatedPreview({
+        role: data.role,
+        roleLabel: data.roleLabel || ROLE_LABELS[data.role] || data.role,
+        permissions: data.permissions,
+      });
+    } catch {
+      setSimulatedPreview(null);
+      setSimulatedRole(null);
+      setStoredSimulatedRole(null);
+    }
+  }, []);
 
-  const contextValue = useMemo<AuthContextValue>(
+  useEffect(() => {
+    if (!canSimulate || !simulatedRole) {
+      setSimulatedPreview(null);
+      return;
+    }
+    void loadSimulationPreview(simulatedRole);
+  }, [canSimulate, simulatedRole, loadSimulationPreview]);
 
-    () => ({
-
-      ...base,
-
-      role: access.role,
-
-      roleLabel: access.roleLabel,
-
-      permissions: access.permissions,
-
-      accessLoading: access.loading,
-
-      accessError: access.error,
-
-      can: access.can,
-
-      canView: access.canView,
-
-      canTab: access.canTab,
-
-      restrictForecastToPersonal: access.restrictForecastToPersonal,
-
-      refreshAccess: access.refresh,
-
-    }),
-
-    [base, access]
-
+  const startRoleSimulation = useCallback(
+    (role: AppRole) => {
+      if (!canSimulate) return;
+      setSimulatedRole(role);
+      setStoredSimulatedRole(role);
+    },
+    [canSimulate]
   );
 
+  const stopRoleSimulation = useCallback(() => {
+    setSimulatedRole(null);
+    setSimulatedPreview(null);
+    setStoredSimulatedRole(null);
+  }, []);
 
+  const isSimulating = Boolean(canSimulate && simulatedRole && simulatedPreview);
+  const effectiveRole = isSimulating ? simulatedPreview!.role : access.role;
+  const effectiveRoleLabel = isSimulating ? simulatedPreview!.roleLabel : access.roleLabel;
+  const effectivePermissions = isSimulating ? simulatedPreview!.permissions : access.permissions;
+
+  const can = useCallback(
+    (permission: Permission) => hasPermission(effectivePermissions, permission),
+    [effectivePermissions]
+  );
+
+  const canView = useCallback(
+    (view: ViewPermission) => canAccessView(effectivePermissions, view),
+    [effectivePermissions]
+  );
+
+  const canTab = useCallback(
+    (tab: AppTab) => canAccessTab(effectivePermissions, tab),
+    [effectivePermissions]
+  );
+
+  const restrictForecastToPersonal = shouldRestrictForecastToPersonal(effectiveRole, effectivePermissions);
+
+  const contextValue = useMemo<AuthContextValue>(
+    () => ({
+      ...base,
+      role: effectiveRole,
+      roleLabel: effectiveRoleLabel,
+      permissions: effectivePermissions,
+      realRole: access.role,
+      accessLoading: access.loading,
+      accessError: access.error,
+      can,
+      canView,
+      canTab,
+      restrictForecastToPersonal,
+      refreshAccess: access.refresh,
+      isSimulating,
+      simulatedRole: isSimulating ? simulatedRole : null,
+      startRoleSimulation,
+      stopRoleSimulation,
+    }),
+    [
+      base,
+      access.role,
+      access.loading,
+      access.error,
+      access.refresh,
+      effectiveRole,
+      effectiveRoleLabel,
+      effectivePermissions,
+      can,
+      canView,
+      canTab,
+      restrictForecastToPersonal,
+      isSimulating,
+      simulatedRole,
+      startRoleSimulation,
+      stopRoleSimulation,
+    ]
+  );
 
   if (access.loading) {
-
     return (
-
       <div className="auth-loading">
-
         <p>Chargement de votre profil…</p>
-
       </div>
-
     );
-
   }
-
-
 
   if (access.error) {
     return (
@@ -186,10 +258,7 @@ function AuthenticatedShell({
     );
   }
 
-
-
   return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>;
-
 }
 
 
@@ -666,43 +735,29 @@ function AuthDisabled({ children }: { children: React.ReactNode }) {
 
 
   const contextValue = useMemo<AuthContextValue>(
-
     () => ({
-
       account: null,
-
       displayName: 'Invité',
-
       email: '',
-
       authMethod: 'microsoft',
-
       logout: () => {},
-
       role: null,
-
       roleLabel: '',
-
       permissions: [],
-
+      realRole: null,
       accessLoading: false,
-
       accessError: null,
-
       can: () => true,
-
       canView: () => true,
-
       canTab: () => true,
-
       restrictForecastToPersonal: false,
-
       refreshAccess: async () => {},
-
+      isSimulating: false,
+      simulatedRole: null,
+      startRoleSimulation: () => {},
+      stopRoleSimulation: () => {},
     }),
-
     []
-
   );
 
 

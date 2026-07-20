@@ -2,6 +2,13 @@
 export const ROLES = ['admin', 'manager', 'commercial', 'consultation'] as const;
 export type AppRole = (typeof ROLES)[number];
 
+export const ROLE_LABELS: Record<AppRole, string> = {
+  admin: 'Administrateur',
+  manager: 'Manager',
+  commercial: 'Commercial',
+  consultation: 'Consultation',
+};
+
 export const PERMISSIONS = {
   TAB_HOME: 'tab:home',
   TAB_RESOURCES: 'tab:resources',

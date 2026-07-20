@@ -4,7 +4,7 @@ const { attachUserAccess } = require('../../lib/authorize');
 const { PERMISSIONS, roleHasPermission, ROLES, getRoleLabel } = require('../../lib/roles');
 const { getDisplayNameFromAuth } = require('../../lib/authUser');
 const { resolveUserAccess, listUserRoles, upsertUserRole, deleteUserRole } = require('../../lib/userRoles');
-const { listRolePermissionMatrix, updateRolePermissions } = require('../../lib/rolePermissions');
+const { listRolePermissionMatrix, updateRolePermissions, buildRolePreview } = require('../../lib/rolePermissions');
 const {
   authenticateLocal,
   signLocalToken,
@@ -117,6 +117,21 @@ router.put('/role-permissions/:role', withAuth, async (req, res) => {
   try {
     const effective = await updateRolePermissions(role, permissions);
     return res.json({ success: true, role, permissions: effective });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+router.get('/role-permissions/:role/preview', withAuth, async (req, res) => {
+  const access = requireAccess(req, res);
+  if (!access) return;
+  if (!roleHasPermission(access.role, PERMISSIONS.USERS_MANAGE)) {
+    return res.status(403).json({ success: false, error: 'Accès réservé aux administrateurs' });
+  }
+  const role = String(req.params.role || '').trim().toLowerCase();
+  try {
+    const preview = await buildRolePreview(role);
+    return res.json({ success: true, ...preview });
   } catch (err) {
     return res.status(400).json({ success: false, error: err.message });
   }

@@ -67,8 +67,6 @@ const RoleViewPreview: React.FC = () => {
 
   if (!auth?.can(PERMISSIONS.USERS_MANAGE)) return null;
 
-  const isActiveSimulation = auth.isSimulating && auth.simulatedRole === selectedRole;
-
   return (
     <section className="role-preview-section" data-testid="role-view-preview">
       <h3>Simulation de vue par rôle</h3>
@@ -98,26 +96,15 @@ const RoleViewPreview: React.FC = () => {
           disabled={loading}
           data-testid="role-preview-start-simulation"
         >
-          {auth.isSimulating ? 'Changer de rôle simulé' : 'Simuler ce rôle'}
+          Simuler ce rôle
         </button>
-        {auth.isSimulating && (
-          <button
-            type="button"
-            className="role-preview-stop-button"
-            onClick={() => auth.stopRoleSimulation()}
-            data-testid="role-preview-stop-simulation"
-          >
-            Quitter la simulation
-          </button>
-        )}
       </div>
 
       {error && <p className="role-management-error">{error}</p>}
-      {isActiveSimulation && (
-        <p className="role-preview-active-note" data-testid="role-preview-active-note">
-          Simulation active : vous naviguez en tant que <strong>{preview?.roleLabel || selectedRole}</strong>.
-        </p>
-      )}
+      <p className="role-preview-note" data-testid="role-preview-window-note">
+        La simulation s&apos;ouvre dans une nouvelle fenêtre du navigateur avec la vue exacte du rôle
+        sélectionné.
+      </p>
 
       {loading ? (
         <p>Chargement de l&apos;aperçu…</p>

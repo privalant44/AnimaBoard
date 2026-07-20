@@ -36,6 +36,8 @@ import {
 
   getLocalSession,
 
+  hydrateLocalSessionFromOpener,
+
   setLocalSession,
 
   LocalSession,
@@ -51,7 +53,11 @@ import {
   ROLE_LABELS,
   shouldRestrictForecastToPersonal,
 } from './roles';
-import { getStoredSimulatedRole, setStoredSimulatedRole } from './roleSimulation';
+import {
+  buildRoleSimulationWindowUrl,
+  getSimulatedRoleFromUrl,
+  isRoleSimulationWindow,
+} from './roleSimulation';
 import { useUserAccess } from './useUserAccess';
 
 type RolePreviewPayload = {
@@ -122,7 +128,10 @@ function AuthenticatedShell({
   children: React.ReactNode;
 }) {
   const access = useUserAccess(true);
-  const [simulatedRole, setSimulatedRole] = useState<AppRole | null>(() => getStoredSimulatedRole());
+  const isSimulationWindow = isRoleSimulationWindow();
+  const [simulatedRole, setSimulatedRole] = useState<AppRole | null>(() =>
+    isSimulationWindow ? getSimulatedRoleFromUrl() : null
+  );
   const [simulatedPreview, setSimulatedPreview] = useState<RolePreviewPayload | null>(null);
 
   const canSimulate =
@@ -135,7 +144,6 @@ function AuthenticatedShell({
       if (!res.ok || !data.role || !Array.isArray(data.permissions)) {
         setSimulatedPreview(null);
         setSimulatedRole(null);
-        setStoredSimulatedRole(null);
         return;
       }
       setSimulatedPreview({
@@ -146,34 +154,38 @@ function AuthenticatedShell({
     } catch {
       setSimulatedPreview(null);
       setSimulatedRole(null);
-      setStoredSimulatedRole(null);
     }
   }, []);
 
   useEffect(() => {
-    if (!canSimulate || !simulatedRole) {
+    if (!isSimulationWindow || !canSimulate || !simulatedRole) {
       setSimulatedPreview(null);
       return;
     }
     void loadSimulationPreview(simulatedRole);
-  }, [canSimulate, simulatedRole, loadSimulationPreview]);
+  }, [isSimulationWindow, canSimulate, simulatedRole, loadSimulationPreview]);
 
   const startRoleSimulation = useCallback(
     (role: AppRole) => {
       if (!canSimulate) return;
-      setSimulatedRole(role);
-      setStoredSimulatedRole(role);
+      window.open(buildRoleSimulationWindowUrl(role), '_blank');
     },
     [canSimulate]
   );
 
   const stopRoleSimulation = useCallback(() => {
+    if (window.opener) {
+      window.close();
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete('simulateRole');
+    window.history.replaceState({}, '', url.toString());
     setSimulatedRole(null);
     setSimulatedPreview(null);
-    setStoredSimulatedRole(null);
   }, []);
 
-  const isSimulating = Boolean(canSimulate && simulatedRole && simulatedPreview);
+  const isSimulating = Boolean(isSimulationWindow && canSimulate && simulatedRole && simulatedPreview);
   const effectiveRole = isSimulating ? simulatedPreview!.role : access.role;
   const effectiveRoleLabel = isSimulating ? simulatedPreview!.roleLabel : access.roleLabel;
   const effectivePermissions = isSimulating ? simulatedPreview!.permissions : access.permissions;
@@ -769,6 +781,7 @@ function AuthDisabled({ children }: { children: React.ReactNode }) {
 
 
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
+  hydrateLocalSessionFromOpener();
 
   const [pca, setPca] = useState<PublicClientApplication | null>(null);
 

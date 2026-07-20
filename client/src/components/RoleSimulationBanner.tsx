@@ -1,17 +1,29 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useAuth } from '../auth/AuthProvider';
+import { buildRoleSimulationTitle } from '../auth/roleSimulation';
 import './RoleSimulationBanner.css';
 
 const RoleSimulationBanner: React.FC = () => {
   const auth = useAuth();
 
-  if (!auth?.isSimulating || !auth.simulatedRole) return null;
+  const title =
+    auth?.isSimulating && auth.roleLabel ? buildRoleSimulationTitle(auth.roleLabel) : null;
+
+  useEffect(() => {
+    if (!title) return;
+    const previousTitle = document.title;
+    document.title = title;
+    return () => {
+      document.title = previousTitle;
+    };
+  }, [title]);
+
+  if (!auth?.isSimulating || !auth.simulatedRole || !title) return null;
 
   return (
     <div className="role-simulation-banner" role="status" data-testid="role-simulation-banner">
-      <span>
-        Mode simulation : vous visualisez l&apos;application en tant que{' '}
-        <strong>{auth.roleLabel}</strong>
+      <span className="role-simulation-banner-title" data-testid="role-simulation-title">
+        {title}
       </span>
       <button
         type="button"

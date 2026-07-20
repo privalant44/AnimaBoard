@@ -9,7 +9,7 @@ interface SettingsUsersPanelProps {
 }
 
 const SettingsUsersPanel: React.FC<SettingsUsersPanelProps> = ({ onBack }) => (
-  <SettingsPanelLayout title="Administration des utilisateurs" onBack={onBack}>
+  <SettingsPanelLayout title="Administration des utilisateurs" onBack={onBack} data-testid="settings-users-panel">
     <RoleViewPreview />
     <RolePermissionsManagement />
     <RoleManagement />

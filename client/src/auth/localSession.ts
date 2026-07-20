@@ -25,3 +25,16 @@ export function setLocalSession(session: LocalSession): void {
 export function clearLocalSession(): void {
   sessionStorage.removeItem(STORAGE_KEY);
 }
+
+/** Copie la session locale depuis la fenêtre ouvreuse (simulation de rôle dans un nouvel onglet). */
+export function hydrateLocalSessionFromOpener(): void {
+  if (getLocalSession()) return;
+  try {
+    const opener = window.opener;
+    if (!opener || opener.closed) return;
+    const raw = opener.sessionStorage.getItem(STORAGE_KEY);
+    if (raw) sessionStorage.setItem(STORAGE_KEY, raw);
+  } catch {
+    // Fenêtre ouvreuse inaccessible (cross-origin ou noopener)
+  }
+}

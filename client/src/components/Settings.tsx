@@ -105,7 +105,12 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
             <span className="settings-hub-card-title">Plan de trésorerie</span>
           </button>
           {canManageUsers && (
-            <button type="button" className="settings-hub-card" onClick={() => setView('users')}>
+            <button
+              type="button"
+              className="settings-hub-card"
+              onClick={() => setView('users')}
+              data-testid="settings-hub-users"
+            >
               <span className="settings-hub-card-icon" aria-hidden="true">{'\u{1F465}'}</span>
               <span className="settings-hub-card-title">Administration utilisateurs</span>
             </button>

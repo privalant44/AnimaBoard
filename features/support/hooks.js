@@ -11,7 +11,12 @@ class AccessWorld {
     this.permissions = [];
     this.resources = [];
     this.page = null;
+    this.context = null;
     this.baseUrl = null;
+    this.simulationPage = null;
+    this.simulatedRole = null;
+    this.simulatedRoleLabel = null;
+    this.simulatedPermissions = [];
   }
 }
 
@@ -37,14 +42,36 @@ AfterAll(async function () {
 Before(async function () {
   this.baseUrl = sharedBaseUrl;
   if (sharedBrowser) {
-    this.page = await sharedBrowser.newPage();
+    this.context = await sharedBrowser.newContext();
+    await this.context.addInitScript(
+      ({ storageKey, userEmail }) => {
+        sessionStorage.setItem(
+          storageKey,
+          JSON.stringify({
+            token: 'bdd-test-token',
+            displayName: 'Utilisateur test',
+            email: userEmail,
+          })
+        );
+      },
+      { storageKey: 'anima_local_auth_v1', userEmail: 'test@animaneo.fr' }
+    );
+    this.page = await this.context.newPage();
   }
 });
 
 After(async function () {
+  if (this.simulationPage) {
+    await this.simulationPage.close();
+    this.simulationPage = null;
+  }
   if (this.page) {
     await this.page.close();
     this.page = null;
+  }
+  if (this.context) {
+    await this.context.close();
+    this.context = null;
   }
 });
 

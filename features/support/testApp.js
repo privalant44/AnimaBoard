@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const { buildRolePreview } = require('../../lib/rolePermissions');
 
 let server = null;
 let currentAuthPayload = {
@@ -31,6 +32,15 @@ async function startTestApp() {
 
   app.get('/api/auth/me', (_req, res) => {
     res.json(currentAuthPayload);
+  });
+
+  app.get('/api/auth/role-permissions/:role/preview', async (req, res) => {
+    try {
+      const preview = await buildRolePreview(req.params.role);
+      res.json({ success: true, ...preview });
+    } catch (err) {
+      res.status(400).json({ error: err.message || 'Aperçu impossible' });
+    }
   });
 
   app.get('/api/dashboard/home-monthly-recap', (_req, res) => {

@@ -1052,6 +1052,20 @@ class DashboardService {
       forecastCaExternalByMonth.set(month, (forecastCaExternalByMonth.get(month) || 0) + ca);
     });
 
+    // Jours prévisionnels manuels (planned_forecast) : aligné synthèse Report / CA prévisionnel
+    (plannedCa.daysByMonthResource || new Map()).forEach((days, resourceKey) => {
+      const [month, resourceId] = resourceKey.split('|');
+      if (!month || !resourceId || isClosedMonth(month) || days <= 0) return;
+      forecastByMonthResource.set(
+        resourceKey,
+        (forecastByMonthResource.get(resourceKey) || 0) + days
+      );
+      if (!resourcesWithForecastByMonth.has(month)) {
+        resourcesWithForecastByMonth.set(month, new Set());
+      }
+      resourcesWithForecastByMonth.get(month).add(resourceId);
+    });
+
     const absencesByMonthResource = new Map();
     (absencesRes.data || []).forEach((r) => {
       const month = String(r.month || '');
@@ -1174,7 +1188,7 @@ class DashboardService {
         taceEligibleResourcesRule:
           'Mois clôturés: ressources 0/3/10 avec timesheet; mois non clôturés: ressources 0/3/10 avec temps saisi et/ou prévisionnel',
         taceFormula:
-          'Mois clôturés: somme(total_days_prod) depuis timesheets_detail. Mois non clôturés: somme(temps saisis + prévisionnels) par prestation. TACE(%) = base / ((jours_ouvres * nb_ressources_eligibles_du_mois) - conges_du_mois) * 100',
+          'Mois clôturés: somme(total_days_prod) depuis timesheets_detail. Mois non clôturés: somme(temps saisis + prévisionnels Boond) par prestation + jours prévisionnels manuels (planned_forecast, cumul P1…Pn selon filtre). TACE(%) = base / ((jours_ouvres * nb_ressources_eligibles_du_mois) - conges_du_mois) * 100',
         caForecastFormula:
           'Mois non clôturés: Σ (jours saisis + jours prévisionnels Boond) × TJM par prestation (timesheets_detail + forecast_times) + Σ (jours prévisionnels manuels, cumul P1…Pn selon filtre) × TJM (planned_forecast)',
         resultatForecastFormula:

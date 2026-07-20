@@ -43,28 +43,30 @@ async function startTestApp() {
     }
   });
 
-  app.get('/api/dashboard/home-monthly-recap', (_req, res) => {
-    res.json({
-      year: new Date().getFullYear(),
-      monthly: [
-        {
-          month: '2026-01',
-          caAnimaNeo: 1000,
-          caSousTraitance: 0,
-          margeBruteAnimaNeo: 200,
-          margeBruteSousTraitance: 0,
-          resultat: 100,
-          tacePct: 80,
-          besoinsCrees: 1,
-          besoinsStock: 2,
-          besoinsGagnes: 0,
-          besoinsPerdus: 0,
-          besoinsAbandonnes: 0,
-          besoinsStandBy: 0,
-          delaiMoyenReponseDays: 1,
-        },
-      ],
+  app.get('/api/dashboard/home-monthly-recap', (req, res) => {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const monthly = Array.from({ length: 12 }, (_, index) => {
+      const month = String(index + 1).padStart(2, '0');
+      return {
+        month: `${year}-${month}`,
+        caAnimaNeo: 80000 + index * 5000,
+        caSousTraitance: 10000 + index * 500,
+        margeBruteAnimaNeo: 20000 + index * 1000,
+        margeBruteSousTraitance: 1500 + index * 100,
+        resultat: 12000 + index * 800,
+        tacePct: 72 + index * 0.5,
+        taceIsClosedMonth: index < 6,
+        besoinsCrees: 3 + (index % 4),
+        besoinsStock: 5 + (index % 3),
+        besoinsGagnes: 2 + (index % 2),
+        besoinsPerdus: 1,
+        besoinsAbandonnes: index % 2,
+        besoinsStandBy: 1 + (index % 2),
+        delaiMoyenReponseDays: 4 + index * 0.2,
+        delaiMoyenReponseCount: 2 + index,
+      };
     });
+    res.json({ year, monthly });
   });
 
   app.get('/api/dashboard/treasury-plan', (_req, res) => {

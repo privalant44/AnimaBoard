@@ -13,6 +13,7 @@ import Report from './components/Report';
 import Settings from './components/Settings';
 import HomeMonthlyRecap from './components/HomeMonthlyRecap';
 import HomeBatchStatus from './components/HomeBatchStatus';
+import RoleSimulationBanner from './components/RoleSimulationBanner';
 
 type Tab = AppTab;
 
@@ -73,6 +74,7 @@ function App() {
 
   return (
     <div className="App">
+      <RoleSimulationBanner />
       {apiReachable === false && (
         <div style={{ background: '#c00', color: '#fff', padding: '8px 16px', textAlign: 'center' }}>
           Le serveur API ne répond pas. Lancez-le sur le port 3000 (ex. <code>npm run server</code> dans un terminal à la racine du projet).

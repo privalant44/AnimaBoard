@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '../api';
 import { isAuthEnabled } from './msalConfig';
-import type { AppRole, Permission } from './roles';
-import { canAccessTab, hasPermission, PERMISSIONS } from './roles';
+import type { AppRole, Permission, ViewPermission } from './roles';
+import {
+  canAccessTab,
+  canAccessView,
+  hasPermission,
+  PERMISSIONS,
+  shouldRestrictForecastToPersonal,
+} from './roles';
 import type { AppTab } from './roles';
 
 export type UserAccessState = {
@@ -13,7 +19,9 @@ export type UserAccessState = {
   error: string | null;
   refresh: () => Promise<void>;
   can: (permission: Permission) => boolean;
+  canView: (view: ViewPermission) => boolean;
   canTab: (tab: AppTab) => boolean;
+  restrictForecastToPersonal: boolean;
 };
 
 const ALL_PERMISSIONS = Object.values(PERMISSIONS);
@@ -77,10 +85,28 @@ export function useUserAccess(enabled: boolean): UserAccessState {
     [permissions]
   );
 
+  const canView = useCallback(
+    (view: ViewPermission) => canAccessView(permissions, view),
+    [permissions]
+  );
+
   const canTab = useCallback(
     (tab: AppTab) => canAccessTab(permissions, tab),
     [permissions]
   );
 
-  return { role, roleLabel, permissions, loading, error, refresh, can, canTab };
+  const restrictForecastToPersonal = shouldRestrictForecastToPersonal(role, permissions);
+
+  return {
+    role,
+    roleLabel,
+    permissions,
+    loading,
+    error,
+    refresh,
+    can,
+    canView,
+    canTab,
+    restrictForecastToPersonal,
+  };
 }

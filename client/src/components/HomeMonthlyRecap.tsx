@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '../api';
+import { useAuth } from '../auth/AuthProvider';
+import { isAuthEnabled } from '../auth/msalConfig';
+import { PERMISSIONS } from '../auth/roles';
 import HomeTreasuryPlanChart, { TreasuryPlanMonthRow } from './HomeTreasuryPlanChart';
 import './HomeMonthlyRecap.css';
 
@@ -49,6 +52,11 @@ interface HomeMonthlyRecapResponse {
 }
 
 const HomeMonthlyRecap: React.FC = () => {
+  const auth = useAuth();
+  const authOn = isAuthEnabled();
+  const canFinancial = !authOn || auth?.canView(PERMISSIONS.VIEW_HOME_FINANCIAL);
+  const canBesoins = !authOn || auth?.canView(PERMISSIONS.VIEW_HOME_BESOINS);
+  const canTreasury = !authOn || auth?.canView(PERMISSIONS.VIEW_HOME_TREASURY);
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [selectedScenario, setSelectedScenario] = useState<string>('none');
@@ -94,6 +102,11 @@ const HomeMonthlyRecap: React.FC = () => {
   }, [selectedYear, selectedScenario]);
 
   useEffect(() => {
+    if (!canTreasury) {
+      setTreasuryLoading(false);
+      setTreasuryMonthly([]);
+      return undefined;
+    }
     let cancelled = false;
     (async () => {
       setTreasuryLoading(true);
@@ -126,7 +139,7 @@ const HomeMonthlyRecap: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [selectedYear, selectedScenario]);
+  }, [selectedYear, selectedScenario, canTreasury]);
 
   const scenarioOptions = useMemo(() => {
     const fromCatalog = data?.meta?.forecastScenarios || [];
@@ -276,8 +289,18 @@ const HomeMonthlyRecap: React.FC = () => {
     );
   }
 
+  if (!canFinancial && !canBesoins && !canTreasury) {
+    return (
+      <main className="app-main" data-testid="home-no-access">
+        <div className="home-recap-panel">
+          <p className="home-recap-state">Aucune vue accueil autorisée pour votre profil.</p>
+        </div>
+      </main>
+    );
+  }
+
   return (
-    <main className="app-main">
+    <main className="app-main" data-testid="home-dashboard">
       <h1 className="home-dashboard-title">TABLEAU DE BORD ANIMA NEO</h1>
       <div className="home-recap-filters">
         <label htmlFor="home-recap-scenario">Scénario</label>
@@ -320,7 +343,9 @@ const HomeMonthlyRecap: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              <tr className="section-row">
+              {canFinancial && (
+                <>
+              <tr className="section-row" data-testid="home-view-financial">
                 <td colSpan={(data?.monthly?.length || 0) + 2}>Financier</td>
               </tr>
               <tr>
@@ -418,8 +443,12 @@ const HomeMonthlyRecap: React.FC = () => {
                 ))}
                 <td className="num financial-month-forecast">{formatPct(totals.tacePct)}</td>
               </tr>
+                </>
+              )}
 
-              <tr className="section-row">
+              {canBesoins && (
+                <>
+              <tr className="section-row" data-testid="home-view-besoins">
                 <td colSpan={(data?.monthly?.length || 0) + 2}>
                   <div className="section-header">
                     <button
@@ -495,10 +524,14 @@ const HomeMonthlyRecap: React.FC = () => {
                   </tr>
                 </>
               )}
+                </>
+              )}
             </tbody>
           </table>
         </div>
       </div>
+      {canTreasury && (
+      <div data-testid="home-view-treasury">
       <HomeTreasuryPlanChart
         monthly={treasuryMonthly}
         averagePaymentDelayDays={treasurySettings.averagePaymentDelayDays}
@@ -506,6 +539,8 @@ const HomeMonthlyRecap: React.FC = () => {
         loading={treasuryLoading}
         error={treasuryError}
       />
+      </div>
+      )}
     </main>
   );
 };

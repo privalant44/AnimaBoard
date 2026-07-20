@@ -3,6 +3,9 @@ import './Forecast.css';
 import { DATA_REFRESH_EVENT } from '../dataRefresh';
 import { apiFetch, describeApiEndpoint, normalizeApiError } from '../api';
 import ForecastScenarios, { ForecastScenario } from './ForecastScenarios';
+import { useAuth } from '../auth/AuthProvider';
+import { isAuthEnabled } from '../auth/msalConfig';
+import { filterResourcesByUserEmail, PERMISSIONS } from '../auth/roles';
 import {
   countWorkdaysInMonth,
   countWorkdaysInYear,
@@ -39,6 +42,8 @@ interface ResourceWithProjects {
   prenom: string;
   type?: string;
   statut?: string;
+  email?: string;
+  raw?: Record<string, unknown>;
   /** Prestations visibles (filtre période). */
   projects: Project[];
   /** Toutes les prestations de la ressource : base du CA par année (hors filtre période). */
@@ -252,6 +257,11 @@ const loadForecastFiltersFromStorage = () => {
 };
 
 const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
+  const auth = useAuth();
+  const authOn = isAuthEnabled();
+  const canScenarios = !authOn || auth?.canView(PERMISSIONS.VIEW_FORECAST_SCENARIOS);
+  const restrictToPersonal = authOn && (auth?.restrictForecastToPersonal ?? false);
+  const userEmail = auth?.email || '';
   const isDebug = process.env.NODE_ENV !== 'production';
   // Charger les filtres depuis localStorage au démarrage
   const savedFilters = loadForecastFiltersFromStorage();
@@ -404,7 +414,16 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
 
       // Créer un map des ressources par ID pour accès rapide
       // Les typeLabel et stateLabel sont déjà résolus par /resources-local
-      const resourcesMap: { [key: string]: { nom: string; prenom: string; type?: string; statut?: string } } = {};
+      const resourcesMap: {
+        [key: string]: {
+          nom: string;
+          prenom: string;
+          type?: string;
+          statut?: string;
+          email?: string;
+          raw?: Record<string, unknown>;
+        };
+      } = {};
       resourcesList.forEach((resource: any) => {
         const resourceId = String(resource.id || '');
         const firstName = resource.prenom || resource.firstName || '';
@@ -415,7 +434,14 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
         const statut = resource.stateLabel || '';
         
         if (resourceId) {
-          resourcesMap[resourceId] = { nom: lastName, prenom: firstName, type, statut };
+          resourcesMap[resourceId] = {
+            nom: lastName,
+            prenom: firstName,
+            type,
+            statut,
+            email: resource.email,
+            raw: resource.raw,
+          };
         }
       });
 
@@ -497,6 +523,8 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
           prenom: resourceInfo.prenom,
           type: resourceInfo.type,
           statut: resourceInfo.statut,
+          email: resourceInfo.email,
+          raw: resourceInfo.raw,
           projects: sortedProjects,
           allProjectsForCA: sortedAllForCA
         });
@@ -638,6 +666,10 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
   const filteredResources = useMemo(() => {
     let filtered = resources;
 
+    if (restrictToPersonal && userEmail) {
+      filtered = filterResourcesByUserEmail(filtered, userEmail);
+    }
+
     // Appliquer le filtre par type (multi-sélection)
     if (typeFilter.length > 0) {
       filtered = filtered.filter(r => {
@@ -655,7 +687,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
     }
 
     return filtered;
-  }, [resources, typeFilter, statutFilter]);
+  }, [resources, typeFilter, statutFilter, restrictToPersonal, userEmail]);
 
   // Calcul de la pagination
   const totalPages = Math.ceil(filteredResources.length / itemsPerPage);
@@ -1472,13 +1504,16 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
           <button className="back-button" onClick={onBack}>
             ← Retour
           </button>
+          {canScenarios && (
           <button
             type="button"
             className="forecast-scenarios-btn"
             onClick={() => setScenariosOpen(true)}
+            data-testid="forecast-scenarios-btn"
           >
             Scénarios
           </button>
+          )}
           <h2>Forecast</h2>
         </div>
         <div className="forecast-container">
@@ -1498,13 +1533,16 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
           <button className="back-button" onClick={onBack}>
             ← Retour
           </button>
+          {canScenarios && (
           <button
             type="button"
             className="forecast-scenarios-btn"
             onClick={() => setScenariosOpen(true)}
+            data-testid="forecast-scenarios-btn"
           >
             Scénarios
           </button>
+          )}
           <h2>Forecast</h2>
         </div>
         <div className="forecast-container">
@@ -1520,18 +1558,21 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
   }
 
   return (
-    <div className="forecast-page">
+    <div className="forecast-page" data-testid="forecast-page">
       <div className="forecast-header">
         <button className="back-button" onClick={onBack}>
           ← Retour
         </button>
+        {canScenarios && (
         <button
           type="button"
           className="forecast-scenarios-btn"
           onClick={() => setScenariosOpen(true)}
+          data-testid="forecast-scenarios-btn"
         >
           Scénarios
         </button>
+        )}
         <h2>Forecast</h2>
       </div>
       <div className="forecast-container">
@@ -2410,7 +2451,7 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
           </>
         )}
       </div>
-      {scenariosOpen && (
+      {canScenarios && scenariosOpen && (
         <ForecastScenarios
           onClose={() => setScenariosOpen(false)}
           onChanged={() => void reloadForecastScenarios()}

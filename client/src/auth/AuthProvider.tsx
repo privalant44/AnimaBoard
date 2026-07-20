@@ -72,7 +72,11 @@ export type AuthContextValue = {
 
   can: (permission: Permission) => boolean;
 
+  canView: (view: import('./roles').ViewPermission) => boolean;
+
   canTab: (tab: AppTab) => boolean;
+
+  restrictForecastToPersonal: boolean;
 
   refreshAccess: () => Promise<void>;
 
@@ -104,7 +108,7 @@ function AuthenticatedShell({
 
     AuthContextValue,
 
-    'role' | 'roleLabel' | 'permissions' | 'accessLoading' | 'accessError' | 'can' | 'canTab' | 'refreshAccess'
+    'role' | 'roleLabel' | 'permissions' | 'accessLoading' | 'accessError' | 'can' | 'canView' | 'canTab' | 'restrictForecastToPersonal' | 'refreshAccess'
 
   >;
 
@@ -134,7 +138,11 @@ function AuthenticatedShell({
 
       can: access.can,
 
+      canView: access.canView,
+
       canTab: access.canTab,
+
+      restrictForecastToPersonal: access.restrictForecastToPersonal,
 
       refreshAccess: access.refresh,
 
@@ -683,7 +691,11 @@ function AuthDisabled({ children }: { children: React.ReactNode }) {
 
       can: () => true,
 
+      canView: () => true,
+
       canTab: () => true,
+
+      restrictForecastToPersonal: false,
 
       refreshAccess: async () => {},
 

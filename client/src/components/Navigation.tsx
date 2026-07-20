@@ -88,6 +88,7 @@ const Navigation: React.FC<NavigationProps> = ({
           onClick={() => onTabChange(homeItem.key)}
           title={isCollapsed ? homeItem.label : undefined}
           aria-label={homeItem.label}
+          data-testid={`nav-tab-${homeItem.key}`}
         >
           <svg className="nav-button-icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d={homeItem.iconPath} />
@@ -102,6 +103,7 @@ const Navigation: React.FC<NavigationProps> = ({
           onClick={() => onTabChange(item.key)}
           title={isCollapsed ? item.label : undefined}
           aria-label={item.label}
+          data-testid={`nav-tab-${item.key}`}
         >
           <svg className="nav-button-icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d={item.iconPath} />

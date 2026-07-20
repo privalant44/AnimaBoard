@@ -1,6 +1,6 @@
 {
   "name": "anima-board",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Tableau de bord Anima Néo - Intégration BoondManager et Pennylane",
   "main": "server/index.js",
   "engines": {

@@ -123,7 +123,8 @@ Then(
     if (this.simulatedPermissions.includes(PERMISSIONS.VIEW_HOME_FINANCIAL)) {
       await this.simulationPage.locator('[data-testid="nav-tab-home"]').click({ force: true });
       await this.simulationPage
-        .locator('[data-testid="home-view-financial"]')
+        .locator('[data-testid="home-view-financial"], [data-testid="home-recap-chart-financial"]')
+        .first()
         .waitFor({ state: 'visible', timeout: 10000 });
     }
 

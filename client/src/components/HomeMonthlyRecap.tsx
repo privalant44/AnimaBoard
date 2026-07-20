@@ -4,7 +4,11 @@ import { useAuth } from '../auth/AuthProvider';
 import { isAuthEnabled } from '../auth/msalConfig';
 import { PERMISSIONS } from '../auth/roles';
 import HomeTreasuryPlanChart, { TreasuryPlanMonthRow } from './HomeTreasuryPlanChart';
+import HomeMonthlyRecapChart from './HomeMonthlyRecapChart';
 import './HomeMonthlyRecap.css';
+import './HomeMonthlyRecapChart.css';
+
+type RecapViewMode = 'chart' | 'table';
 
 interface HomeMonthlyRow {
   month: string;
@@ -61,6 +65,7 @@ const HomeMonthlyRecap: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [selectedScenario, setSelectedScenario] = useState<string>('none');
   const [isBesoinsExpanded, setIsBesoinsExpanded] = useState<boolean>(true);
+  const [recapViewMode, setRecapViewMode] = useState<RecapViewMode>('chart');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<HomeMonthlyRecapResponse | null>(null);
@@ -303,6 +308,26 @@ const HomeMonthlyRecap: React.FC = () => {
     <main className="app-main" data-testid="home-dashboard">
       <h1 className="home-dashboard-title">TABLEAU DE BORD ANIMA NEO</h1>
       <div className="home-recap-filters">
+        <div className="home-recap-view-toggle" role="group" aria-label="Mode d'affichage du récapitulatif">
+          <button
+            type="button"
+            className={`home-recap-view-toggle-btn${recapViewMode === 'chart' ? ' is-active' : ''}`}
+            data-testid="home-recap-view-chart"
+            aria-pressed={recapViewMode === 'chart'}
+            onClick={() => setRecapViewMode('chart')}
+          >
+            Graphique
+          </button>
+          <button
+            type="button"
+            className={`home-recap-view-toggle-btn${recapViewMode === 'table' ? ' is-active' : ''}`}
+            data-testid="home-recap-view-table"
+            aria-pressed={recapViewMode === 'table'}
+            onClick={() => setRecapViewMode('table')}
+          >
+            Tableau détaillé
+          </button>
+        </div>
         <label htmlFor="home-recap-scenario">Scénario</label>
         <select
           id="home-recap-scenario"
@@ -331,7 +356,14 @@ const HomeMonthlyRecap: React.FC = () => {
         </select>
       </div>
       <div className="home-recap-panel">
-        <div className="home-recap-table-wrap">
+        {recapViewMode === 'chart' ? (
+          <HomeMonthlyRecapChart
+            monthly={data?.monthly || []}
+            canFinancial={Boolean(canFinancial)}
+            canBesoins={Boolean(canBesoins)}
+          />
+        ) : (
+        <div className="home-recap-table-wrap" data-testid="home-recap-table-view">
           <table className="home-recap-table">
             <thead>
               <tr>
@@ -529,6 +561,7 @@ const HomeMonthlyRecap: React.FC = () => {
             </tbody>
           </table>
         </div>
+        )}
       </div>
       {canTreasury && (
       <div data-testid="home-view-treasury">

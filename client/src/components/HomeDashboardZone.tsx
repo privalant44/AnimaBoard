@@ -13,6 +13,10 @@ interface HomeDashboardZoneProps {
   spanFull?: boolean;
   chartToggleTestId?: string;
   tableToggleTestId?: string;
+  canMoveEarlier?: boolean;
+  canMoveLater?: boolean;
+  onMoveEarlier?: () => void;
+  onMoveLater?: () => void;
 }
 
 const HomeDashboardZone: React.FC<HomeDashboardZoneProps> = ({
@@ -25,6 +29,10 @@ const HomeDashboardZone: React.FC<HomeDashboardZoneProps> = ({
   spanFull = false,
   chartToggleTestId,
   tableToggleTestId,
+  canMoveEarlier = false,
+  canMoveLater = false,
+  onMoveEarlier,
+  onMoveLater,
 }) => (
   <section
     className={`home-dashboard-zone${spanFull ? ' home-dashboard-zone--full' : ''}`}
@@ -32,9 +40,35 @@ const HomeDashboardZone: React.FC<HomeDashboardZoneProps> = ({
     aria-labelledby={`${testId}-title`}
   >
     <header className="home-dashboard-zone-header">
-      <h2 className="home-dashboard-zone-title" id={`${testId}-title`}>
-        {title}
-      </h2>
+      <div className="home-dashboard-zone-title-row">
+        <h2 className="home-dashboard-zone-title" id={`${testId}-title`}>
+          {title}
+        </h2>
+        {(canMoveEarlier || canMoveLater) && (
+          <div className="home-dashboard-zone-reorder" role="group" aria-label={`Réorganiser — ${title}`}>
+            <button
+              type="button"
+              className="home-dashboard-zone-reorder-btn"
+              data-testid={`${testId}-move-earlier`}
+              aria-label={`Déplacer ${title} vers le haut`}
+              disabled={!canMoveEarlier}
+              onClick={onMoveEarlier}
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              className="home-dashboard-zone-reorder-btn"
+              data-testid={`${testId}-move-later`}
+              aria-label={`Déplacer ${title} vers le bas`}
+              disabled={!canMoveLater}
+              onClick={onMoveLater}
+            >
+              ↓
+            </button>
+          </div>
+        )}
+      </div>
       <div className="home-recap-view-toggle" role="group" aria-label={`Mode d'affichage — ${title}`}>
         <button
           type="button"

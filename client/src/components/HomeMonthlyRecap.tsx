@@ -11,6 +11,14 @@ import {
   countFinancialTableColumns,
   groupMonthlyByQuarter,
 } from '../utils/financialQuarters';
+import {
+  HomeDashboardZoneId,
+  loadHomeDashboardZoneOrder,
+  moveHomeDashboardZone,
+  normalizeHomeDashboardZoneOrder,
+  saveHomeDashboardZoneOrder,
+  zoneTestId,
+} from '../utils/homeDashboardZoneOrder';
 import './HomeMonthlyRecap.css';
 import './HomeMonthlyRecapChart.css';
 import './HomeDashboardZone.css';
@@ -84,6 +92,32 @@ const HomeMonthlyRecap: React.FC = () => {
     averagePaymentDelayDays: 30,
     initialBalance: 0,
   });
+  const [zoneOrder, setZoneOrder] = useState<HomeDashboardZoneId[]>(() => loadHomeDashboardZoneOrder());
+
+  const visibleZoneIds = useMemo(() => {
+    const ids: HomeDashboardZoneId[] = [];
+    if (canFinancial) ids.push('financial');
+    if (canBesoins) ids.push('besoins');
+    if (canTreasury) ids.push('treasury');
+    return ids;
+  }, [canFinancial, canBesoins, canTreasury]);
+
+  const orderedVisibleZones = useMemo(
+    () => normalizeHomeDashboardZoneOrder(zoneOrder, visibleZoneIds),
+    [zoneOrder, visibleZoneIds]
+  );
+
+  useEffect(() => {
+    setZoneOrder((prev) => normalizeHomeDashboardZoneOrder(prev, visibleZoneIds));
+  }, [visibleZoneIds]);
+
+  useEffect(() => {
+    saveHomeDashboardZoneOrder(zoneOrder);
+  }, [zoneOrder]);
+
+  const handleMoveZone = useCallback((zoneId: HomeDashboardZoneId, direction: 'earlier' | 'later') => {
+    setZoneOrder((prev) => moveHomeDashboardZone(normalizeHomeDashboardZoneOrder(prev, visibleZoneIds), zoneId, direction));
+  }, [visibleZoneIds]);
 
   useEffect(() => {
     let cancelled = false;
@@ -775,6 +809,102 @@ const HomeMonthlyRecap: React.FC = () => {
     );
   }
 
+  const renderDashboardZone = (zoneId: HomeDashboardZoneId, index: number, total: number) => {
+    const testId = zoneTestId(zoneId);
+    const spanFull = total === 3 && index === 2;
+    const canMoveEarlier = index > 0;
+    const canMoveLater = index < total - 1;
+    const reorderProps = {
+      canMoveEarlier,
+      canMoveLater,
+      onMoveEarlier: () => handleMoveZone(zoneId, 'earlier'),
+      onMoveLater: () => handleMoveZone(zoneId, 'later'),
+    };
+
+    if (zoneId === 'financial') {
+      return (
+        <HomeDashboardZone
+          key={zoneId}
+          title="Indicateurs financiers"
+          testId={testId}
+          chartToggleTestId="home-recap-view-chart"
+          tableToggleTestId="home-recap-view-table"
+          viewMode={financialViewMode}
+          onViewModeChange={setFinancialViewMode}
+          spanFull={spanFull}
+          {...reorderProps}
+          chart={
+            <HomeMonthlyRecapChart
+              monthly={data?.monthly || []}
+              canFinancial
+              canBesoins={false}
+              section="financial"
+            />
+          }
+          table={renderFinancialTable()}
+        />
+      );
+    }
+
+    if (zoneId === 'besoins') {
+      return (
+        <HomeDashboardZone
+          key={zoneId}
+          title="Indicateurs besoins"
+          testId={testId}
+          viewMode={besoinsViewMode}
+          onViewModeChange={setBesoinsViewMode}
+          spanFull={spanFull}
+          {...reorderProps}
+          chart={
+            <HomeMonthlyRecapChart
+              monthly={data?.monthly || []}
+              canFinancial={false}
+              canBesoins
+              section="besoins"
+            />
+          }
+          table={renderBesoinsTable()}
+        />
+      );
+    }
+
+    return (
+      <HomeDashboardZone
+        key={zoneId}
+        title="Plan de trésorerie"
+        testId={testId}
+        viewMode={treasuryViewMode}
+        onViewModeChange={setTreasuryViewMode}
+        spanFull={spanFull}
+        {...reorderProps}
+        chart={
+          <div data-testid="home-view-treasury">
+            <HomeTreasuryPlanChart
+              monthly={treasuryMonthly}
+              averagePaymentDelayDays={treasurySettings.averagePaymentDelayDays}
+              initialBalance={treasurySettings.initialBalance}
+              loading={treasuryLoading}
+              error={treasuryError}
+              embedded
+            />
+          </div>
+        }
+        table={
+          treasuryLoading ? (
+            <p className="home-recap-state">Chargement du plan de trésorerie…</p>
+          ) : treasuryError ? (
+            <p className="home-recap-state home-recap-state--error">{treasuryError}</p>
+          ) : treasuryMonthly.length === 0 ? (
+            <p className="home-recap-state">Aucune donnée de trésorerie.</p>
+          ) : (
+            renderTreasuryTable()
+          )
+        }
+      />
+    );
+  };
+
   if (!canFinancial && !canBesoins && !canTreasury) {
     return (
       <main className="app-main" data-testid="home-no-access">
@@ -817,73 +947,8 @@ const HomeMonthlyRecap: React.FC = () => {
         </select>
       </div>
       <div className="home-dashboard-grid" data-testid="home-dashboard-grid">
-        {canFinancial && (
-          <HomeDashboardZone
-            title="Indicateurs financiers"
-            testId="home-zone-financial"
-            chartToggleTestId="home-recap-view-chart"
-            tableToggleTestId="home-recap-view-table"
-            viewMode={financialViewMode}
-            onViewModeChange={setFinancialViewMode}
-            chart={
-              <HomeMonthlyRecapChart
-                monthly={data?.monthly || []}
-                canFinancial
-                canBesoins={false}
-                section="financial"
-              />
-            }
-            table={renderFinancialTable()}
-          />
-        )}
-        {canBesoins && (
-          <HomeDashboardZone
-            title="Indicateurs besoins"
-            testId="home-zone-besoins"
-            viewMode={besoinsViewMode}
-            onViewModeChange={setBesoinsViewMode}
-            chart={
-              <HomeMonthlyRecapChart
-                monthly={data?.monthly || []}
-                canFinancial={false}
-                canBesoins
-                section="besoins"
-              />
-            }
-            table={renderBesoinsTable()}
-          />
-        )}
-        {canTreasury && (
-          <HomeDashboardZone
-            title="Plan de trésorerie"
-            testId="home-zone-treasury"
-            viewMode={treasuryViewMode}
-            onViewModeChange={setTreasuryViewMode}
-            spanFull={Boolean(canFinancial && canBesoins)}
-            chart={
-              <div data-testid="home-view-treasury">
-                <HomeTreasuryPlanChart
-                  monthly={treasuryMonthly}
-                  averagePaymentDelayDays={treasurySettings.averagePaymentDelayDays}
-                  initialBalance={treasurySettings.initialBalance}
-                  loading={treasuryLoading}
-                  error={treasuryError}
-                  embedded
-                />
-              </div>
-            }
-            table={
-              treasuryLoading ? (
-                <p className="home-recap-state">Chargement du plan de trésorerie…</p>
-              ) : treasuryError ? (
-                <p className="home-recap-state home-recap-state--error">{treasuryError}</p>
-              ) : treasuryMonthly.length === 0 ? (
-                <p className="home-recap-state">Aucune donnée de trésorerie.</p>
-              ) : (
-                renderTreasuryTable()
-              )
-            }
-          />
+        {orderedVisibleZones.map((zoneId, index) =>
+          renderDashboardZone(zoneId, index, orderedVisibleZones.length)
         )}
       </div>
     </main>

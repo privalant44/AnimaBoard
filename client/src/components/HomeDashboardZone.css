@@ -26,11 +26,46 @@
   margin-bottom: 0.85rem;
 }
 
+.home-dashboard-zone-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
 .home-dashboard-zone-title {
   margin: 0;
   font-size: 1.05rem;
   color: #2c5f5d;
   font-weight: 700;
+}
+
+.home-dashboard-zone-reorder {
+  display: inline-flex;
+  gap: 0.2rem;
+}
+
+.home-dashboard-zone-reorder-btn {
+  border: 1px solid #c6d8d6;
+  border-radius: 6px;
+  background: #f7fbfb;
+  color: #2c5f5d;
+  width: 1.65rem;
+  height: 1.65rem;
+  padding: 0;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.home-dashboard-zone-reorder-btn:hover:not(:disabled) {
+  background: #e8f3f2;
+  border-color: #9fc4c1;
+}
+
+.home-dashboard-zone-reorder-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .home-dashboard-zone-body {

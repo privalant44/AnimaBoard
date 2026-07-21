@@ -306,7 +306,7 @@ const HomeMonthlyRecap: React.FC = () => {
 
   return (
     <main className="app-main" data-testid="home-dashboard">
-      <h1 className="home-dashboard-title">TABLEAU DE BORD ANIMA NEO</h1>
+      <h1 className="home-dashboard-title">Tableau de bord Anima Néo</h1>
       <div className="home-recap-filters">
         <div className="home-recap-view-toggle" role="group" aria-label="Mode d'affichage du récapitulatif">
           <button

@@ -52,18 +52,14 @@ function App() {
     setLogoUrl(newLogoUrl || null);
   };
 
-  const handleBackToHome = () => {
-    setActiveTab('home');
-  };
-
   const renderContent = () => {
     switch (activeTab) {
       case 'resources':
-        return <Resources onBack={handleBackToHome} />;
+        return <Resources />;
       case 'forecast':
-        return <Forecast onBack={handleBackToHome} />;
+        return <Forecast />;
       case 'report':
-        return <Report onBack={handleBackToHome} />;
+        return <Report />;
       case 'settings':
         return <Settings onLogoChange={handleLogoChange} currentLogo={logoUrl} />;
       case 'home':
@@ -74,14 +70,18 @@ function App() {
 
   return (
     <div className="App">
+      <a className="skip-to-content" href="#app-main-content">
+        Aller au contenu principal
+      </a>
       <RoleSimulationBanner />
       {apiReachable === false && (
-        <div style={{ background: '#c00', color: '#fff', padding: '8px 16px', textAlign: 'center' }}>
-          Le serveur API ne répond pas. Lancez-le sur le port 3000 (ex. <code>npm run server</code> dans un terminal à la racine du projet).
+        <div className="app-alert app-alert--error" role="alert">
+          Le serveur API ne répond pas. Lancez-le sur le port 3000 (ex.{' '}
+          <code>npm run server</code> dans un terminal à la racine du projet).
         </div>
       )}
       <div className={`app-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-        <aside className="app-sidebar">
+        <aside className="app-sidebar" data-testid="app-sidebar">
           <div className="app-sidebar-header">
             <div className="logo-container app-sidebar-logo">
               {logoUrl ? (
@@ -114,7 +114,9 @@ function App() {
             canTab={auth?.canTab}
           />
         </aside>
-        <section className="app-content">{renderContent()}</section>
+        <section className="app-content" id="app-main-content" aria-live="polite">
+          {renderContent()}
+        </section>
         {activeTab === 'home' && <HomeBatchStatus />}
       </div>
     </div>

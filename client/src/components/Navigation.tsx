@@ -84,10 +84,12 @@ const Navigation: React.FC<NavigationProps> = ({
           </button>
         )}
         <button
+          type="button"
           className={`nav-button nav-button--home ${activeTab === homeItem.key ? 'active' : ''}`}
           onClick={() => onTabChange(homeItem.key)}
           title={isCollapsed ? homeItem.label : undefined}
           aria-label={homeItem.label}
+          aria-current={activeTab === homeItem.key ? 'page' : undefined}
           data-testid={`nav-tab-${homeItem.key}`}
         >
           <svg className="nav-button-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -99,10 +101,12 @@ const Navigation: React.FC<NavigationProps> = ({
       {restItems.map((item) => (
         <button
           key={item.key}
+          type="button"
           className={`nav-button ${activeTab === item.key ? 'active' : ''}`}
           onClick={() => onTabChange(item.key)}
           title={isCollapsed ? item.label : undefined}
           aria-label={item.label}
+          aria-current={activeTab === item.key ? 'page' : undefined}
           data-testid={`nav-tab-${item.key}`}
         >
           <svg className="nav-button-icon" viewBox="0 0 24 24" aria-hidden="true">

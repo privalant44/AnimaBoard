@@ -55,6 +55,21 @@ When(
 Then('le résultat attendu est visible', async function () {
   if (!this.page || !this.baseUrl) return;
 
+  if (this.uxReview) {
+    await this.page.locator('[data-testid="app-sidebar"]').waitFor({ state: 'visible', timeout: 10000 });
+
+    const backButtons = this.page.locator('.page-shell .back-button, .page-shell .settings-back-button');
+    assert.strictEqual(
+      await backButtons.count(),
+      0,
+      'Les écrans principaux ne devraient pas afficher de bouton Retour redondant'
+    );
+
+    await this.page.locator('[data-testid="nav-tab-home"]').click({ force: true });
+    await this.page.locator('[data-testid="home-dashboard"]').waitFor({ state: 'visible', timeout: 15000 });
+    return;
+  }
+
   const chartView = this.page.locator('[data-testid="home-recap-chart-view"]');
   await chartView.waitFor({ state: 'visible', timeout: 10000 });
   assert.ok(await chartView.isVisible(), 'La vue graphique devrait être visible');

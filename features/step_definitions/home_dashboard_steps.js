@@ -5,6 +5,16 @@ const { setMockAuth } = require('../support/testApp');
 
 const LOCAL_SESSION_KEY = 'anima_local_auth_v1';
 
+const HOME_ZONE_TEST_IDS = ['home-zone-financial', 'home-zone-besoins', 'home-zone-treasury'];
+
+async function getHomeZoneOrder(page) {
+  const grid = page.locator('[data-testid="home-dashboard-grid"]');
+  await grid.waitFor({ state: 'visible', timeout: 10000 });
+  return grid.locator(':scope > section[data-testid]').evaluateAll((sections) =>
+    sections.map((section) => section.getAttribute('data-testid')).filter(Boolean)
+  );
+}
+
 async function seedAuthSession(page, email) {
   await page.addInitScript(
     ({ storageKey, userEmail }) => {
@@ -123,6 +133,30 @@ Given('un contexte utilisateur valide', async function () {
   await this.page.waitForSelector('[data-testid="home-dashboard"]', { timeout: 15000 });
 });
 
+When('pouvoir interchangé les emplacements des zones sur la page d\'accueil', async function () {
+  if (!this.page || !this.baseUrl) return;
+
+  this.homeZoneReorder = true;
+
+  const initialOrder = await getHomeZoneOrder(this.page);
+  assert.deepStrictEqual(
+    initialOrder,
+    HOME_ZONE_TEST_IDS,
+    'L\'ordre initial des zones devrait être financier, besoins, trésorerie'
+  );
+
+  await this.page.locator('[data-testid="home-zone-financial-move-later"]').click({ force: true });
+
+  const swappedOrder = await getHomeZoneOrder(this.page);
+  assert.deepStrictEqual(
+    swappedOrder,
+    ['home-zone-besoins', 'home-zone-financial', 'home-zone-treasury'],
+    'Les zones financière et besoins devraient être interchangées'
+  );
+
+  this.expectedHomeZoneOrder = swappedOrder;
+});
+
 When(
   'avoir une représentation graphique des chiffres de la page d\'accueil avec la possibilité d\'avoir le détail sous forme de tableaux',
   async function () {
@@ -151,6 +185,26 @@ Then('le résultat attendu est visible', async function () {
 
     await this.page.locator('[data-testid="nav-tab-home"]').click({ force: true });
     await this.page.locator('[data-testid="home-dashboard"]').waitFor({ state: 'visible', timeout: 15000 });
+    return;
+  }
+
+  if (this.homeZoneReorder) {
+    const currentOrder = await getHomeZoneOrder(this.page);
+    assert.deepStrictEqual(
+      currentOrder,
+      this.expectedHomeZoneOrder,
+      'L\'ordre des zones devrait rester visible après réorganisation'
+    );
+
+    await this.page.reload({ waitUntil: 'networkidle' });
+    await this.page.waitForSelector('[data-testid="home-dashboard"]', { timeout: 15000 });
+
+    const persistedOrder = await getHomeZoneOrder(this.page);
+    assert.deepStrictEqual(
+      persistedOrder,
+      this.expectedHomeZoneOrder,
+      'L\'ordre des zones devrait être conservé après rechargement'
+    );
     return;
   }
 

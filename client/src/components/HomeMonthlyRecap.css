@@ -136,6 +136,46 @@
   transform: rotate(180deg);
 }
 
+.quarter-header-cell {
+  background: #8fb8b6;
+}
+
+.quarter-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 999px;
+  padding: 0.15rem 0.45rem 0.15rem 0.25rem;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.quarter-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.quarter-toggle-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(166, 201, 200, 0.9);
+}
+
+.quarter-toggle-arrow {
+  width: 0.95rem;
+  height: 0.95rem;
+  fill: currentColor;
+  transition: transform 0.2s ease;
+}
+
+.quarter-toggle-arrow.is-open {
+  transform: rotate(180deg);
+}
+
 .home-recap-table td.pos {
   color: #176b49;
 }

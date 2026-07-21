@@ -6,6 +6,11 @@ import { PERMISSIONS } from '../auth/roles';
 import HomeTreasuryPlanChart, { TreasuryPlanMonthRow } from './HomeTreasuryPlanChart';
 import HomeMonthlyRecapChart from './HomeMonthlyRecapChart';
 import HomeDashboardZone, { DashboardZoneViewMode } from './HomeDashboardZone';
+import {
+  aggregateQuarterMonths,
+  countFinancialTableColumns,
+  groupMonthlyByQuarter,
+} from '../utils/financialQuarters';
 import './HomeMonthlyRecap.css';
 import './HomeMonthlyRecapChart.css';
 import './HomeDashboardZone.css';
@@ -65,6 +70,7 @@ const HomeMonthlyRecap: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [selectedScenario, setSelectedScenario] = useState<string>('none');
   const [isBesoinsExpanded, setIsBesoinsExpanded] = useState<boolean>(true);
+  const [expandedFinancialQuarters, setExpandedFinancialQuarters] = useState<Record<string, boolean>>({});
   const [financialViewMode, setFinancialViewMode] = useState<DashboardZoneViewMode>('chart');
   const [besoinsViewMode, setBesoinsViewMode] = useState<DashboardZoneViewMode>('chart');
   const [treasuryViewMode, setTreasuryViewMode] = useState<DashboardZoneViewMode>('chart');
@@ -266,6 +272,90 @@ const HomeMonthlyRecap: React.FC = () => {
     row.taceIsClosedMonth ? 'financial-month-closed' : 'financial-month-forecast';
   const financialResultClass = (row: HomeMonthlyRow) =>
     row.taceIsClosedMonth ? 'financial-highlight-closed' : 'financial-highlight-forecast';
+  const financialQuarterMonthClass = (isClosedMonth: boolean) =>
+    isClosedMonth ? 'financial-month-closed' : 'financial-month-forecast';
+  const financialQuarterResultClass = (isClosedMonth: boolean) =>
+    isClosedMonth ? 'financial-highlight-closed' : 'financial-highlight-forecast';
+
+  const financialQuarterGroups = useMemo(
+    () => groupMonthlyByQuarter(data?.monthly || []),
+    [data?.monthly]
+  );
+
+  useEffect(() => {
+    setExpandedFinancialQuarters((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      financialQuarterGroups.forEach((group) => {
+        if (!(group.key in next)) {
+          next[group.key] = true;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [financialQuarterGroups]);
+
+  const isFinancialQuarterExpanded = (quarterKey: string) =>
+    expandedFinancialQuarters[quarterKey] ?? true;
+
+  const toggleFinancialQuarter = (quarterKey: string) => {
+    setExpandedFinancialQuarters((prev) => ({
+      ...prev,
+      [quarterKey]: !(prev[quarterKey] ?? true),
+    }));
+  };
+
+  const financialTableColumnCount = useMemo(
+    () => countFinancialTableColumns(financialQuarterGroups, expandedFinancialQuarters),
+    [financialQuarterGroups, expandedFinancialQuarters]
+  );
+
+  const renderFinancialQuarterToggle = (quarterKey: string, label: string) => {
+    const expanded = isFinancialQuarterExpanded(quarterKey);
+    return (
+      <button
+        type="button"
+        className="quarter-toggle-btn"
+        onClick={() => toggleFinancialQuarter(quarterKey)}
+        aria-expanded={expanded}
+        aria-label={
+          expanded
+            ? `Replier le trimestre ${label}`
+            : `Déplier le trimestre ${label}`
+        }
+        title={expanded ? 'Replier' : 'Déplier'}
+        data-testid={`home-financial-quarter-toggle-${quarterKey}`}
+      >
+        <svg
+          className={`quarter-toggle-arrow ${expanded ? 'is-open' : ''}`}
+          viewBox="0 0 20 20"
+          aria-hidden="true"
+        >
+          <path d="M7.23 5.21a.75.75 0 0 1 1.06.02L12 9.12l3.71-3.89a.75.75 0 1 1 1.08 1.04l-4.25 4.45a.75.75 0 0 1-1.08 0L7.21 6.27a.75.75 0 0 1 .02-1.06Z" />
+        </svg>
+        <span>{label}</span>
+      </button>
+    );
+  };
+
+  const renderFinancialPeriodCells = (
+    renderMonthCell: (row: HomeMonthlyRow) => React.ReactNode,
+    renderQuarterCell: (aggregate: ReturnType<typeof aggregateQuarterMonths>, quarterKey: string) => React.ReactNode
+  ) =>
+    financialQuarterGroups.flatMap((group) => {
+      if (isFinancialQuarterExpanded(group.key)) {
+        return group.months.map((row) => (
+          <React.Fragment key={`${group.key}-${row.month}`}>{renderMonthCell(row)}</React.Fragment>
+        ));
+      }
+      const aggregate = aggregateQuarterMonths(group.months);
+      return (
+        <React.Fragment key={group.key}>
+          {renderQuarterCell(aggregate, group.key)}
+        </React.Fragment>
+      );
+    });
 
   const formatMonth = (month: string) => {
     const [y, m] = String(month || '').split('-');
@@ -301,16 +391,46 @@ const HomeMonthlyRecap: React.FC = () => {
       <table className="home-recap-table">
         <thead>
           <tr>
-            <th>Indicateur</th>
-            {(data?.monthly || []).map((m) => (
-              <th key={m.month}>{formatMonth(m.month)}</th>
-            ))}
-            <th>Total</th>
+            <th rowSpan={2}>Indicateur</th>
+            {financialQuarterGroups.map((group) => {
+              const expanded = isFinancialQuarterExpanded(group.key);
+              if (expanded) {
+                return (
+                  <th
+                    key={group.key}
+                    colSpan={group.months.length}
+                    className="quarter-header-cell"
+                  >
+                    {renderFinancialQuarterToggle(group.key, group.label)}
+                  </th>
+                );
+              }
+              return (
+                <th key={group.key} rowSpan={2} className="quarter-header-cell">
+                  {renderFinancialQuarterToggle(group.key, group.label)}
+                </th>
+              );
+            })}
+            <th rowSpan={2}>Total</th>
+          </tr>
+          <tr>
+            {financialQuarterGroups.flatMap((group) =>
+              isFinancialQuarterExpanded(group.key)
+                ? group.months.map((row) => (
+                    <th
+                      key={row.month}
+                      data-testid={`home-financial-month-col-${row.month}`}
+                    >
+                      {formatMonth(row.month)}
+                    </th>
+                  ))
+                : []
+            )}
           </tr>
         </thead>
         <tbody>
           <tr className="section-row" data-testid="home-view-financial">
-            <td colSpan={(data?.monthly?.length || 0) + 2}>Financier</td>
+            <td colSpan={financialTableColumnCount + 2}>Financier</td>
           </tr>
           <tr>
             <td title={data?.meta?.caForecastFormula}>
@@ -322,11 +442,25 @@ const HomeMonthlyRecap: React.FC = () => {
                 </span>
               )}
             </td>
-            {(data?.monthly || []).map((row) => (
-              <td key={`ca-anima-${row.month}`} className={`num ${financialMonthClass(row)}`}>
-                {formatCurrency(row.caAnimaNeo)}
-              </td>
-            ))}
+            {renderFinancialPeriodCells(
+              (row) => (
+                <td
+                  key={`ca-anima-${row.month}`}
+                  className={`num ${financialMonthClass(row)}`}
+                >
+                  {formatCurrency(row.caAnimaNeo)}
+                </td>
+              ),
+              (aggregate, quarterKey) => (
+                <td
+                  key={`ca-anima-${quarterKey}`}
+                  className={`num ${financialQuarterMonthClass(aggregate.taceIsClosedMonth)}`}
+                  data-testid={`home-financial-quarter-col-${quarterKey}`}
+                >
+                  {formatCurrency(aggregate.caAnimaNeo)}
+                </td>
+              )
+            )}
             <td className="num financial-month-forecast">{formatCurrency(totals.caAnimaNeo)}</td>
           </tr>
           <tr>
@@ -339,26 +473,47 @@ const HomeMonthlyRecap: React.FC = () => {
                 </span>
               )}
             </td>
-            {(data?.monthly || []).map((row) => (
-              <td key={`ca-st-${row.month}`} className={`num ${financialMonthClass(row)}`}>
-                {formatCurrency(row.caSousTraitance)}
-              </td>
-            ))}
+            {renderFinancialPeriodCells(
+              (row) => (
+                <td key={`ca-st-${row.month}`} className={`num ${financialMonthClass(row)}`}>
+                  {formatCurrency(row.caSousTraitance)}
+                </td>
+              ),
+              (aggregate, quarterKey) => (
+                <td
+                  key={`ca-st-${quarterKey}`}
+                  className={`num ${financialQuarterMonthClass(aggregate.taceIsClosedMonth)}`}
+                >
+                  {formatCurrency(aggregate.caSousTraitance)}
+                </td>
+              )
+            )}
             <td className="num financial-month-forecast">{formatCurrency(totals.caSousTraitance)}</td>
           </tr>
           <tr className="metric-sign-highlight">
             <td title="Marge brute en % du CA Anima Néo — survoler une cellule pour le montant">
               Marge brute Anima Néo
             </td>
-            {(data?.monthly || []).map((row) => (
-              <td
-                key={`mb-anima-${row.month}`}
-                className={`num home-recap-margin-pct ${row.margeBruteAnimaNeo >= 0 ? 'pos' : 'neg'}`}
-                title={formatCurrency(row.margeBruteAnimaNeo)}
-              >
-                {formatMarginPctCell(row.margeBruteAnimaNeo, row.caAnimaNeo)}
-              </td>
-            ))}
+            {renderFinancialPeriodCells(
+              (row) => (
+                <td
+                  key={`mb-anima-${row.month}`}
+                  className={`num home-recap-margin-pct ${row.margeBruteAnimaNeo >= 0 ? 'pos' : 'neg'}`}
+                  title={formatCurrency(row.margeBruteAnimaNeo)}
+                >
+                  {formatMarginPctCell(row.margeBruteAnimaNeo, row.caAnimaNeo)}
+                </td>
+              ),
+              (aggregate, quarterKey) => (
+                <td
+                  key={`mb-anima-${quarterKey}`}
+                  className={`num home-recap-margin-pct ${aggregate.margeBruteAnimaNeo >= 0 ? 'pos' : 'neg'}`}
+                  title={formatCurrency(aggregate.margeBruteAnimaNeo)}
+                >
+                  {formatMarginPctCell(aggregate.margeBruteAnimaNeo, aggregate.caAnimaNeo)}
+                </td>
+              )
+            )}
             <td
               className={`num home-recap-margin-pct ${totals.margeBruteAnimaNeo >= 0 ? 'pos' : 'neg'}`}
               title={formatCurrency(totals.margeBruteAnimaNeo)}
@@ -370,15 +525,26 @@ const HomeMonthlyRecap: React.FC = () => {
             <td title="Marge brute en % du CA sous-traitance — survoler une cellule pour le montant">
               Marge brute Sous-traitance
             </td>
-            {(data?.monthly || []).map((row) => (
-              <td
-                key={`mb-st-${row.month}`}
-                className={`num home-recap-margin-pct ${row.margeBruteSousTraitance >= 0 ? 'pos' : 'neg'}`}
-                title={formatCurrency(row.margeBruteSousTraitance)}
-              >
-                {formatMarginPctCell(row.margeBruteSousTraitance, row.caSousTraitance)}
-              </td>
-            ))}
+            {renderFinancialPeriodCells(
+              (row) => (
+                <td
+                  key={`mb-st-${row.month}`}
+                  className={`num home-recap-margin-pct ${row.margeBruteSousTraitance >= 0 ? 'pos' : 'neg'}`}
+                  title={formatCurrency(row.margeBruteSousTraitance)}
+                >
+                  {formatMarginPctCell(row.margeBruteSousTraitance, row.caSousTraitance)}
+                </td>
+              ),
+              (aggregate, quarterKey) => (
+                <td
+                  key={`mb-st-${quarterKey}`}
+                  className={`num home-recap-margin-pct ${aggregate.margeBruteSousTraitance >= 0 ? 'pos' : 'neg'}`}
+                  title={formatCurrency(aggregate.margeBruteSousTraitance)}
+                >
+                  {formatMarginPctCell(aggregate.margeBruteSousTraitance, aggregate.caSousTraitance)}
+                </td>
+              )
+            )}
             <td
               className={`num home-recap-margin-pct ${totals.margeBruteSousTraitance >= 0 ? 'pos' : 'neg'}`}
               title={formatCurrency(totals.margeBruteSousTraitance)}
@@ -388,14 +554,24 @@ const HomeMonthlyRecap: React.FC = () => {
           </tr>
           <tr className="metric-sign-highlight">
             <td title={data?.meta?.resultatForecastFormula}>Résultat</td>
-            {(data?.monthly || []).map((row) => (
-              <td
-                key={`res-${row.month}`}
-                className={`num ${financialMonthClass(row)} ${financialResultClass(row)} ${row.resultat >= 0 ? 'pos' : 'neg'}`}
-              >
-                {formatCurrency(row.resultat)}
-              </td>
-            ))}
+            {renderFinancialPeriodCells(
+              (row) => (
+                <td
+                  key={`res-${row.month}`}
+                  className={`num ${financialMonthClass(row)} ${financialResultClass(row)} ${row.resultat >= 0 ? 'pos' : 'neg'}`}
+                >
+                  {formatCurrency(row.resultat)}
+                </td>
+              ),
+              (aggregate, quarterKey) => (
+                <td
+                  key={`res-${quarterKey}`}
+                  className={`num ${financialQuarterMonthClass(aggregate.taceIsClosedMonth)} ${financialQuarterResultClass(aggregate.taceIsClosedMonth)} ${aggregate.resultat >= 0 ? 'pos' : 'neg'}`}
+                >
+                  {formatCurrency(aggregate.resultat)}
+                </td>
+              )
+            )}
             <td
               className={`num financial-month-forecast financial-highlight-forecast ${totals.resultat >= 0 ? 'pos' : 'neg'}`}
             >
@@ -404,11 +580,21 @@ const HomeMonthlyRecap: React.FC = () => {
           </tr>
           <tr>
             <td>TACE (%)</td>
-            {(data?.monthly || []).map((row) => (
-              <td key={`tace-${row.month}`} className={`num ${financialMonthClass(row)}`}>
-                {formatPct(row.tacePct)}
-              </td>
-            ))}
+            {renderFinancialPeriodCells(
+              (row) => (
+                <td key={`tace-${row.month}`} className={`num ${financialMonthClass(row)}`}>
+                  {formatPct(row.tacePct)}
+                </td>
+              ),
+              (aggregate, quarterKey) => (
+                <td
+                  key={`tace-${quarterKey}`}
+                  className={`num ${financialQuarterMonthClass(aggregate.taceIsClosedMonth)}`}
+                >
+                  {formatPct(aggregate.tacePct)}
+                </td>
+              )
+            )}
             <td className="num financial-month-forecast">{formatPct(totals.tacePct)}</td>
           </tr>
         </tbody>

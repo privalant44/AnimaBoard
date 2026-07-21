@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import './Resources.css';
+import PageShell from './PageShell';
 import { apiFetch } from '../api';
 import { DATA_REFRESH_EVENT } from '../dataRefresh';
 import { hasDateRetourPrevisionnelle } from '../utils/resourceStatus';
@@ -19,14 +20,12 @@ interface Resource {
   commentaires?: string; // Commentaires liés au statut
 }
 
-interface ResourcesProps {
-  onBack: () => void;
-}
-
 type SortField = 'nom' | 'prenom' | 'type' | 'statut' | null;
 type SortDirection = 'asc' | 'desc';
 
-const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
+const RESOURCES_SUBTITLE = 'Suivi des collaborateurs, statuts et reprises prévues';
+
+const Resources: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [resources, setResources] = useState<Resource[]>([]);
   const [dictionaryFilterOptions, setDictionaryFilterOptions] = useState<{ types: string[]; states: string[] }>({
@@ -388,68 +387,36 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
 
   if (loading) {
     return (
-      <div className="resources-page">
-        <div className="resources-header">
-          <button className="back-button" type="button" onClick={onBack}>
-            ← Retour
-          </button>
-          <div className="resources-header-text">
-            <h2>Ressources</h2>
-            <p>Suivi des collaborateurs et reprises</p>
+      <PageShell title="Ressources" subtitle={RESOURCES_SUBTITLE} data-testid="page-shell-resources">
+        <div className="page-shell-panel">
+          <div className="loading-state">
+            <div className="loading-spinner" />
+            <p>Chargement des ressources…</p>
           </div>
         </div>
-        <div className="resources-container">
-          <div className="resources-panel">
-            <div className="loading-state">
-              <div className="loading-spinner" />
-              <p>Chargement des ressources…</p>
-            </div>
-          </div>
-        </div>
-      </div>
+      </PageShell>
     );
   }
 
   if (error) {
     return (
-      <div className="resources-page">
-        <div className="resources-header">
-          <button className="back-button" type="button" onClick={onBack}>
-            ← Retour
-          </button>
-          <div className="resources-header-text">
-            <h2>Ressources</h2>
-            <p>Suivi des collaborateurs et reprises</p>
+      <PageShell title="Ressources" subtitle={RESOURCES_SUBTITLE} data-testid="page-shell-resources">
+        <div className="page-shell-panel">
+          <div className="error-state">
+            <p className="error-message">{error}</p>
+            <button className="retry-button" type="button" onClick={fetchResources}>
+              Réessayer
+            </button>
           </div>
         </div>
-        <div className="resources-container">
-          <div className="resources-panel">
-            <div className="error-state">
-              <p className="error-message">{error}</p>
-              <button className="retry-button" type="button" onClick={fetchResources}>
-                Réessayer
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="resources-page">
-      <div className="resources-header">
-        <button className="back-button" type="button" onClick={onBack}>
-          ← Retour
-        </button>
-        <div className="resources-header-text">
-          <h2>Ressources</h2>
-          <p>Suivi des collaborateurs, statuts et reprises prévues</p>
-        </div>
-      </div>
-      <div className="resources-container">
+    <PageShell title="Ressources" subtitle={RESOURCES_SUBTITLE} data-testid="page-shell-resources">
         {resources.length === 0 ? (
-          <div className="resources-panel">
+          <div className="page-shell-panel">
             <div className="empty-state">
               <p className="empty-message">Aucune ressource trouvée</p>
               <p className="empty-details">
@@ -460,7 +427,7 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
             </div>
           </div>
         ) : (
-          <div className="resources-panel">
+          <div className="page-shell-panel resources-panel">
             <div className="resources-toolbar">
               <div className="resources-toolbar-filters">
                 {/* Filtre Type */}
@@ -758,8 +725,7 @@ const Resources: React.FC<ResourcesProps> = ({ onBack }) => {
             </div>
           </div>
         )}
-      </div>
-    </div>
+    </PageShell>
   );
 };
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import './Forecast.css';
+import PageShell from './PageShell';
 import { DATA_REFRESH_EVENT } from '../dataRefresh';
 import { apiFetch, describeApiEndpoint, normalizeApiError } from '../api';
 import ForecastScenarios, { ForecastScenario } from './ForecastScenarios';
@@ -48,10 +49,6 @@ interface ResourceWithProjects {
   projects: Project[];
   /** Toutes les prestations de la ressource : base du CA par année (hors filtre période). */
   allProjectsForCA: Project[];
-}
-
-interface ForecastProps {
-  onBack: () => void;
 }
 
 type ForecastPeriodOverride = { startDate: string; endDate: string };
@@ -256,7 +253,7 @@ const loadForecastFiltersFromStorage = () => {
   }
 };
 
-const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
+const Forecast: React.FC = () => {
   const auth = useAuth();
   const authOn = isAuthEnabled();
   const canScenarios = !authOn || auth?.canView(PERMISSIONS.VIEW_FORECAST_SCENARIOS);
@@ -1497,85 +1494,65 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
     return date.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
   };
 
+  const scenariosAction = canScenarios ? (
+    <button
+      type="button"
+      className="forecast-scenarios-btn btn-secondary"
+      onClick={() => setScenariosOpen(true)}
+      data-testid="forecast-scenarios-btn"
+    >
+      Scénarios
+    </button>
+  ) : null;
+
   if (loading) {
     return (
-      <div className="forecast-page">
-        <div className="forecast-header">
-          <button className="back-button" onClick={onBack}>
-            ← Retour
-          </button>
-          {canScenarios && (
-          <button
-            type="button"
-            className="forecast-scenarios-btn"
-            onClick={() => setScenariosOpen(true)}
-            data-testid="forecast-scenarios-btn"
-          >
-            Scénarios
-          </button>
-          )}
-          <h2>Forecast</h2>
-        </div>
-        <div className="forecast-container">
+      <PageShell
+        title="Forecast"
+        subtitle="Prévisionnel et temps saisis par prestation"
+        actions={scenariosAction}
+        data-testid="page-shell-forecast"
+      >
+        <div className="page-shell-panel">
           <div className="loading-state">
-            <div className="loading-spinner"></div>
-            <p>Chargement du forecast...</p>
+            <div className="loading-spinner" />
+            <p>Chargement du forecast…</p>
           </div>
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   if (error) {
     return (
-      <div className="forecast-page">
-        <div className="forecast-header">
-          <button className="back-button" onClick={onBack}>
-            ← Retour
-          </button>
-          {canScenarios && (
-          <button
-            type="button"
-            className="forecast-scenarios-btn"
-            onClick={() => setScenariosOpen(true)}
-            data-testid="forecast-scenarios-btn"
-          >
-            Scénarios
-          </button>
-          )}
-          <h2>Forecast</h2>
-        </div>
-        <div className="forecast-container">
+      <PageShell
+        title="Forecast"
+        subtitle="Prévisionnel et temps saisis par prestation"
+        actions={scenariosAction}
+        data-testid="page-shell-forecast"
+      >
+        <div className="page-shell-panel">
           <div className="error-state">
-            <p className="error-message">❌ {error}</p>
-            <button className="retry-button" onClick={() => void fetchForecast()}>
+            <p className="error-message">{error}</p>
+            <button className="retry-button" type="button" onClick={() => void fetchForecast()}>
               Réessayer
             </button>
           </div>
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="forecast-page" data-testid="forecast-page">
-      <div className="forecast-header">
-        <button className="back-button" onClick={onBack}>
-          ← Retour
-        </button>
-        {canScenarios && (
-        <button
-          type="button"
-          className="forecast-scenarios-btn"
-          onClick={() => setScenariosOpen(true)}
-          data-testid="forecast-scenarios-btn"
-        >
-          Scénarios
-        </button>
-        )}
-        <h2>Forecast</h2>
-      </div>
-      <div className="forecast-container">
+    <>
+    <PageShell
+      title="Forecast"
+      subtitle="Prévisionnel et temps saisis par prestation"
+      actions={scenariosAction}
+      data-testid="page-shell-forecast"
+      className="forecast-page"
+    >
+      <div className="page-shell-panel forecast-container" data-testid="forecast-page">
         {/* Filtres de période */}
         <div className="forecast-filters">
           <div className="date-filters-group">
@@ -2451,13 +2428,14 @@ const Forecast: React.FC<ForecastProps> = ({ onBack }) => {
           </>
         )}
       </div>
+    </PageShell>
       {canScenarios && scenariosOpen && (
         <ForecastScenarios
           onClose={() => setScenariosOpen(false)}
           onChanged={() => void reloadForecastScenarios()}
         />
       )}
-    </div>
+    </>
   );
 };
 

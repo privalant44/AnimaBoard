@@ -1,0 +1,135 @@
+:root {
+  --anima-teal: #2c5f5d;
+  --anima-teal-dark: #174a48;
+  --anima-mint: #a6c9c8;
+  --anima-mint-dark: #7ba8a6;
+  --anima-mint-light: #eef6f5;
+  --anima-surface: #ffffff;
+  --anima-text: #334155;
+  --anima-muted: #64748b;
+  --anima-border: #d4e8e7;
+  --anima-radius: 10px;
+  --anima-radius-lg: 12px;
+  --anima-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+  --anima-focus-ring: 0 0 0 3px rgba(44, 95, 93, 0.35);
+}
+
+:focus-visible {
+  outline: 2px solid var(--anima-teal);
+  outline-offset: 2px;
+}
+
+.skip-to-content {
+  position: absolute;
+  left: -9999px;
+  top: 0.75rem;
+  z-index: 2000;
+  padding: 0.6rem 1rem;
+  background: var(--anima-teal);
+  color: #fff;
+  border-radius: 8px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.skip-to-content:focus {
+  left: 0.75rem;
+}
+
+.app-alert {
+  padding: 0.65rem 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.app-alert--error {
+  background: #b42318;
+  color: #fff;
+}
+
+.app-alert code {
+  background: rgba(255, 255, 255, 0.15);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
+.loading-state,
+.error-state,
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1.5rem;
+  text-align: center;
+  gap: 0.75rem;
+}
+
+.loading-spinner {
+  border: 3px solid var(--anima-mint-light);
+  border-top-color: var(--anima-teal);
+  border-radius: 50%;
+  width: 42px;
+  height: 42px;
+  animation: ux-spin 0.85s linear infinite;
+}
+
+@keyframes ux-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.error-message {
+  color: #9f1f1f;
+  margin: 0;
+  max-width: 36rem;
+}
+
+.empty-message {
+  color: var(--anima-teal);
+  font-weight: 600;
+  margin: 0;
+}
+
+.empty-details {
+  color: var(--anima-muted);
+  font-size: 0.88rem;
+  margin: 0;
+  max-width: 40rem;
+  line-height: 1.5;
+}
+
+.retry-button {
+  padding: 0.55rem 1.1rem;
+  background: var(--anima-mint);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: background 0.2s ease;
+}
+
+.retry-button:hover {
+  background: var(--anima-mint-dark);
+}
+
+.btn-secondary {
+  padding: 0.55rem 1rem;
+  background: var(--anima-surface);
+  color: var(--anima-teal);
+  border: 2px solid var(--anima-mint);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.btn-secondary:hover {
+  background: var(--anima-mint-light);
+  border-color: var(--anima-mint-dark);
+}

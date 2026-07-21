@@ -88,15 +88,7 @@ async function startTestApp() {
             prenom: 'Jean',
             typeLabel: 'Consultant',
             stateLabel: 'En mission',
-            raw: { email: 'consultant@animaneo.fr' },
-          },
-          {
-            id: 99,
-            nom: 'Martin',
-            prenom: 'Paul',
-            typeLabel: 'Consultant',
-            stateLabel: 'En mission',
-            raw: { email: 'autre@animaneo.fr' },
+            raw: { email: 'manager@animaneo.fr' },
           },
         ],
         dictionaryOptions: { types: ['Consultant'], states: ['En mission'] },
@@ -105,14 +97,6 @@ async function startTestApp() {
             id: '1001',
             resourceId: 42,
             title: 'Mission test',
-            startDate: '2026-01-01',
-            endDate: '2026-12-31',
-            tjm: 500,
-          },
-          {
-            id: '1002',
-            resourceId: 99,
-            title: 'Mission autre',
             startDate: '2026-01-01',
             endDate: '2026-12-31',
             tjm: 500,
@@ -127,6 +111,56 @@ async function startTestApp() {
         holidays: [],
       },
     });
+  });
+
+  app.get('/api/data/resources-local', (_req, res) => {
+    res.json({
+      success: true,
+      data: [
+        {
+          id: 42,
+          nom: 'Dupont',
+          prenom: 'Jean',
+          type: 'Consultant',
+          statut: 'En mission',
+        },
+      ],
+    });
+  });
+
+  app.get('/api/data/resources-metadata', (_req, res) => {
+    res.json({ success: true, data: {} });
+  });
+
+  app.get('/api/dashboard/income-statement', (req, res) => {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    res.json({
+      year,
+      source: 'bdd',
+      method: 'test',
+      description: 'Mock BDD',
+      monthly: [],
+      totals: {
+        produits: 0,
+        charges: 0,
+        resultat: 0,
+        caAnimaNeo: 0,
+        caSousTraitance: 0,
+        salaires: 0,
+        cotisationsSociales: 0,
+        autresCharges: 0,
+        dontSousTraitance: 0,
+      },
+      counts: { months: 0 },
+    });
+  });
+
+  app.post('/api/boondmanager/sync/besoins/snapshot', (_req, res) => {
+    res.json({ success: true, message: 'Mock snapshot' });
+  });
+
+  app.get('/api/batch-sync/status', (_req, res) => {
+    res.json({ success: true, lastRun: null });
   });
 
   app.get('/api/data/french-holidays.json', (_req, res) => {

@@ -174,11 +174,28 @@
 }
 
 .home-batch-status {
-  position: fixed;
-  bottom: 1rem;
-  left: calc(var(--app-sidebar-width, 270px) + 1rem);
-  z-index: 100;
-  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border-top: 1px solid rgba(123, 168, 166, 0.35);
+  color: #2c5f5d;
+  font-size: 0.78rem;
+}
+
+.home-batch-status-label {
+  line-height: 1.25;
+  font-weight: 600;
+}
+
+.sidebar-collapsed .home-batch-status-label {
+  display: none;
+}
+
+.sidebar-collapsed .home-batch-status {
+  justify-content: center;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
 }
 
 .home-batch-status-dot {

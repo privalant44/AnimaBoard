@@ -32,6 +32,7 @@ interface HomeMonthlyRecapChartProps {
   monthly: HomeMonthlyChartRow[];
   canFinancial: boolean;
   canBesoins: boolean;
+  section?: 'financial' | 'besoins';
 }
 
 const formatMonthLabel = (month: string) => {
@@ -47,7 +48,10 @@ const HomeMonthlyRecapChart: React.FC<HomeMonthlyRecapChartProps> = ({
   monthly,
   canFinancial,
   canBesoins,
+  section,
 }) => {
+  const showFinancial = canFinancial && (!section || section === 'financial');
+  const showBesoins = canBesoins && (!section || section === 'besoins');
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('fr-FR', {
       style: 'currency',
@@ -71,9 +75,9 @@ const HomeMonthlyRecapChart: React.FC<HomeMonthlyRecapChartProps> = ({
 
   return (
     <div className="home-recap-chart" data-testid="home-recap-chart-view">
-      {canFinancial && (
+      {showFinancial && (
         <section className="home-recap-chart-section" data-testid="home-recap-chart-financial">
-          <h2 className="home-recap-chart-title">Indicateurs financiers</h2>
+          {!section && <h2 className="home-recap-chart-title">Indicateurs financiers</h2>}
           <ResponsiveContainer width="100%" height={340}>
             <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#dde8e7" />
@@ -134,9 +138,9 @@ const HomeMonthlyRecapChart: React.FC<HomeMonthlyRecapChartProps> = ({
         </section>
       )}
 
-      {canBesoins && (
+      {showBesoins && (
         <section className="home-recap-chart-section" data-testid="home-recap-chart-besoins">
-          <h2 className="home-recap-chart-title">Indicateurs besoins</h2>
+          {!section && <h2 className="home-recap-chart-title">Indicateurs besoins</h2>}
           <ResponsiveContainer width="100%" height={320}>
             <BarChart data={chartData} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#dde8e7" />

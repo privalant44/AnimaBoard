@@ -113,11 +113,13 @@ function App() {
             onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
             canTab={auth?.canTab}
           />
+          <div className="app-sidebar-footer" data-testid="app-sidebar-footer">
+            <HomeBatchStatus />
+          </div>
         </aside>
         <section className="app-content" id="app-main-content" aria-live="polite">
           {renderContent()}
         </section>
-        {activeTab === 'home' && <HomeBatchStatus />}
       </div>
     </div>
   );

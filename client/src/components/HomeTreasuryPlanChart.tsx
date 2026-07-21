@@ -26,6 +26,7 @@ interface HomeTreasuryPlanChartProps {
   initialBalance: number;
   loading?: boolean;
   error?: string | null;
+  embedded?: boolean;
 }
 
 const HomeTreasuryPlanChart: React.FC<HomeTreasuryPlanChartProps> = ({
@@ -34,6 +35,7 @@ const HomeTreasuryPlanChart: React.FC<HomeTreasuryPlanChartProps> = ({
   initialBalance,
   loading = false,
   error = null,
+  embedded = false,
 }) => {
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('fr-FR', {
@@ -57,9 +59,11 @@ const HomeTreasuryPlanChart: React.FC<HomeTreasuryPlanChartProps> = ({
     label: formatMonth(row.month),
   }));
 
+  const rootClass = embedded ? 'home-treasury-chart home-treasury-chart--embedded' : 'home-treasury-chart';
+
   if (loading) {
     return (
-      <div className="home-treasury-chart">
+      <div className={rootClass} data-testid="home-treasury-chart-view">
         <p className="home-treasury-chart-state">Chargement du plan de trésorerie…</p>
       </div>
     );
@@ -67,19 +71,23 @@ const HomeTreasuryPlanChart: React.FC<HomeTreasuryPlanChartProps> = ({
 
   if (error) {
     return (
-      <div className="home-treasury-chart">
+      <div className={rootClass} data-testid="home-treasury-chart-view">
         <p className="home-treasury-chart-state home-treasury-chart-state--error">{error}</p>
       </div>
     );
   }
 
   if (chartData.length === 0) {
-    return null;
+    return (
+      <div className={rootClass} data-testid="home-treasury-chart-view">
+        <p className="home-treasury-chart-state">Aucune donnée de trésorerie.</p>
+      </div>
+    );
   }
 
   return (
-    <div className="home-treasury-chart">
-      <h2 className="home-treasury-chart-title">Plan de trésorerie</h2>
+    <div className={rootClass} data-testid="home-treasury-chart-view">
+      {!embedded && <h2 className="home-treasury-chart-title">Plan de trésorerie</h2>}
       <p className="home-treasury-chart-subtitle">
         Délai moyen de paiement : {averagePaymentDelayDays} j — Solde initial :{' '}
         {formatCurrency(initialBalance)}

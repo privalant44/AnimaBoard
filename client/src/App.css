@@ -33,6 +33,15 @@
   transition: width 0.25s ease, padding 0.25s ease;
 }
 
+.app-sidebar .navigation {
+  flex: 1;
+}
+
+.app-sidebar-footer {
+  margin-top: auto;
+  flex-shrink: 0;
+}
+
 .app-sidebar-header {
   display: flex;
   flex-direction: column;

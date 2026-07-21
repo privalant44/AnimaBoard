@@ -69,8 +69,19 @@ async function startTestApp() {
     res.json({ year, monthly });
   });
 
-  app.get('/api/dashboard/treasury-plan', (_req, res) => {
-    res.json({ monthly: [], settings: { averagePaymentDelayDays: 30, initialBalance: 0 } });
+  app.get('/api/dashboard/treasury-plan', (req, res) => {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const monthly = Array.from({ length: 12 }, (_, index) => {
+      const month = String(index + 1).padStart(2, '0');
+      return {
+        month: `${year}-${month}`,
+        sourceMonth: `${year}-${month}`,
+        shiftedCa: 70000 + index * 4000,
+        charges: 50000 + index * 3000,
+        treasuryBalance: 20000 + index * 1500,
+      };
+    });
+    res.json({ monthly, settings: { averagePaymentDelayDays: 30, initialBalance: 10000 } });
   });
 
   app.get('/api/company-logo', (_req, res) => {
@@ -160,7 +171,11 @@ async function startTestApp() {
   });
 
   app.get('/api/batch-sync/status', (_req, res) => {
-    res.json({ success: true, lastRun: null });
+    res.json({
+      hasRun: true,
+      success: true,
+      startedAt: '2026-07-20T08:00:00.000Z',
+    });
   });
 
   app.get('/api/data/french-holidays.json', (_req, res) => {

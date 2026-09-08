@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import { PERMISSIONS } from '../auth/roles';
+import PageShell from './PageShell';
 import SettingsDataSyncPanel from './settings/SettingsDataSyncPanel';
 import SettingsDiagnosticsPanel from './settings/SettingsDiagnosticsPanel';
 import SettingsBatchLogsPanel from './settings/SettingsBatchLogsPanel';
@@ -84,9 +85,13 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
   }
 
   return (
-    <div className="settings-page">
+    <PageShell
+      title="Paramètres"
+      subtitle="Administration, synchronisations et diagnostics"
+      data-testid="page-shell-settings"
+      className="settings-page"
+    >
       <div className="settings-container">
-        <h2>Paramètres</h2>
         <div className="settings-hub-grid">
           <button type="button" className="settings-hub-card" onClick={() => setView('data-sync')}>
             <span className="settings-hub-card-icon" aria-hidden="true">{'\u{1F504}'}</span>
@@ -117,7 +122,7 @@ const Settings: React.FC<SettingsProps> = ({ onLogoChange, currentLogo }) => {
           )}
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 };
 

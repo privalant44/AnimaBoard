@@ -1,0 +1,190 @@
+.forecast-synthesis-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.forecast-synthesis-panel {
+  width: min(1280px, 100%);
+  max-height: 100%;
+  background: #fff;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 16px 48px rgba(15, 23, 42, 0.2);
+}
+
+.forecast-synthesis-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+.forecast-synthesis-header .back-button {
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  font-size: 0.95rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+}
+
+.forecast-synthesis-header .back-button:hover {
+  text-decoration: underline;
+}
+
+.forecast-synthesis-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.forecast-synthesis-body {
+  padding: 1rem 1.25rem 1.25rem;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.forecast-synthesis-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.forecast-synthesis-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.forecast-synthesis-form-row label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.forecast-synthesis-form-row input,
+.forecast-synthesis-form-row textarea {
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+}
+
+.forecast-synthesis-form-row input:focus,
+.forecast-synthesis-form-row textarea:focus {
+  outline: 2px solid #93c5fd;
+  border-color: #60a5fa;
+}
+
+.forecast-synthesis-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.forecast-synthesis-toggles label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.forecast-synthesis-meta {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+.forecast-synthesis-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.forecast-synthesis-export-btn {
+  padding: 0.55rem 1rem;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.forecast-synthesis-export-btn:hover {
+  background: #eef2ff;
+  border-color: #93c5fd;
+}
+
+.forecast-synthesis-preview-wrap h3 {
+  margin: 0 0 0.65rem;
+  font-size: 1rem;
+}
+
+.forecast-synthesis-empty {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.forecast-synthesis-table-scroll {
+  overflow: auto;
+  max-height: min(55vh, 520px);
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.forecast-synthesis-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.forecast-synthesis-table th,
+.forecast-synthesis-table td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.forecast-synthesis-table th {
+  position: sticky;
+  top: 0;
+  background: #f3f4f6;
+  z-index: 1;
+  font-weight: 600;
+}
+
+.forecast-synthesis-table td.num,
+.forecast-synthesis-table th.num {
+  text-align: right;
+}
+
+.forecast-synthesis-badge {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: #e0f2fe;
+  color: #075985;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.forecast-synthesis-badge--scenario {
+  background: #fef3c7;
+  color: #92400e;
+}

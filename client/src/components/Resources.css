@@ -1,74 +1,16 @@
-/* Palette Anima Neo */
-.resources-page {
-  --res-teal: #2C5F5D;
-  --res-mint: #A6C9C8;
-  --res-mint-dark: #7BA8A6;
-  --res-mint-light: #eef6f5;
-  --res-mint-soft: rgba(166, 201, 200, 0.22);
-  --res-white: #ffffff;
-  --res-text: #334155;
-  --res-muted: #64748b;
-  --res-border: #d4e8e7;
-  --res-radius: 10px;
-
-  position: fixed;
-  inset: 0;
-  background: var(--res-white);
-  overflow-y: auto;
-  z-index: 1000;
-}
-
-/* ── En-tête ── */
-.resources-header {
-  background: var(--res-white);
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid var(--res-border);
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
-
-.back-button {
-  padding: 0.55rem 1rem;
-  background: var(--res-mint);
-  color: var(--res-white);
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: 600;
-  transition: background 0.2s;
-  white-space: nowrap;
-}
-
-.back-button:hover {
-  background: var(--res-mint-dark);
-}
-
-.resources-header-text h2 {
-  color: var(--res-teal);
-  margin: 0;
-  font-size: 1.4rem;
-  font-weight: 700;
-}
-
-.resources-header-text p {
-  margin: 0.15rem 0 0;
-  color: var(--res-muted);
-  font-size: 0.85rem;
-}
-
-/* ── Contenu pleine largeur ── */
-.resources-container {
-  width: 100%;
-  padding: 1rem 1.25rem 2rem;
-  box-sizing: border-box;
-}
-
+/* Palette Anima Neo — complète les tokens globaux */
 .resources-panel {
+  --res-teal: var(--anima-teal);
+  --res-mint: var(--anima-mint);
+  --res-mint-dark: var(--anima-mint-dark);
+  --res-mint-light: var(--anima-mint-light);
+  --res-mint-soft: rgba(166, 201, 200, 0.22);
+  --res-white: var(--anima-surface);
+  --res-text: var(--anima-text);
+  --res-muted: var(--anima-muted);
+  --res-border: var(--anima-border);
+  --res-radius: var(--anima-radius);
+
   width: 100%;
   box-sizing: border-box;
 }
@@ -528,58 +470,6 @@
   font-size: 0.85rem;
 }
 
-/* ── États ── */
-.loading-state,
-.error-state,
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 3rem 1.5rem;
-  text-align: center;
-}
-
-.loading-spinner {
-  border: 3px solid var(--res-mint-light);
-  border-top-color: var(--res-teal);
-  border-radius: 50%;
-  width: 40px;
-  height: 40px;
-  animation: resSpin 0.8s linear infinite;
-  margin-bottom: 0.75rem;
-}
-
-@keyframes resSpin {
-  to { transform: rotate(360deg); }
-}
-
-.error-message {
-  color: #b91c1c;
-  margin-bottom: 0.75rem;
-}
-
-.retry-button {
-  padding: 0.55rem 1rem;
-  background: var(--res-teal);
-  color: var(--res-white);
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.empty-message {
-  font-size: 1.15rem;
-  color: var(--res-teal);
-  font-weight: 700;
-}
-
-.empty-details {
-  color: var(--res-muted);
-  font-size: 0.88rem;
-  max-width: 520px;
-}
-
 .no-results {
   text-align: center;
   padding: 2rem;
@@ -590,10 +480,6 @@
 }
 
 @media (max-width: 768px) {
-  .resources-container {
-    padding: 0.75rem;
-  }
-
   .resources-table th.col-commentaires,
   .resources-table th.col-suivi,
   .col-statut {

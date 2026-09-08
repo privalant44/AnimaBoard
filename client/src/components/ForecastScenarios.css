@@ -30,6 +30,22 @@
   background: #fafafa;
 }
 
+.forecast-scenarios-header .back-button {
+  padding: 0.55rem 1rem;
+  background: var(--anima-mint);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: background 0.2s ease;
+}
+
+.forecast-scenarios-header .back-button:hover {
+  background: var(--anima-mint-dark);
+}
+
 .forecast-scenarios-header h2 {
   margin: 0;
   color: #2c5f5d;

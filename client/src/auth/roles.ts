@@ -53,9 +53,9 @@ export const MODULES: ModuleDefinition[] = [
     id: 1,
     label: 'Accueil',
     permissions: [
-      { key: PERMISSIONS.VIEW_HOME_FINANCIAL, label: 'Tableau de bord financier' },
-      { key: PERMISSIONS.VIEW_HOME_BESOINS, label: 'Tableau de bord besoins' },
-      { key: PERMISSIONS.VIEW_HOME_TREASURY, label: 'Plan de trésorerie' },
+      { key: PERMISSIONS.VIEW_HOME_FINANCIAL, label: 'Cadran indicateurs financiers' },
+      { key: PERMISSIONS.VIEW_HOME_BESOINS, label: 'Cadran indicateurs besoins' },
+      { key: PERMISSIONS.VIEW_HOME_TREASURY, label: 'Cadran plan de trésorerie' },
     ],
   },
   {

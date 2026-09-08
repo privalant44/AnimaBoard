@@ -4,7 +4,24 @@ import { useAuth } from '../auth/AuthProvider';
 import { isAuthEnabled } from '../auth/msalConfig';
 import { PERMISSIONS } from '../auth/roles';
 import HomeTreasuryPlanChart, { TreasuryPlanMonthRow } from './HomeTreasuryPlanChart';
+import HomeMonthlyRecapChart from './HomeMonthlyRecapChart';
+import HomeDashboardZone, { DashboardZoneViewMode } from './HomeDashboardZone';
+import {
+  aggregateQuarterMonths,
+  countFinancialTableColumns,
+  groupMonthlyByQuarter,
+} from '../utils/financialQuarters';
+import {
+  HomeDashboardZoneId,
+  loadHomeDashboardZoneOrder,
+  moveHomeDashboardZone,
+  normalizeHomeDashboardZoneOrder,
+  saveHomeDashboardZoneOrder,
+  zoneTestId,
+} from '../utils/homeDashboardZoneOrder';
 import './HomeMonthlyRecap.css';
+import './HomeMonthlyRecapChart.css';
+import './HomeDashboardZone.css';
 
 interface HomeMonthlyRow {
   month: string;
@@ -61,6 +78,10 @@ const HomeMonthlyRecap: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [selectedScenario, setSelectedScenario] = useState<string>('none');
   const [isBesoinsExpanded, setIsBesoinsExpanded] = useState<boolean>(true);
+  const [expandedFinancialQuarters, setExpandedFinancialQuarters] = useState<Record<string, boolean>>({});
+  const [financialViewMode, setFinancialViewMode] = useState<DashboardZoneViewMode>('chart');
+  const [besoinsViewMode, setBesoinsViewMode] = useState<DashboardZoneViewMode>('chart');
+  const [treasuryViewMode, setTreasuryViewMode] = useState<DashboardZoneViewMode>('chart');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<HomeMonthlyRecapResponse | null>(null);
@@ -71,6 +92,32 @@ const HomeMonthlyRecap: React.FC = () => {
     averagePaymentDelayDays: 30,
     initialBalance: 0,
   });
+  const [zoneOrder, setZoneOrder] = useState<HomeDashboardZoneId[]>(() => loadHomeDashboardZoneOrder());
+
+  const visibleZoneIds = useMemo(() => {
+    const ids: HomeDashboardZoneId[] = [];
+    if (canFinancial) ids.push('financial');
+    if (canBesoins) ids.push('besoins');
+    if (canTreasury) ids.push('treasury');
+    return ids;
+  }, [canFinancial, canBesoins, canTreasury]);
+
+  const orderedVisibleZones = useMemo(
+    () => normalizeHomeDashboardZoneOrder(zoneOrder, visibleZoneIds),
+    [zoneOrder, visibleZoneIds]
+  );
+
+  useEffect(() => {
+    setZoneOrder((prev) => normalizeHomeDashboardZoneOrder(prev, visibleZoneIds));
+  }, [visibleZoneIds]);
+
+  useEffect(() => {
+    saveHomeDashboardZoneOrder(zoneOrder);
+  }, [zoneOrder]);
+
+  const handleMoveZone = useCallback((zoneId: HomeDashboardZoneId, direction: 'earlier' | 'later') => {
+    setZoneOrder((prev) => moveHomeDashboardZone(normalizeHomeDashboardZoneOrder(prev, visibleZoneIds), zoneId, direction));
+  }, [visibleZoneIds]);
 
   useEffect(() => {
     let cancelled = false;
@@ -259,6 +306,90 @@ const HomeMonthlyRecap: React.FC = () => {
     row.taceIsClosedMonth ? 'financial-month-closed' : 'financial-month-forecast';
   const financialResultClass = (row: HomeMonthlyRow) =>
     row.taceIsClosedMonth ? 'financial-highlight-closed' : 'financial-highlight-forecast';
+  const financialQuarterMonthClass = (isClosedMonth: boolean) =>
+    isClosedMonth ? 'financial-month-closed' : 'financial-month-forecast';
+  const financialQuarterResultClass = (isClosedMonth: boolean) =>
+    isClosedMonth ? 'financial-highlight-closed' : 'financial-highlight-forecast';
+
+  const financialQuarterGroups = useMemo(
+    () => groupMonthlyByQuarter(data?.monthly || []),
+    [data?.monthly]
+  );
+
+  useEffect(() => {
+    setExpandedFinancialQuarters((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      financialQuarterGroups.forEach((group) => {
+        if (!(group.key in next)) {
+          next[group.key] = true;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [financialQuarterGroups]);
+
+  const isFinancialQuarterExpanded = (quarterKey: string) =>
+    expandedFinancialQuarters[quarterKey] ?? true;
+
+  const toggleFinancialQuarter = (quarterKey: string) => {
+    setExpandedFinancialQuarters((prev) => ({
+      ...prev,
+      [quarterKey]: !(prev[quarterKey] ?? true),
+    }));
+  };
+
+  const financialTableColumnCount = useMemo(
+    () => countFinancialTableColumns(financialQuarterGroups, expandedFinancialQuarters),
+    [financialQuarterGroups, expandedFinancialQuarters]
+  );
+
+  const renderFinancialQuarterToggle = (quarterKey: string, label: string) => {
+    const expanded = isFinancialQuarterExpanded(quarterKey);
+    return (
+      <button
+        type="button"
+        className="quarter-toggle-btn"
+        onClick={() => toggleFinancialQuarter(quarterKey)}
+        aria-expanded={expanded}
+        aria-label={
+          expanded
+            ? `Replier le trimestre ${label}`
+            : `Déplier le trimestre ${label}`
+        }
+        title={expanded ? 'Replier' : 'Déplier'}
+        data-testid={`home-financial-quarter-toggle-${quarterKey}`}
+      >
+        <svg
+          className={`quarter-toggle-arrow ${expanded ? 'is-open' : ''}`}
+          viewBox="0 0 20 20"
+          aria-hidden="true"
+        >
+          <path d="M7.23 5.21a.75.75 0 0 1 1.06.02L12 9.12l3.71-3.89a.75.75 0 1 1 1.08 1.04l-4.25 4.45a.75.75 0 0 1-1.08 0L7.21 6.27a.75.75 0 0 1 .02-1.06Z" />
+        </svg>
+        <span>{label}</span>
+      </button>
+    );
+  };
+
+  const renderFinancialPeriodCells = (
+    renderMonthCell: (row: HomeMonthlyRow) => React.ReactNode,
+    renderQuarterCell: (aggregate: ReturnType<typeof aggregateQuarterMonths>, quarterKey: string) => React.ReactNode
+  ) =>
+    financialQuarterGroups.flatMap((group) => {
+      if (isFinancialQuarterExpanded(group.key)) {
+        return group.months.map((row) => (
+          <React.Fragment key={`${group.key}-${row.month}`}>{renderMonthCell(row)}</React.Fragment>
+        ));
+      }
+      const aggregate = aggregateQuarterMonths(group.months);
+      return (
+        <React.Fragment key={group.key}>
+          {renderQuarterCell(aggregate, group.key)}
+        </React.Fragment>
+      );
+    });
 
   const formatMonth = (month: string) => {
     const [y, m] = String(month || '').split('-');
@@ -268,6 +399,395 @@ const HomeMonthlyRecap: React.FC = () => {
       year: 'numeric',
     });
   };
+
+  const formatTreasuryMonth = (month: string) => {
+    const [y, m] = String(month || '').split('-');
+    if (!y || !m) return month;
+    return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('fr-FR', {
+      month: 'short',
+      year: 'numeric',
+    });
+  };
+
+  const treasuryTotals = useMemo(() => {
+    return treasuryMonthly.reduce(
+      (acc, row) => ({
+        shiftedCa: acc.shiftedCa + toNumberOrZero(row.shiftedCa),
+        charges: acc.charges + toNumberOrZero(row.charges),
+        treasuryBalance: toNumberOrZero(row.treasuryBalance),
+      }),
+      { shiftedCa: 0, charges: 0, treasuryBalance: 0 }
+    );
+  }, [treasuryMonthly]);
+
+  const renderFinancialTable = () => (
+    <div className="home-recap-table-wrap" data-testid="home-recap-table-view">
+      <table className="home-recap-table">
+        <thead>
+          <tr>
+            <th rowSpan={2}>Indicateur</th>
+            {financialQuarterGroups.map((group) => {
+              const expanded = isFinancialQuarterExpanded(group.key);
+              if (expanded) {
+                return (
+                  <th
+                    key={group.key}
+                    colSpan={group.months.length}
+                    className="quarter-header-cell"
+                  >
+                    {renderFinancialQuarterToggle(group.key, group.label)}
+                  </th>
+                );
+              }
+              return (
+                <th key={group.key} rowSpan={2} className="quarter-header-cell">
+                  {renderFinancialQuarterToggle(group.key, group.label)}
+                </th>
+              );
+            })}
+            <th rowSpan={2}>Total</th>
+          </tr>
+          <tr>
+            {financialQuarterGroups.flatMap((group) =>
+              isFinancialQuarterExpanded(group.key)
+                ? group.months.map((row) => (
+                    <th
+                      key={row.month}
+                      data-testid={`home-financial-month-col-${row.month}`}
+                    >
+                      {formatMonth(row.month)}
+                    </th>
+                  ))
+                : []
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="section-row" data-testid="home-view-financial">
+            <td colSpan={financialTableColumnCount + 2}>Financier</td>
+          </tr>
+          <tr>
+            <td title={data?.meta?.caForecastFormula}>
+              CA Anima Néo
+              {data?.meta?.plannedScenarioFilterLabel && (
+                <span className="home-recap-scenario-hint">
+                  {' '}
+                  (+ prévi. {data.meta.plannedScenarioFilterLabel})
+                </span>
+              )}
+            </td>
+            {renderFinancialPeriodCells(
+              (row) => (
+                <td
+                  key={`ca-anima-${row.month}`}
+                  className={`num ${financialMonthClass(row)}`}
+                >
+                  {formatCurrency(row.caAnimaNeo)}
+                </td>
+              ),
+              (aggregate, quarterKey) => (
+                <td
+                  key={`ca-anima-${quarterKey}`}
+                  className={`num ${financialQuarterMonthClass(aggregate.taceIsClosedMonth)}`}
+                  data-testid={`home-financial-quarter-col-${quarterKey}`}
+                >
+                  {formatCurrency(aggregate.caAnimaNeo)}
+                </td>
+              )
+            )}
+            <td className="num financial-month-forecast">{formatCurrency(totals.caAnimaNeo)}</td>
+          </tr>
+          <tr>
+            <td title={data?.meta?.caForecastFormula}>
+              CA Sous-traitance
+              {data?.meta?.plannedScenarioFilterLabel && (
+                <span className="home-recap-scenario-hint">
+                  {' '}
+                  (+ prévi. {data.meta.plannedScenarioFilterLabel})
+                </span>
+              )}
+            </td>
+            {renderFinancialPeriodCells(
+              (row) => (
+                <td key={`ca-st-${row.month}`} className={`num ${financialMonthClass(row)}`}>
+                  {formatCurrency(row.caSousTraitance)}
+                </td>
+              ),
+              (aggregate, quarterKey) => (
+                <td
+                  key={`ca-st-${quarterKey}`}
+                  className={`num ${financialQuarterMonthClass(aggregate.taceIsClosedMonth)}`}
+                >
+                  {formatCurrency(aggregate.caSousTraitance)}
+                </td>
+              )
+            )}
+            <td className="num financial-month-forecast">{formatCurrency(totals.caSousTraitance)}</td>
+          </tr>
+          <tr className="metric-sign-highlight">
+            <td title="Marge brute en % du CA Anima Néo — survoler une cellule pour le montant">
+              Marge brute Anima Néo
+            </td>
+            {renderFinancialPeriodCells(
+              (row) => (
+                <td
+                  key={`mb-anima-${row.month}`}
+                  className={`num home-recap-margin-pct ${row.margeBruteAnimaNeo >= 0 ? 'pos' : 'neg'}`}
+                  title={formatCurrency(row.margeBruteAnimaNeo)}
+                >
+                  {formatMarginPctCell(row.margeBruteAnimaNeo, row.caAnimaNeo)}
+                </td>
+              ),
+              (aggregate, quarterKey) => (
+                <td
+                  key={`mb-anima-${quarterKey}`}
+                  className={`num home-recap-margin-pct ${aggregate.margeBruteAnimaNeo >= 0 ? 'pos' : 'neg'}`}
+                  title={formatCurrency(aggregate.margeBruteAnimaNeo)}
+                >
+                  {formatMarginPctCell(aggregate.margeBruteAnimaNeo, aggregate.caAnimaNeo)}
+                </td>
+              )
+            )}
+            <td
+              className={`num home-recap-margin-pct ${totals.margeBruteAnimaNeo >= 0 ? 'pos' : 'neg'}`}
+              title={formatCurrency(totals.margeBruteAnimaNeo)}
+            >
+              {formatMarginPctCell(totals.margeBruteAnimaNeo, totals.caAnimaNeo)}
+            </td>
+          </tr>
+          <tr>
+            <td title="Marge brute en % du CA sous-traitance — survoler une cellule pour le montant">
+              Marge brute Sous-traitance
+            </td>
+            {renderFinancialPeriodCells(
+              (row) => (
+                <td
+                  key={`mb-st-${row.month}`}
+                  className={`num home-recap-margin-pct ${row.margeBruteSousTraitance >= 0 ? 'pos' : 'neg'}`}
+                  title={formatCurrency(row.margeBruteSousTraitance)}
+                >
+                  {formatMarginPctCell(row.margeBruteSousTraitance, row.caSousTraitance)}
+                </td>
+              ),
+              (aggregate, quarterKey) => (
+                <td
+                  key={`mb-st-${quarterKey}`}
+                  className={`num home-recap-margin-pct ${aggregate.margeBruteSousTraitance >= 0 ? 'pos' : 'neg'}`}
+                  title={formatCurrency(aggregate.margeBruteSousTraitance)}
+                >
+                  {formatMarginPctCell(aggregate.margeBruteSousTraitance, aggregate.caSousTraitance)}
+                </td>
+              )
+            )}
+            <td
+              className={`num home-recap-margin-pct ${totals.margeBruteSousTraitance >= 0 ? 'pos' : 'neg'}`}
+              title={formatCurrency(totals.margeBruteSousTraitance)}
+            >
+              {formatMarginPctCell(totals.margeBruteSousTraitance, totals.caSousTraitance)}
+            </td>
+          </tr>
+          <tr className="metric-sign-highlight">
+            <td title={data?.meta?.resultatForecastFormula}>Résultat</td>
+            {renderFinancialPeriodCells(
+              (row) => (
+                <td
+                  key={`res-${row.month}`}
+                  className={`num ${financialMonthClass(row)} ${financialResultClass(row)} ${row.resultat >= 0 ? 'pos' : 'neg'}`}
+                >
+                  {formatCurrency(row.resultat)}
+                </td>
+              ),
+              (aggregate, quarterKey) => (
+                <td
+                  key={`res-${quarterKey}`}
+                  className={`num ${financialQuarterMonthClass(aggregate.taceIsClosedMonth)} ${financialQuarterResultClass(aggregate.taceIsClosedMonth)} ${aggregate.resultat >= 0 ? 'pos' : 'neg'}`}
+                >
+                  {formatCurrency(aggregate.resultat)}
+                </td>
+              )
+            )}
+            <td
+              className={`num financial-month-forecast financial-highlight-forecast ${totals.resultat >= 0 ? 'pos' : 'neg'}`}
+            >
+              {formatCurrency(totals.resultat)}
+            </td>
+          </tr>
+          <tr>
+            <td>TACE (%)</td>
+            {renderFinancialPeriodCells(
+              (row) => (
+                <td key={`tace-${row.month}`} className={`num ${financialMonthClass(row)}`}>
+                  {formatPct(row.tacePct)}
+                </td>
+              ),
+              (aggregate, quarterKey) => (
+                <td
+                  key={`tace-${quarterKey}`}
+                  className={`num ${financialQuarterMonthClass(aggregate.taceIsClosedMonth)}`}
+                >
+                  {formatPct(aggregate.tacePct)}
+                </td>
+              )
+            )}
+            <td className="num financial-month-forecast">{formatPct(totals.tacePct)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+
+  const renderBesoinsTable = () => (
+    <div className="home-recap-table-wrap" data-testid="home-zone-besoins-table-view">
+      <table className="home-recap-table">
+        <thead>
+          <tr>
+            <th>Indicateur</th>
+            {(data?.monthly || []).map((m) => (
+              <th key={m.month}>{formatMonth(m.month)}</th>
+            ))}
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="section-row" data-testid="home-view-besoins">
+            <td colSpan={(data?.monthly?.length || 0) + 2}>
+              <div className="section-header">
+                <button
+                  type="button"
+                  className="section-title-toggle-btn"
+                  onClick={() => setIsBesoinsExpanded((prev) => !prev)}
+                  aria-expanded={isBesoinsExpanded}
+                  aria-label={isBesoinsExpanded ? 'Replier la section besoins' : 'Déplier la section besoins'}
+                  title={isBesoinsExpanded ? 'Replier' : 'Déplier'}
+                >
+                  <svg
+                    className={`section-title-toggle-arrow ${isBesoinsExpanded ? 'is-open' : ''}`}
+                    viewBox="0 0 20 20"
+                    aria-hidden="true"
+                  >
+                    <path d="M7.23 5.21a.75.75 0 0 1 1.06.02L12 9.12l3.71-3.89a.75.75 0 1 1 1.08 1.04l-4.25 4.45a.75.75 0 0 1-1.08 0L7.21 6.27a.75.75 0 0 1 .02-1.06Z" />
+                  </svg>
+                  <span>Besoins</span>
+                </button>
+              </div>
+            </td>
+          </tr>
+          {isBesoinsExpanded && (
+            <>
+              <tr>
+                <td>Nombre de besoins créés (hors piste)</td>
+                {(data?.monthly || []).map((row) => (
+                  <td key={`crees-${row.month}`} className="num">
+                    {toNumberOrZero(row.besoinsCrees)}
+                  </td>
+                ))}
+                <td className="num">{totals.besoinsCrees}</td>
+              </tr>
+              <tr>
+                <td>Nombre de besoins en stock (state 5 et 10)</td>
+                {(data?.monthly || []).map((row) => (
+                  <td key={`stock-${row.month}`} className="num">
+                    {toNumberOrZero(row.besoinsStock)}
+                  </td>
+                ))}
+                <td className="num">{totals.besoinsStock}</td>
+              </tr>
+              <tr>
+                <td>Nombre de besoins gagnés</td>
+                {(data?.monthly || []).map((row) => (
+                  <td key={`gagnes-${row.month}`} className="num">
+                    {toNumberOrZero(row.besoinsGagnes)}
+                  </td>
+                ))}
+                <td className="num">{totals.besoinsGagnes}</td>
+              </tr>
+              <tr>
+                <td>Nombre de besoins perdus</td>
+                {(data?.monthly || []).map((row) => (
+                  <td key={`perdus-${row.month}`} className="num">
+                    {toNumberOrZero(row.besoinsPerdus)}
+                  </td>
+                ))}
+                <td className="num">{totals.besoinsPerdus}</td>
+              </tr>
+              <tr>
+                <td>Nombre de besoins abandonnés</td>
+                {(data?.monthly || []).map((row) => (
+                  <td key={`aband-${row.month}`} className="num">
+                    {toNumberOrZero(row.besoinsAbandonnes)}
+                  </td>
+                ))}
+                <td className="num">{totals.besoinsAbandonnes}</td>
+              </tr>
+              <tr>
+                <td>Nombre de besoins stand by (state 9)</td>
+                {(data?.monthly || []).map((row) => (
+                  <td key={`standby-${row.month}`} className="num">
+                    {toNumberOrZero(row.besoinsStandBy)}
+                  </td>
+                ))}
+                <td className="num">{totals.besoinsStandBy}</td>
+              </tr>
+              <tr>
+                <td>Délai moyen de réponse (jours)</td>
+                {(data?.monthly || []).map((row) => (
+                  <td key={`delai-${row.month}`} className="num">
+                    {formatDays(row.delaiMoyenReponseDays)}
+                  </td>
+                ))}
+                <td className="num">{formatDays(totals.delaiMoyenReponseDays)}</td>
+              </tr>
+            </>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  const renderTreasuryTable = () => (
+    <div className="home-recap-table-wrap" data-testid="home-zone-treasury-table-view">
+      <table className="home-recap-table">
+        <thead>
+          <tr>
+            <th>Indicateur</th>
+            {treasuryMonthly.map((row) => (
+              <th key={row.month}>{formatTreasuryMonth(row.month)}</th>
+            ))}
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>CA encaissé (forecast décalé)</td>
+            {treasuryMonthly.map((row) => (
+              <td key={`shifted-${row.month}`} className="num">
+                {formatCurrency(row.shiftedCa)}
+              </td>
+            ))}
+            <td className="num">{formatCurrency(treasuryTotals.shiftedCa)}</td>
+          </tr>
+          <tr>
+            <td>Charges Pennylane</td>
+            {treasuryMonthly.map((row) => (
+              <td key={`charges-${row.month}`} className="num">
+                {formatCurrency(row.charges)}
+              </td>
+            ))}
+            <td className="num">{formatCurrency(treasuryTotals.charges)}</td>
+          </tr>
+          <tr className="metric-sign-highlight">
+            <td>Solde de trésorerie</td>
+            {treasuryMonthly.map((row) => (
+              <td key={`balance-${row.month}`} className="num">
+                {formatCurrency(row.treasuryBalance)}
+              </td>
+            ))}
+            <td className="num">{formatCurrency(treasuryTotals.treasuryBalance)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
 
   if (loading) {
     return (
@@ -289,6 +809,109 @@ const HomeMonthlyRecap: React.FC = () => {
     );
   }
 
+  const renderDashboardZone = (
+    zoneId: HomeDashboardZoneId,
+    index: number,
+    total: number,
+    orderedZones: HomeDashboardZoneId[]
+  ) => {
+    const testId = zoneTestId(zoneId);
+    // Financiers toujours pleine largeur ; besoins + trésorerie côte à côte en dessous.
+    const spanFull = zoneId === 'financial';
+    const canMoveEarlier =
+      zoneId !== 'financial' && index > 0 && orderedZones[index - 1] !== 'financial';
+    const canMoveLater = zoneId !== 'financial' && index < total - 1;
+    const reorderProps = {
+      canMoveEarlier,
+      canMoveLater,
+      onMoveEarlier: () => handleMoveZone(zoneId, 'earlier'),
+      onMoveLater: () => handleMoveZone(zoneId, 'later'),
+    };
+
+    if (zoneId === 'financial') {
+      return (
+        <HomeDashboardZone
+          key={zoneId}
+          title="Indicateurs financiers"
+          testId={testId}
+          chartToggleTestId="home-recap-view-chart"
+          tableToggleTestId="home-recap-view-table"
+          viewMode={financialViewMode}
+          onViewModeChange={setFinancialViewMode}
+          spanFull={spanFull}
+          {...reorderProps}
+          chart={
+            <HomeMonthlyRecapChart
+              monthly={data?.monthly || []}
+              canFinancial
+              canBesoins={false}
+              section="financial"
+            />
+          }
+          table={renderFinancialTable()}
+        />
+      );
+    }
+
+    if (zoneId === 'besoins') {
+      return (
+        <HomeDashboardZone
+          key={zoneId}
+          title="Indicateurs besoins"
+          testId={testId}
+          viewMode={besoinsViewMode}
+          onViewModeChange={setBesoinsViewMode}
+          spanFull={spanFull}
+          {...reorderProps}
+          chart={
+            <HomeMonthlyRecapChart
+              monthly={data?.monthly || []}
+              canFinancial={false}
+              canBesoins
+              section="besoins"
+            />
+          }
+          table={renderBesoinsTable()}
+        />
+      );
+    }
+
+    return (
+      <HomeDashboardZone
+        key={zoneId}
+        title="Plan de trésorerie"
+        testId={testId}
+        viewMode={treasuryViewMode}
+        onViewModeChange={setTreasuryViewMode}
+        spanFull={spanFull}
+        {...reorderProps}
+        chart={
+          <div data-testid="home-view-treasury">
+            <HomeTreasuryPlanChart
+              monthly={treasuryMonthly}
+              averagePaymentDelayDays={treasurySettings.averagePaymentDelayDays}
+              initialBalance={treasurySettings.initialBalance}
+              loading={treasuryLoading}
+              error={treasuryError}
+              embedded
+            />
+          </div>
+        }
+        table={
+          treasuryLoading ? (
+            <p className="home-recap-state">Chargement du plan de trésorerie…</p>
+          ) : treasuryError ? (
+            <p className="home-recap-state home-recap-state--error">{treasuryError}</p>
+          ) : treasuryMonthly.length === 0 ? (
+            <p className="home-recap-state">Aucune donnée de trésorerie.</p>
+          ) : (
+            renderTreasuryTable()
+          )
+        }
+      />
+    );
+  };
+
   if (!canFinancial && !canBesoins && !canTreasury) {
     return (
       <main className="app-main" data-testid="home-no-access">
@@ -301,7 +924,7 @@ const HomeMonthlyRecap: React.FC = () => {
 
   return (
     <main className="app-main" data-testid="home-dashboard">
-      <h1 className="home-dashboard-title">TABLEAU DE BORD ANIMA NEO</h1>
+      <h1 className="home-dashboard-title">Tableau de bord Anima Néo</h1>
       <div className="home-recap-filters">
         <label htmlFor="home-recap-scenario">Scénario</label>
         <select
@@ -330,217 +953,11 @@ const HomeMonthlyRecap: React.FC = () => {
           ))}
         </select>
       </div>
-      <div className="home-recap-panel">
-        <div className="home-recap-table-wrap">
-          <table className="home-recap-table">
-            <thead>
-              <tr>
-                <th>Indicateur</th>
-                {(data?.monthly || []).map((m) => (
-                  <th key={m.month}>{formatMonth(m.month)}</th>
-                ))}
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {canFinancial && (
-                <>
-              <tr className="section-row" data-testid="home-view-financial">
-                <td colSpan={(data?.monthly?.length || 0) + 2}>Financier</td>
-              </tr>
-              <tr>
-                <td title={data?.meta?.caForecastFormula}>
-                  CA Anima Néo
-                  {data?.meta?.plannedScenarioFilterLabel && (
-                      <span className="home-recap-scenario-hint">
-                        {' '}
-                        (+ prévi. {data.meta.plannedScenarioFilterLabel})
-                      </span>
-                    )}
-                </td>
-                {(data?.monthly || []).map((row) => (
-                  <td key={`ca-anima-${row.month}`} className={`num ${financialMonthClass(row)}`}>{formatCurrency(row.caAnimaNeo)}</td>
-                ))}
-                <td className="num financial-month-forecast">{formatCurrency(totals.caAnimaNeo)}</td>
-              </tr>
-              <tr>
-                <td title={data?.meta?.caForecastFormula}>
-                  CA Sous-traitance
-                  {data?.meta?.plannedScenarioFilterLabel && (
-                      <span className="home-recap-scenario-hint">
-                        {' '}
-                        (+ prévi. {data.meta.plannedScenarioFilterLabel})
-                      </span>
-                    )}
-                </td>
-                {(data?.monthly || []).map((row) => (
-                  <td key={`ca-st-${row.month}`} className={`num ${financialMonthClass(row)}`}>{formatCurrency(row.caSousTraitance)}</td>
-                ))}
-                <td className="num financial-month-forecast">{formatCurrency(totals.caSousTraitance)}</td>
-              </tr>
-              <tr className="metric-sign-highlight">
-                <td title="Marge brute en % du CA Anima Néo — survoler une cellule pour le montant">
-                  Marge brute Anima Néo
-                </td>
-                {(data?.monthly || []).map((row) => (
-                  <td
-                    key={`mb-anima-${row.month}`}
-                    className={`num home-recap-margin-pct ${row.margeBruteAnimaNeo >= 0 ? 'pos' : 'neg'}`}
-                    title={formatCurrency(row.margeBruteAnimaNeo)}
-                  >
-                    {formatMarginPctCell(row.margeBruteAnimaNeo, row.caAnimaNeo)}
-                  </td>
-                ))}
-                <td
-                  className={`num home-recap-margin-pct ${totals.margeBruteAnimaNeo >= 0 ? 'pos' : 'neg'}`}
-                  title={formatCurrency(totals.margeBruteAnimaNeo)}
-                >
-                  {formatMarginPctCell(totals.margeBruteAnimaNeo, totals.caAnimaNeo)}
-                </td>
-              </tr>
-              <tr>
-                <td title="Marge brute en % du CA sous-traitance — survoler une cellule pour le montant">
-                  Marge brute Sous-traitance
-                </td>
-                {(data?.monthly || []).map((row) => (
-                  <td
-                    key={`mb-st-${row.month}`}
-                    className={`num home-recap-margin-pct ${row.margeBruteSousTraitance >= 0 ? 'pos' : 'neg'}`}
-                    title={formatCurrency(row.margeBruteSousTraitance)}
-                  >
-                    {formatMarginPctCell(row.margeBruteSousTraitance, row.caSousTraitance)}
-                  </td>
-                ))}
-                <td
-                  className={`num home-recap-margin-pct ${totals.margeBruteSousTraitance >= 0 ? 'pos' : 'neg'}`}
-                  title={formatCurrency(totals.margeBruteSousTraitance)}
-                >
-                  {formatMarginPctCell(totals.margeBruteSousTraitance, totals.caSousTraitance)}
-                </td>
-              </tr>
-              <tr className="metric-sign-highlight">
-                <td title={data?.meta?.resultatForecastFormula}>
-                  Résultat
-                </td>
-                {(data?.monthly || []).map((row) => (
-                  <td key={`res-${row.month}`} className={`num ${financialMonthClass(row)} ${financialResultClass(row)} ${row.resultat >= 0 ? 'pos' : 'neg'}`}>
-                    {formatCurrency(row.resultat)}
-                  </td>
-                ))}
-                <td className={`num financial-month-forecast financial-highlight-forecast ${totals.resultat >= 0 ? 'pos' : 'neg'}`}>
-                  {formatCurrency(totals.resultat)}
-                </td>
-              </tr>
-              <tr>
-                <td>TACE (%)</td>
-                {(data?.monthly || []).map((row) => (
-                  <td
-                    key={`tace-${row.month}`}
-                    className={`num ${financialMonthClass(row)}`}
-                  >
-                    {formatPct(row.tacePct)}
-                  </td>
-                ))}
-                <td className="num financial-month-forecast">{formatPct(totals.tacePct)}</td>
-              </tr>
-                </>
-              )}
-
-              {canBesoins && (
-                <>
-              <tr className="section-row" data-testid="home-view-besoins">
-                <td colSpan={(data?.monthly?.length || 0) + 2}>
-                  <div className="section-header">
-                    <button
-                      type="button"
-                      className="section-title-toggle-btn"
-                      onClick={() => setIsBesoinsExpanded((prev) => !prev)}
-                      aria-expanded={isBesoinsExpanded}
-                      aria-label={isBesoinsExpanded ? 'Replier la section besoins' : 'Déplier la section besoins'}
-                      title={isBesoinsExpanded ? 'Replier' : 'Déplier'}
-                    >
-                      <svg
-                        className={`section-title-toggle-arrow ${isBesoinsExpanded ? 'is-open' : ''}`}
-                        viewBox="0 0 20 20"
-                        aria-hidden="true"
-                      >
-                        <path d="M7.23 5.21a.75.75 0 0 1 1.06.02L12 9.12l3.71-3.89a.75.75 0 1 1 1.08 1.04l-4.25 4.45a.75.75 0 0 1-1.08 0L7.21 6.27a.75.75 0 0 1 .02-1.06Z" />
-                      </svg>
-                      <span>Besoins</span>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              {isBesoinsExpanded && (
-                <>
-                  <tr>
-                    <td>Nombre de besoins créés (hors piste)</td>
-                    {(data?.monthly || []).map((row) => (
-                      <td key={`crees-${row.month}`} className="num">{toNumberOrZero(row.besoinsCrees)}</td>
-                    ))}
-                    <td className="num">{totals.besoinsCrees}</td>
-                  </tr>
-                  <tr>
-                    <td>Nombre de besoins en stock (state 5 et 10)</td>
-                    {(data?.monthly || []).map((row) => (
-                      <td key={`stock-${row.month}`} className="num">{toNumberOrZero(row.besoinsStock)}</td>
-                    ))}
-                    <td className="num">{totals.besoinsStock}</td>
-                  </tr>
-                  <tr>
-                    <td>Nombre de besoins gagnés</td>
-                    {(data?.monthly || []).map((row) => (
-                      <td key={`gagnes-${row.month}`} className="num">{toNumberOrZero(row.besoinsGagnes)}</td>
-                    ))}
-                    <td className="num">{totals.besoinsGagnes}</td>
-                  </tr>
-                  <tr>
-                    <td>Nombre de besoins perdus</td>
-                    {(data?.monthly || []).map((row) => (
-                      <td key={`perdus-${row.month}`} className="num">{toNumberOrZero(row.besoinsPerdus)}</td>
-                    ))}
-                    <td className="num">{totals.besoinsPerdus}</td>
-                  </tr>
-                  <tr>
-                    <td>Nombre de besoins abandonnés</td>
-                    {(data?.monthly || []).map((row) => (
-                      <td key={`aband-${row.month}`} className="num">{toNumberOrZero(row.besoinsAbandonnes)}</td>
-                    ))}
-                    <td className="num">{totals.besoinsAbandonnes}</td>
-                  </tr>
-                  <tr>
-                    <td>Nombre de besoins stand by (state 9)</td>
-                    {(data?.monthly || []).map((row) => (
-                      <td key={`standby-${row.month}`} className="num">{toNumberOrZero(row.besoinsStandBy)}</td>
-                    ))}
-                    <td className="num">{totals.besoinsStandBy}</td>
-                  </tr>
-                  <tr>
-                    <td>Délai moyen de réponse (jours)</td>
-                    {(data?.monthly || []).map((row) => (
-                      <td key={`delai-${row.month}`} className="num">{formatDays(row.delaiMoyenReponseDays)}</td>
-                    ))}
-                    <td className="num">{formatDays(totals.delaiMoyenReponseDays)}</td>
-                  </tr>
-                </>
-              )}
-                </>
-              )}
-            </tbody>
-          </table>
-        </div>
+      <div className="home-dashboard-grid" data-testid="home-dashboard-grid">
+        {orderedVisibleZones.map((zoneId, index) =>
+          renderDashboardZone(zoneId, index, orderedVisibleZones.length, orderedVisibleZones)
+        )}
       </div>
-      {canTreasury && (
-      <div data-testid="home-view-treasury">
-      <HomeTreasuryPlanChart
-        monthly={treasuryMonthly}
-        averagePaymentDelayDays={treasurySettings.averagePaymentDelayDays}
-        initialBalance={treasurySettings.initialBalance}
-        loading={treasuryLoading}
-        error={treasuryError}
-      />
-      </div>
-      )}
     </main>
   );
 };

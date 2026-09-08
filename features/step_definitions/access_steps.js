@@ -30,6 +30,13 @@ const VIEW_TEST_IDS = {
   'tab:settings': 'nav-tab-settings',
 };
 
+const HOME_VIEW_LOCATORS = {
+  'view:home:financial':
+    '[data-testid="home-view-financial"], [data-testid="home-recap-chart-financial"]',
+  'view:home:besoins':
+    '[data-testid="home-view-besoins"], [data-testid="home-recap-chart-besoins"]',
+};
+
 function parsePermissionList(raw) {
   return String(raw || '')
     .split(/\s+et\s+|\s*,\s*/)
@@ -174,7 +181,9 @@ Then('l\'utilisateur ne voit que les modules et vues {string}', async function (
       if (permission.startsWith('view:report:')) {
         await this.page.locator('[data-testid="nav-tab-report"]').click({ force: true });
       }
-      const locator = this.page.locator(`[data-testid="${testId}"]`);
+      const locator = HOME_VIEW_LOCATORS[permission]
+        ? this.page.locator(HOME_VIEW_LOCATORS[permission]).first()
+        : this.page.locator(`[data-testid="${testId}"]`);
       await locator.waitFor({ state: 'visible', timeout: 10000 });
     }
   }

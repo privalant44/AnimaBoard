@@ -1,0 +1,55 @@
+.home-recap-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.home-recap-chart-section {
+  min-width: 0;
+}
+
+.home-recap-chart-title {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+  color: #2c5f5d;
+  font-weight: 700;
+}
+
+.home-recap-chart-state {
+  margin: 0;
+  color: #5a8a86;
+  font-size: 0.9rem;
+}
+
+.home-recap-view-toggle {
+  display: inline-flex;
+  border: 1px solid #c6d8d6;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.home-recap-view-toggle-btn {
+  border: none;
+  background: transparent;
+  color: #2c5f5d;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.65rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.home-recap-view-toggle-btn:hover {
+  background: #e8f3f2;
+}
+
+.home-recap-view-toggle-btn.is-active {
+  background: #2c5f5d;
+  color: #fff;
+  font-weight: 600;
+}
+
+.home-recap-view-toggle-btn:focus-visible {
+  outline: 2px solid #a6c9c8;
+  outline-offset: 1px;
+}

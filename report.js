@@ -1,6 +1,123 @@
-const path = require('path');
 const kvStorage = require('./lib/kvStorage');
 const { KV_KEYS } = require('./lib/constants');
+
+function toResourceKey(id) {
+  if (id === null || id === undefined || id === '') return null;
+  return String(id);
+}
+
+function uniqueResourceKeys(ids) {
+  const seen = new Set();
+  const out = [];
+  for (const id of ids) {
+    const key = toResourceKey(id);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
+}
+
+/** Normalise une prestation (forme Boond attributes ou forme plate DB). */
+function normalizeDelivery(delivery) {
+  const attr = delivery.attributes || {};
+  const reference = attr.reference || delivery.reference || 'N/A';
+  const title = attr.title || delivery.title || 'Sans titre';
+  const startDate = attr.startDate || delivery.startDate || '';
+  const endDate = attr.endDate || delivery.endDate || '';
+  const rawTjm =
+    attr.unitPriceExcludingTax ??
+    attr.unitPrice ??
+    delivery.tjm ??
+    null;
+  const resourceId =
+    attr.resourceId ??
+    delivery.resourceId ??
+    delivery.resource_id ??
+    null;
+  const id = delivery.id ?? null;
+
+  return {
+    id,
+    reference,
+    title,
+    startDate,
+    endDate,
+    tjm: rawTjm !== null && rawTjm !== undefined && rawTjm !== '' ? Number(rawTjm) : null,
+    resourceId: toResourceKey(resourceId)
+  };
+}
+
+function overlapsPeriod(itemStart, itemEnd, periodStart, periodEnd) {
+  if (!periodStart || !periodEnd || !itemStart || !itemEnd) return true;
+  const start = new Date(periodStart);
+  const end = new Date(periodEnd);
+  const projStart = new Date(itemStart);
+  const projEnd = new Date(itemEnd);
+  return projStart <= end && projEnd >= start;
+}
+
+function resolveResourceTjm(resource) {
+  if (!resource) return null;
+
+  let tjm = null;
+  if (resource.contracts && Array.isArray(resource.contracts) && resource.contracts.length > 0) {
+    const now = new Date();
+    const activeContract = resource.contracts.find((contract) => {
+      const contractAttr = contract.attributes || contract;
+      const contractStart = contractAttr.startDate ? new Date(contractAttr.startDate) : null;
+      const contractEnd = contractAttr.endDate ? new Date(contractAttr.endDate) : null;
+      if (contractStart && contractEnd) {
+        return contractStart <= now && contractEnd >= now;
+      }
+      return false;
+    });
+
+    if (activeContract) {
+      const contractAttr = activeContract.attributes || activeContract;
+      tjm =
+        contractAttr.averageDailyPriceExcludingTax ||
+        contractAttr.unitPriceExcludingTax ||
+        contractAttr.dailyRate ||
+        null;
+    }
+  }
+
+  if ((tjm === null || tjm === 0) && resource.raw && resource.raw.attributes) {
+    tjm =
+      resource.raw.attributes.averageDailyPriceExcludingTax ||
+      resource.raw.attributes.averageDailyPrice ||
+      resource.raw.attributes.dailyRate ||
+      null;
+  }
+
+  if (tjm !== null && tjm !== undefined) {
+    tjm = Number(tjm);
+    if (tjm === 0) tjm = null;
+  }
+  return tjm;
+}
+
+/** Ressources associées au projet (hors prestations), dédupliquées. */
+function getProjectFallbackResourceIds(project) {
+  const ids = [];
+
+  if (project.relationships?.mainManager?.data?.id) {
+    ids.push(project.relationships.mainManager.data.id);
+  }
+
+  if (project.attributes?.resources && Array.isArray(project.attributes.resources)) {
+    ids.push(...project.attributes.resources.map((r) => r.id || r));
+  } else if (project.resources && Array.isArray(project.resources)) {
+    ids.push(...project.resources.map((r) => r.id || r));
+  } else if (project.attributes?.resourceId) {
+    ids.push(project.attributes.resourceId);
+  } else if (project.resourceId) {
+    ids.push(project.resourceId);
+  }
+
+  return uniqueResourceKeys(ids);
+}
 
 class ForecastReport {
   async loadData() {
@@ -19,183 +136,97 @@ class ForecastReport {
   generateReport(startDate = null, endDate = null) {
     return this.loadData().then(({ projects, resources }) => {
       console.log('\n📊 GÉNÉRATION DU RAPPORT FORECAST\n');
-      console.log('=' .repeat(80));
+      console.log('='.repeat(80));
 
-      // Créer un mapping des ressources par ID
       const resourcesMap = {};
-      resources.forEach(resource => {
-        resourcesMap[resource.id] = resource;
+      resources.forEach((resource) => {
+        const key = toResourceKey(resource.id);
+        if (key) resourcesMap[key] = resource;
       });
 
-      // Créer un mapping des projets par ID de ressource
+      // resourceId → map(dedupeKey → ligne prestation)
       const projectsByResource = {};
-      
-      projects.forEach(projectData => {
+
+      const pushDelivery = (resourceId, delivery) => {
+        const key = toResourceKey(resourceId);
+        if (!key) return;
+        if (!projectsByResource[key]) projectsByResource[key] = new Map();
+
+        const dedupeKey =
+          delivery.id != null
+            ? `id:${delivery.id}`
+            : `${delivery.reference}|${delivery.title}|${delivery.startDate}|${delivery.endDate}`;
+
+        if (projectsByResource[key].has(dedupeKey)) return;
+        projectsByResource[key].set(dedupeKey, {
+          reference: delivery.reference,
+          title: delivery.title,
+          startDate: delivery.startDate,
+          endDate: delivery.endDate,
+          tjm: delivery.tjm != null && !Number.isNaN(delivery.tjm) ? delivery.tjm : null
+        });
+      };
+
+      projects.forEach((projectData) => {
         const project = projectData.project || {};
         const deliveries = projectData.deliveries || [];
         const projectAttr = project.attributes || {};
-        
-        // Extraire les IDs des ressources associées au projet
-        const resourceIds = [];
-        
-        // 1. Chercher dans relationships.mainManager (chemin principal)
-        if (project.relationships?.mainManager?.data?.id) {
-          resourceIds.push(project.relationships.mainManager.data.id);
-        }
-        
-        // 2. Essayer d'autres chemins pour trouver les ressources associées
-        if (project.attributes?.resources && Array.isArray(project.attributes.resources)) {
-          resourceIds.push(...project.attributes.resources.map(r => r.id || r));
-        } else if (project.resources && Array.isArray(project.resources)) {
-          resourceIds.push(...project.resources.map(r => r.id || r));
-        } else if (project.attributes?.resourceId) {
-          resourceIds.push(project.attributes.resourceId);
-        } else if (project.resourceId) {
-          resourceIds.push(project.resourceId);
-        }
+        const fallbackResourceIds = getProjectFallbackResourceIds(project);
 
-        // 3. Si pas de ressource trouvée, essayer de chercher dans les deliveries
-        if (resourceIds.length === 0 && deliveries.length > 0) {
-          deliveries.forEach(delivery => {
-            const deliveryAttr = delivery.attributes || {};
-            if (deliveryAttr.resourceId) {
-              resourceIds.push(deliveryAttr.resourceId);
+        if (deliveries.length > 0) {
+          deliveries.forEach((rawDelivery) => {
+            const delivery = normalizeDelivery(rawDelivery);
+
+            if (startDate && endDate && !overlapsPeriod(delivery.startDate, delivery.endDate, startDate, endDate)) {
+              return;
+            }
+
+            // 1 ligne = 1 prestation rattachée à SA ressource (pas à toutes les ressources du projet)
+            if (delivery.resourceId) {
+              pushDelivery(delivery.resourceId, delivery);
+              return;
+            }
+
+            // Fallback : prestation sans resourceId → ressources projet (dédupliquées)
+            if (fallbackResourceIds.length > 0) {
+              fallbackResourceIds.forEach((resourceId) => pushDelivery(resourceId, delivery));
             }
           });
+          return;
         }
 
-        // Pour chaque ressource associée, ajouter les prestations
-        resourceIds.forEach(resourceId => {
-          if (!projectsByResource[resourceId]) {
-            projectsByResource[resourceId] = [];
-          }
+        // Pas de prestations : une ligne projet par ressource fallback
+        const projectDelivery = {
+          id: project.id || projectData.id || null,
+          reference: projectAttr.reference || project.id || projectData.id || 'N/A',
+          title: projectAttr.title || projectAttr.reference || 'Sans titre',
+          startDate: projectAttr.startDate || '',
+          endDate: projectAttr.endDate || '',
+          tjm: null
+        };
 
-          // Si des prestations existent, les utiliser
-          if (deliveries.length > 0) {
-            deliveries.forEach(delivery => {
-              const attr = delivery.attributes || {};
-              const reference = attr.reference || 'N/A';
-              const title = attr.title || 'Sans titre';
-              const startDateDelivery = attr.startDate || '';
-              const endDateDelivery = attr.endDate || '';
-              const tjm = attr.unitPriceExcludingTax || attr.unitPrice || null;
+        if (startDate && endDate && !overlapsPeriod(projectDelivery.startDate, projectDelivery.endDate, startDate, endDate)) {
+          return;
+        }
 
-              // Filtrer par période si spécifiée
-              if (startDate && endDate) {
-                const start = new Date(startDate);
-                const end = new Date(endDate);
-                const projStart = startDateDelivery ? new Date(startDateDelivery) : null;
-                const projEnd = endDateDelivery ? new Date(endDateDelivery) : null;
-
-                if (projStart && projEnd) {
-                  const overlaps = (projStart <= end && projEnd >= start);
-                  if (!overlaps) {
-                    return; // Prestation en dehors de la période
-                  }
-                }
-              }
-
-              projectsByResource[resourceId].push({
-                reference,
-                title,
-                startDate: startDateDelivery,
-                endDate: endDateDelivery,
-                tjm: tjm ? Number(tjm) : null
-              });
-            });
-          } else {
-            // Si pas de prestations, utiliser les informations du projet comme "prestation"
-            const projectReference = projectAttr.reference || project.id || 'N/A';
-            const projectTitle = projectAttr.title || projectAttr.reference || 'Sans titre';
-            const projectStartDate = projectAttr.startDate || '';
-            const projectEndDate = projectAttr.endDate || '';
-            
-            // Récupérer le TJM depuis la ressource ou ses contrats
-            let tjm = null;
-            const resource = resourcesMap[resourceId];
-            
-            if (resource) {
-              // 1. Essayer depuis les contrats actifs de la ressource
-              if (resource.contracts && Array.isArray(resource.contracts) && resource.contracts.length > 0) {
-                const now = new Date();
-                // Chercher un contrat actif (qui chevauche la période du projet si disponible)
-                const activeContract = resource.contracts.find((contract) => {
-                  const contractAttr = contract.attributes || contract;
-                  const contractStart = contractAttr.startDate ? new Date(contractAttr.startDate) : null;
-                  const contractEnd = contractAttr.endDate ? new Date(contractAttr.endDate) : null;
-                  
-                  // Vérifier si le contrat est actif
-                  if (contractStart && contractEnd) {
-                    return contractStart <= now && contractEnd >= now;
-                  }
-                  return false;
-                });
-                
-                if (activeContract) {
-                  const contractAttr = activeContract.attributes || activeContract;
-                  tjm = contractAttr.averageDailyPriceExcludingTax || 
-                        contractAttr.unitPriceExcludingTax ||
-                        contractAttr.dailyRate ||
-                        null;
-                }
-              }
-              
-              // 2. Si pas de contrat actif, essayer depuis les attributs de la ressource
-              if ((tjm === null || tjm === 0) && resource.raw && resource.raw.attributes) {
-                tjm = resource.raw.attributes.averageDailyPriceExcludingTax || 
-                      resource.raw.attributes.averageDailyPrice || 
-                      resource.raw.attributes.dailyRate ||
-                      null;
-              }
-              
-              // Convertir en nombre si c'est une chaîne
-              if (tjm !== null && tjm !== undefined) {
-                tjm = Number(tjm);
-                // Si c'est 0, considérer comme null
-                if (tjm === 0) {
-                  tjm = null;
-                }
-              }
-            }
-
-            // Filtrer par période si spécifiée
-            let shouldInclude = true;
-            if (startDate && endDate && projectStartDate && projectEndDate) {
-              const start = new Date(startDate);
-              const end = new Date(endDate);
-              const projStart = new Date(projectStartDate);
-              const projEnd = new Date(projectEndDate);
-
-              const overlaps = (projStart <= end && projEnd >= start);
-              if (!overlaps) {
-                shouldInclude = false; // Projet en dehors de la période
-              }
-            }
-
-            if (shouldInclude) {
-              projectsByResource[resourceId].push({
-                reference: projectReference,
-                title: projectTitle,
-                startDate: projectStartDate,
-                endDate: projectEndDate,
-                tjm: tjm
-              });
-            }
-          }
+        fallbackResourceIds.forEach((resourceId) => {
+          pushDelivery(resourceId, {
+            ...projectDelivery,
+            tjm: resolveResourceTjm(resourcesMap[resourceId])
+          });
         });
       });
 
-      // Afficher le rapport
       const reportData = [];
-      
-      Object.keys(projectsByResource).forEach(resourceId => {
+
+      Object.keys(projectsByResource).forEach((resourceId) => {
         const resource = resourcesMap[resourceId];
         if (!resource) return;
 
-        const deliveries = projectsByResource[resourceId];
+        const deliveries = Array.from(projectsByResource[resourceId].values());
         if (deliveries.length === 0) return;
 
-        deliveries.forEach(delivery => {
+        deliveries.forEach((delivery) => {
           reportData.push({
             nom: resource.nom,
             prenom: resource.prenom,
@@ -208,33 +239,32 @@ class ForecastReport {
         });
       });
 
-      // Afficher le tableau
       console.log('\n📋 TABLEAU FORECAST\n');
       console.log('─'.repeat(120));
       console.log(
         'Nom'.padEnd(20) +
-        'Prénom'.padEnd(20) +
-        'Référence'.padEnd(15) +
-        'Titre'.padEnd(30) +
-        'Date début'.padEnd(12) +
-        'Date fin'.padEnd(12) +
-        'TJM'.padEnd(10)
+          'Prénom'.padEnd(20) +
+          'Référence'.padEnd(15) +
+          'Titre'.padEnd(30) +
+          'Date début'.padEnd(12) +
+          'Date fin'.padEnd(12) +
+          'TJM'.padEnd(10)
       );
       console.log('─'.repeat(120));
 
-      reportData.forEach(row => {
+      reportData.forEach((row) => {
         const dateDebut = row.dateDebut ? new Date(row.dateDebut).toLocaleDateString('fr-FR') : 'N/A';
         const dateFin = row.dateFin ? new Date(row.dateFin).toLocaleDateString('fr-FR') : 'N/A';
         const tjm = row.tjm ? `${row.tjm} €` : 'N/A';
 
         console.log(
           (row.nom || 'N/A').padEnd(20) +
-          (row.prenom || 'N/A').padEnd(20) +
-          (row.reference || 'N/A').padEnd(15) +
-          (row.titre || 'N/A').substring(0, 28).padEnd(30) +
-          dateDebut.padEnd(12) +
-          dateFin.padEnd(12) +
-          tjm.padEnd(10)
+            (row.prenom || 'N/A').padEnd(20) +
+            (row.reference || 'N/A').padEnd(15) +
+            (row.titre || 'N/A').substring(0, 28).padEnd(30) +
+            dateDebut.padEnd(12) +
+            dateFin.padEnd(12) +
+            tjm.padEnd(10)
         );
       });
 
@@ -253,11 +283,9 @@ class ForecastReport {
   }
 }
 
-// Exécuter le rapport si le script est appelé directement
 if (require.main === module) {
   const report = new ForecastReport();
-  
-  // Récupérer les dates depuis les arguments de ligne de commande
+
   const args = process.argv.slice(2);
   const startDate = args[0] || null;
   const endDate = args[1] || null;
@@ -266,7 +294,7 @@ if (require.main === module) {
     console.log(`📅 Période: ${startDate} à ${endDate}\n`);
   }
 
-  report.generateJSONReport(startDate, endDate).catch(error => {
+  report.generateJSONReport(startDate, endDate).catch((error) => {
     console.error('❌ Erreur lors de la génération du rapport:', error);
     process.exit(1);
   });

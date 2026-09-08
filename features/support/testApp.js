@@ -43,32 +43,45 @@ async function startTestApp() {
     }
   });
 
-  app.get('/api/dashboard/home-monthly-recap', (_req, res) => {
-    res.json({
-      year: new Date().getFullYear(),
-      monthly: [
-        {
-          month: '2026-01',
-          caAnimaNeo: 1000,
-          caSousTraitance: 0,
-          margeBruteAnimaNeo: 200,
-          margeBruteSousTraitance: 0,
-          resultat: 100,
-          tacePct: 80,
-          besoinsCrees: 1,
-          besoinsStock: 2,
-          besoinsGagnes: 0,
-          besoinsPerdus: 0,
-          besoinsAbandonnes: 0,
-          besoinsStandBy: 0,
-          delaiMoyenReponseDays: 1,
-        },
-      ],
+  app.get('/api/dashboard/home-monthly-recap', (req, res) => {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const monthly = Array.from({ length: 12 }, (_, index) => {
+      const month = String(index + 1).padStart(2, '0');
+      return {
+        month: `${year}-${month}`,
+        caAnimaNeo: 80000 + index * 5000,
+        caSousTraitance: 10000 + index * 500,
+        margeBruteAnimaNeo: 20000 + index * 1000,
+        margeBruteSousTraitance: 1500 + index * 100,
+        resultat: 12000 + index * 800,
+        tacePct: 72 + index * 0.5,
+        taceIsClosedMonth: index < 6,
+        besoinsCrees: 3 + (index % 4),
+        besoinsStock: 5 + (index % 3),
+        besoinsGagnes: 2 + (index % 2),
+        besoinsPerdus: 1,
+        besoinsAbandonnes: index % 2,
+        besoinsStandBy: 1 + (index % 2),
+        delaiMoyenReponseDays: 4 + index * 0.2,
+        delaiMoyenReponseCount: 2 + index,
+      };
     });
+    res.json({ year, monthly });
   });
 
-  app.get('/api/dashboard/treasury-plan', (_req, res) => {
-    res.json({ monthly: [], settings: { averagePaymentDelayDays: 30, initialBalance: 0 } });
+  app.get('/api/dashboard/treasury-plan', (req, res) => {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const monthly = Array.from({ length: 12 }, (_, index) => {
+      const month = String(index + 1).padStart(2, '0');
+      return {
+        month: `${year}-${month}`,
+        sourceMonth: `${year}-${month}`,
+        shiftedCa: 70000 + index * 4000,
+        charges: 50000 + index * 3000,
+        treasuryBalance: 20000 + index * 1500,
+      };
+    });
+    res.json({ monthly, settings: { averagePaymentDelayDays: 30, initialBalance: 10000 } });
   });
 
   app.get('/api/company-logo', (_req, res) => {
@@ -86,15 +99,7 @@ async function startTestApp() {
             prenom: 'Jean',
             typeLabel: 'Consultant',
             stateLabel: 'En mission',
-            raw: { email: 'consultant@animaneo.fr' },
-          },
-          {
-            id: 99,
-            nom: 'Martin',
-            prenom: 'Paul',
-            typeLabel: 'Consultant',
-            stateLabel: 'En mission',
-            raw: { email: 'autre@animaneo.fr' },
+            raw: { email: 'manager@animaneo.fr' },
           },
         ],
         dictionaryOptions: { types: ['Consultant'], states: ['En mission'] },
@@ -103,14 +108,6 @@ async function startTestApp() {
             id: '1001',
             resourceId: 42,
             title: 'Mission test',
-            startDate: '2026-01-01',
-            endDate: '2026-12-31',
-            tjm: 500,
-          },
-          {
-            id: '1002',
-            resourceId: 99,
-            title: 'Mission autre',
             startDate: '2026-01-01',
             endDate: '2026-12-31',
             tjm: 500,
@@ -124,6 +121,60 @@ async function startTestApp() {
         forecastScenarios: [],
         holidays: [],
       },
+    });
+  });
+
+  app.get('/api/data/resources-local', (_req, res) => {
+    res.json({
+      success: true,
+      data: [
+        {
+          id: 42,
+          nom: 'Dupont',
+          prenom: 'Jean',
+          type: 'Consultant',
+          statut: 'En mission',
+        },
+      ],
+    });
+  });
+
+  app.get('/api/data/resources-metadata', (_req, res) => {
+    res.json({ success: true, data: {} });
+  });
+
+  app.get('/api/dashboard/income-statement', (req, res) => {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    res.json({
+      year,
+      source: 'bdd',
+      method: 'test',
+      description: 'Mock BDD',
+      monthly: [],
+      totals: {
+        produits: 0,
+        charges: 0,
+        resultat: 0,
+        caAnimaNeo: 0,
+        caSousTraitance: 0,
+        salaires: 0,
+        cotisationsSociales: 0,
+        autresCharges: 0,
+        dontSousTraitance: 0,
+      },
+      counts: { months: 0 },
+    });
+  });
+
+  app.post('/api/boondmanager/sync/besoins/snapshot', (_req, res) => {
+    res.json({ success: true, message: 'Mock snapshot' });
+  });
+
+  app.get('/api/batch-sync/status', (_req, res) => {
+    res.json({
+      hasRun: true,
+      success: true,
+      startedAt: '2026-07-20T08:00:00.000Z',
     });
   });
 

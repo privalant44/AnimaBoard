@@ -5,6 +5,10 @@
 const kvStorage = require('../../lib/kvStorage');
 const { KV_KEYS } = require('../../lib/constants');
 const { createVercelHandler } = require('../../lib/errorHandler');
+const {
+  isMonthBeyondDeliveryEnd,
+  getDeliveryEndDate,
+} = require('../../lib/forecastDeliveryGuard');
 
 function readJsonBody(req) {
   if (req.body && typeof req.body === 'object') return req.body;
@@ -36,6 +40,14 @@ module.exports = createVercelHandler(async (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'deliveryId, month et hours sont requis',
+      });
+    }
+
+    const endDate = await getDeliveryEndDate(kvStorage, KV_KEYS, deliveryId);
+    if (isMonthBeyondDeliveryEnd(month, endDate)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Saisie interdite : la prestation est terminée pour ce mois',
       });
     }
 

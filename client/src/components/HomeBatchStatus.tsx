@@ -62,12 +62,14 @@ const HomeBatchStatus: React.FC = () => {
   return (
     <div
       className="home-batch-status"
+      data-testid="home-batch-status"
       title={when ? `${label} — ${when}` : label}
       aria-label={when ? `${label} — ${when}` : label}
     >
       <span
         className={`home-batch-status-dot ${status.success ? 'home-batch-status-dot--ok' : 'home-batch-status-dot--ko'}`}
       />
+      <span className="home-batch-status-label">{label}</span>
     </div>
   );
 };

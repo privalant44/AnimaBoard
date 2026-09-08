@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import './Report.css';
+import PageShell from './PageShell';
 import { apiFetch } from '../api';
 import { DATA_REFRESH_EVENT } from '../dataRefresh';
 import { useUserAccess } from '../auth/useUserAccess';
@@ -41,7 +42,6 @@ interface ForecastData {
 }
 
 interface ReportProps {
-  onBack: () => void;
   initialReport?: ReportSection;
 }
 
@@ -96,7 +96,7 @@ const loadReportFiltersFromStorage = () => {
   }
 };
 
-const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
+const Report: React.FC<ReportProps> = ({ initialReport }) => {
   const userAccess = useUserAccess(isAuthEnabled());
   const canViewForecastReport =
     !isAuthEnabled() || userAccess.canView(PERMISSIONS.VIEW_REPORT_FORECAST);
@@ -582,100 +582,71 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
 
   const months = getCurrentYearMonths();
 
+  const reportHeaderActions = (
+    <>
+      {snapBesoinsError ? (
+        <span className="snap-besoins-status snap-besoins-status--error">{snapBesoinsError}</span>
+      ) : (
+        snapBesoinsStatus && <span className="snap-besoins-status">{snapBesoinsStatus}</span>
+      )}
+      <button
+        type="button"
+        className="snap-besoins-button"
+        onClick={() => void handleSnapBesoins()}
+        disabled={snapBesoinsLoading}
+      >
+        {snapBesoinsLoading ? 'Sync Besoins…' : 'Sync Besoins'}
+      </button>
+    </>
+  );
+
   if (loading) {
     return (
-      <div className="report-page">
-        <div className="report-header">
-          <button className="back-button" onClick={onBack}>
-            ← Retour
-          </button>
-          <h2>Rapports</h2>
-          <div className="report-header-actions">
-            {snapBesoinsError ? (
-              <span className="snap-besoins-status snap-besoins-status--error">{snapBesoinsError}</span>
-            ) : (
-              snapBesoinsStatus && <span className="snap-besoins-status">{snapBesoinsStatus}</span>
-            )}
-            <button
-              type="button"
-              className="snap-besoins-button"
-              onClick={() => void handleSnapBesoins()}
-              disabled={snapBesoinsLoading}
-            >
-              {snapBesoinsLoading ? 'Sync Besoins...' : 'Sync Besoins'}
-            </button>
-          </div>
-        </div>
-        <div className="report-container">
+      <PageShell
+        title="Rapports"
+        subtitle="Synthèse forecast et compte de résultat"
+        actions={reportHeaderActions}
+        data-testid="page-shell-report"
+      >
+        <div className="page-shell-panel">
           <div className="loading-state">
-            <div className="loading-spinner"></div>
-            <p>Chargement des données...</p>
+            <div className="loading-spinner" />
+            <p>Chargement des données…</p>
           </div>
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   if (error) {
     return (
-      <div className="report-page">
-        <div className="report-header">
-          <button className="back-button" onClick={onBack}>
-            ← Retour
-          </button>
-          <h2>Rapports</h2>
-          <div className="report-header-actions">
-            {snapBesoinsError ? (
-              <span className="snap-besoins-status snap-besoins-status--error">{snapBesoinsError}</span>
-            ) : (
-              snapBesoinsStatus && <span className="snap-besoins-status">{snapBesoinsStatus}</span>
-            )}
-            <button
-              type="button"
-              className="snap-besoins-button"
-              onClick={() => void handleSnapBesoins()}
-              disabled={snapBesoinsLoading}
-            >
-              {snapBesoinsLoading ? 'Sync Besoins...' : 'Sync Besoins'}
-            </button>
-          </div>
-        </div>
-        <div className="report-container">
+      <PageShell
+        title="Rapports"
+        subtitle="Synthèse forecast et compte de résultat"
+        actions={reportHeaderActions}
+        data-testid="page-shell-report"
+      >
+        <div className="page-shell-panel">
           <div className="error-state">
             <p className="error-message">{error}</p>
-            <button className="retry-button" onClick={() => void loadReportBootstrap()}>
+            <button className="retry-button" type="button" onClick={() => void loadReportBootstrap()}>
               Réessayer
             </button>
           </div>
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="report-page">
-      <div className="report-header">
-        <button className="back-button" onClick={onBack}>
-          ← Retour
-        </button>
-        <h2>Rapports</h2>
-        <div className="report-header-actions">
-          {snapBesoinsError ? (
-            <span className="snap-besoins-status snap-besoins-status--error">{snapBesoinsError}</span>
-          ) : (
-            snapBesoinsStatus && <span className="snap-besoins-status">{snapBesoinsStatus}</span>
-          )}
-          <button
-            type="button"
-            className="snap-besoins-button"
-            onClick={() => void handleSnapBesoins()}
-            disabled={snapBesoinsLoading}
-          >
-            {snapBesoinsLoading ? 'Sync Besoins...' : 'Sync Besoins'}
-          </button>
-        </div>
-      </div>
-      <div className="report-container" data-testid="report-page">
+    <PageShell
+      title="Rapports"
+      subtitle="Synthèse forecast et compte de résultat"
+      actions={reportHeaderActions}
+      data-testid="page-shell-report"
+      className="report-page"
+    >
+      <div className="page-shell-panel report-container" data-testid="report-page">
         {activeReport === 'menu' ? (
           <div className="report-menu">
             <p className="report-menu-intro">Sélectionnez un rapport à afficher.</p>
@@ -1207,7 +1178,7 @@ const Report: React.FC<ReportProps> = ({ onBack, initialReport }) => {
           </>
         )}
       </div>
-    </div>
+    </PageShell>
   );
 };
 

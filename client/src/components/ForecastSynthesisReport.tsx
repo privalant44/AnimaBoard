@@ -24,6 +24,15 @@ export type SynthesisResource = {
     endDate: string;
     tjm: number | null;
   }>;
+  /** Prestations hors filtre période — base pour le périmètre année du rapport. */
+  allProjectsForCA?: Array<{
+    id: string | number;
+    reference: string;
+    title: string;
+    startDate: string;
+    endDate: string;
+    tjm: number | null;
+  }>;
 };
 
 export type SynthesisPlannedScenario = {
@@ -112,9 +121,15 @@ const ForecastSynthesisReport: React.FC<ForecastSynthesisReportProps> = ({
       const resourceName = `${resource.nom || ''} ${resource.prenom || ''}`.trim() || `Ressource ${resource.id}`;
 
       if (includePrestations) {
-        for (const project of resource.projects) {
+        const projects =
+          resource.allProjectsForCA && resource.allProjectsForCA.length > 0
+            ? resource.allProjectsForCA
+            : resource.projects;
+        for (const project of projects) {
           const forecastMap = forecastByDeliveryId[String(project.id)] || {};
           const { map, total } = sumMonths(months, forecastMap);
+          // Prestations sans aucune journée prévisionnelle sur l’année : hors rapport.
+          if (total <= 0) continue;
           out.push({
             resourceId: resource.id,
             resourceName,
@@ -137,6 +152,8 @@ const ForecastSynthesisReport: React.FC<ForecastSynthesisReportProps> = ({
         );
         for (const item of planned) {
           const { map, total } = sumMonths(months, item.forecast || {});
+          // Scénarios sans journée saisie sur l’année : hors rapport.
+          if (total <= 0) continue;
           out.push({
             resourceId: resource.id,
             resourceName,
@@ -238,8 +255,8 @@ const ForecastSynthesisReport: React.FC<ForecastSynthesisReportProps> = ({
               </label>
             </div>
             <p className="forecast-synthesis-meta">
-              Filtres Forecast : {periodLabel} · {resources.length} ressource
-              {resources.length > 1 ? 's' : ''} · {rows.length} ligne{rows.length > 1 ? 's' : ''} · année {year}
+              Filtres Forecast : {periodLabel} · {rows.length} ligne
+              {rows.length > 1 ? 's' : ''} avec prévision (≥ 1 j) · année {year}
             </p>
             <div className="forecast-synthesis-export-actions">
               <button type="button" className="forecast-synthesis-export-btn" onClick={handleExcel}>
@@ -255,7 +272,8 @@ const ForecastSynthesisReport: React.FC<ForecastSynthesisReportProps> = ({
             <h3>Aperçu</h3>
             {rows.length === 0 ? (
               <p className="forecast-synthesis-empty">
-                Aucune ligne à exporter. Ajustez les filtres Forecast ou cochez au moins un type de ligne.
+                Aucune ligne à exporter : seules les prestations et scénarios avec au moins 1 jour
+                prévisionnel sur {year} sont inclus. Ajustez les filtres Forecast ou les saisies.
               </p>
             ) : (
               <div className="forecast-synthesis-table-scroll">

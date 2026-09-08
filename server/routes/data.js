@@ -19,6 +19,10 @@ const {
   upsertForecastScenario,
   deleteForecastScenario,
 } = require('../../lib/forecastScenariosService');
+const {
+  isMonthBeyondDeliveryEnd,
+  getDeliveryEndDate,
+} = require('../../lib/forecastDeliveryGuard');
 
 // Helper: réponse standard avec data
 function okData(res, data, fileLabel = null, count = null) {
@@ -130,6 +134,13 @@ router.post('/forecast-times', async (req, res) => {
     const { deliveryId, month, hours } = req.body;
     if (!deliveryId || !month || hours === undefined) {
       return res.status(400).json({ success: false, error: 'deliveryId, month et hours sont requis' });
+    }
+    const endDate = await getDeliveryEndDate(kvStorage, KV_KEYS, deliveryId);
+    if (isMonthBeyondDeliveryEnd(month, endDate)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Saisie interdite : la prestation est terminée pour ce mois',
+      });
     }
     const stored = await kvStorage.get(KV_KEYS.FORECAST_TIMES, { metadata: {}, data: {} });
     const data = stored.data || {};

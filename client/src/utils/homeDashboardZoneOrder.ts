@@ -43,13 +43,20 @@ export function normalizeHomeDashboardZoneOrder(
   const visibleSet = new Set(visible);
   const normalized: HomeDashboardZoneId[] = [];
 
+  // Indicateurs financiers toujours en tête (pleine largeur au-dessus des 2 autres).
+  if (visibleSet.has('financial')) {
+    normalized.push('financial');
+  }
+
   for (const zoneId of order) {
+    if (zoneId === 'financial') continue;
     if (visibleSet.has(zoneId) && !normalized.includes(zoneId)) {
       normalized.push(zoneId);
     }
   }
 
   for (const zoneId of DEFAULT_HOME_DASHBOARD_ZONE_ORDER) {
+    if (zoneId === 'financial') continue;
     if (visibleSet.has(zoneId) && !normalized.includes(zoneId)) {
       normalized.push(zoneId);
     }
@@ -63,11 +70,15 @@ export function moveHomeDashboardZone(
   zoneId: HomeDashboardZoneId,
   direction: 'earlier' | 'later'
 ): HomeDashboardZoneId[] {
+  // La zone financière reste épinglée en haut.
+  if (zoneId === 'financial') return order;
+
   const index = order.indexOf(zoneId);
   if (index === -1) return order;
 
   const targetIndex = direction === 'earlier' ? index - 1 : index + 1;
   if (targetIndex < 0 || targetIndex >= order.length) return order;
+  if (order[targetIndex] === 'financial') return order;
 
   const next = [...order];
   [next[index], next[targetIndex]] = [next[targetIndex], next[index]];

@@ -4,6 +4,7 @@ import PageShell from './PageShell';
 import { DATA_REFRESH_EVENT } from '../dataRefresh';
 import { apiFetch, describeApiEndpoint, normalizeApiError } from '../api';
 import ForecastScenarios, { ForecastScenario } from './ForecastScenarios';
+import ForecastSynthesisReport from './ForecastSynthesisReport';
 import { useAuth } from '../auth/AuthProvider';
 import { isAuthEnabled } from '../auth/msalConfig';
 import { filterResourcesByUserEmail, PERMISSIONS } from '../auth/roles';
@@ -164,6 +165,14 @@ function isPlannedMonthEditable(ym: string, year: number): boolean {
   if (year < now.getFullYear()) return false;
   if (year > now.getFullYear()) return true;
   return m >= now.getMonth() + 1;
+}
+
+/** Mois strictement après le mois de fin de la prestation (préstation terminée pour ce mois). */
+function isMonthBeyondDeliveryEnd(monthYm: string, endDateYmd: string | null | undefined): boolean {
+  if (!endDateYmd) return false;
+  const endYm = String(endDateYmd).slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(monthYm) || !/^\d{4}-\d{2}$/.test(endYm)) return false;
+  return monthYm > endYm;
 }
 
 /** Fond cellule : base #F8E4A7, plus intense quand les jours augmentent ; vide ≈ blanc cassé. */
@@ -331,6 +340,7 @@ const Forecast: React.FC = () => {
   >({});
   const [forecastScenarios, setForecastScenarios] = useState<ForecastScenario[]>([]);
   const [scenariosOpen, setScenariosOpen] = useState(false);
+  const [synthesisOpen, setSynthesisOpen] = useState(false);
   const [pendingPlannedAdd, setPendingPlannedAdd] = useState<{
     resourceId: number;
     scenarioInput: string;
@@ -881,8 +891,28 @@ const Forecast: React.FC = () => {
     [absenceByResource, holidayYmdSet]
   );
 
+  const getDeliveryEndDate = useCallback(
+    (deliveryId: string | number, resourceId: number): string | null => {
+      const resource = resources.find((r) => r.id === resourceId);
+      if (!resource) return null;
+      const id = String(deliveryId);
+      const fromVisible = resource.projects.find((p) => String(p.id) === id);
+      if (fromVisible?.endDate) return fromVisible.endDate;
+      const fromAll = resource.allProjectsForCA.find((p) => String(p.id) === id);
+      return fromAll?.endDate || null;
+    },
+    [resources]
+  );
+
   const commitForecastEdit = useCallback(
     (deliveryId: string | number, resourceId: number, month: string, rawInput: string): boolean => {
+      if (isMonthBeyondDeliveryEnd(month, getDeliveryEndDate(deliveryId, resourceId))) {
+        alert('Saisie interdite : la prestation est terminée pour ce mois.');
+        setEditingMonth(null);
+        setForecastEditingInput('');
+        return true;
+      }
+
       const trimmed = rawInput.trim();
       if (!trimmed) {
         const current = editingMonthRef.current;
@@ -912,7 +942,7 @@ const Forecast: React.FC = () => {
       void saveForecastTime(deliveryId, month, parsed);
       return true;
     },
-    [getMaxForecastDaysForMonth, saveForecastTime, setForecastEditingInput]
+    [getDeliveryEndDate, getMaxForecastDaysForMonth, saveForecastTime, setForecastEditingInput]
   );
 
   const savePlannedDelivery = useCallback(
@@ -1155,6 +1185,10 @@ const Forecast: React.FC = () => {
 
   const beginDeliveryForecastEdit = useCallback(
     (deliveryId: string | number, resourceId: number, month: string) => {
+      if (isMonthBeyondDeliveryEnd(month, getDeliveryEndDate(deliveryId, resourceId))) {
+        return;
+      }
+
       const target = { deliveryId, resourceId, month };
       const editing = editingMonthRef.current;
       if (
@@ -1199,7 +1233,13 @@ const Forecast: React.FC = () => {
       setEditingMonth(target);
       setForecastEditingInput('');
     },
-    [commitForecastEdit, commitPlannedForecastEdit, findPlannedScenario, setForecastEditingInput]
+    [
+      commitForecastEdit,
+      commitPlannedForecastEdit,
+      findPlannedScenario,
+      getDeliveryEndDate,
+      setForecastEditingInput
+    ]
   );
 
   const beginPlannedForecastEdit = useCallback(
@@ -1287,9 +1327,15 @@ const Forecast: React.FC = () => {
       if (e.key === 'Tab') {
         e.preventDefault();
         const monthIdx = gridMonths.indexOf(month);
-        const nextIdx = e.shiftKey ? monthIdx - 1 : monthIdx + 1;
-        if (nextIdx < 0 || nextIdx >= gridMonths.length) return;
-        beginDeliveryForecastEdit(deliveryId, resourceId, gridMonths[nextIdx]);
+        const step = e.shiftKey ? -1 : 1;
+        const endDate = getDeliveryEndDate(deliveryId, resourceId);
+        for (let i = monthIdx + step; i >= 0 && i < gridMonths.length; i += step) {
+          const nextMonth = gridMonths[i];
+          if (!isMonthBeyondDeliveryEnd(nextMonth, endDate)) {
+            beginDeliveryForecastEdit(deliveryId, resourceId, nextMonth);
+            return;
+          }
+        }
         return;
       }
       if (e.key === 'Enter') {
@@ -1307,7 +1353,13 @@ const Forecast: React.FC = () => {
         setForecastEditingInput('');
       }
     },
-    [gridMonths, commitForecastEdit, beginDeliveryForecastEdit, setForecastEditingInput]
+    [
+      gridMonths,
+      commitForecastEdit,
+      beginDeliveryForecastEdit,
+      getDeliveryEndDate,
+      setForecastEditingInput
+    ]
   );
 
   const handlePlannedForecastKeyDown = useCallback(
@@ -1494,23 +1546,35 @@ const Forecast: React.FC = () => {
     return date.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
   };
 
-  const scenariosAction = canScenarios ? (
-    <button
-      type="button"
-      className="forecast-scenarios-btn btn-secondary"
-      onClick={() => setScenariosOpen(true)}
-      data-testid="forecast-scenarios-btn"
-    >
-      Scénarios
-    </button>
-  ) : null;
+  const headerActions = (
+    <div className="forecast-page-actions">
+      <button
+        type="button"
+        className="forecast-synthesis-btn btn-secondary"
+        onClick={() => setSynthesisOpen(true)}
+        data-testid="forecast-synthesis-btn"
+      >
+        Éditer le rapport
+      </button>
+      {canScenarios ? (
+        <button
+          type="button"
+          className="forecast-scenarios-btn btn-secondary"
+          onClick={() => setScenariosOpen(true)}
+          data-testid="forecast-scenarios-btn"
+        >
+          Scénarios
+        </button>
+      ) : null}
+    </div>
+  );
 
   if (loading) {
     return (
       <PageShell
         title="Forecast"
         subtitle="Prévisionnel et temps saisis par prestation"
-        actions={scenariosAction}
+        actions={headerActions}
         data-testid="page-shell-forecast"
       >
         <div className="page-shell-panel">
@@ -1528,7 +1592,7 @@ const Forecast: React.FC = () => {
       <PageShell
         title="Forecast"
         subtitle="Prévisionnel et temps saisis par prestation"
-        actions={scenariosAction}
+        actions={headerActions}
         data-testid="page-shell-forecast"
       >
         <div className="page-shell-panel">
@@ -1548,7 +1612,7 @@ const Forecast: React.FC = () => {
     <PageShell
       title="Forecast"
       subtitle="Prévisionnel et temps saisis par prestation"
-      actions={scenariosAction}
+      actions={headerActions}
       data-testid="page-shell-forecast"
       className="forecast-page"
     >
@@ -2289,10 +2353,10 @@ const Forecast: React.FC = () => {
                                             editingMonth?.resourceId === resource.id &&
                                             editingMonth?.month === month;
                                           
-                                          // Vérifier si le mois est au-delà de la date de fin
-                                          const monthDate = new Date(month + '-01');
-                                          const endDate = project.endDate ? new Date(project.endDate) : null;
-                                          const isBeyondEndDate = endDate && monthDate > endDate;
+                                          const isBeyondEndDate = isMonthBeyondDeliveryEnd(
+                                            month,
+                                            project.endDate
+                                          );
 
                                           const hasForecastSaisi = Object.prototype.hasOwnProperty.call(
                                             forecastTimes,
@@ -2300,7 +2364,10 @@ const Forecast: React.FC = () => {
                                           );
                                           const hasActualSaisi = Object.prototype.hasOwnProperty.call(actualTimes, month);
                                           const showForecastDelta =
-                                            isMonthCurrentOrPast(month) && hasForecastSaisi && hasActualSaisi;
+                                            !isBeyondEndDate &&
+                                            isMonthCurrentOrPast(month) &&
+                                            hasForecastSaisi &&
+                                            hasActualSaisi;
 
                                           const rawDelta = actualDays - forecastDays;
                                           const deltaNearZero = Math.abs(rawDelta) < 0.05;
@@ -2313,16 +2380,22 @@ const Forecast: React.FC = () => {
                                           return (
                                             <td 
                                               key={month} 
-                                              className={`table-cell forecast-cell ${isBeyondEndDate ? 'beyond-end-date' : ''}`}
+                                              className={`table-cell forecast-cell ${isBeyondEndDate ? 'beyond-end-date beyond-end-date--locked' : ''}`}
                                             >
-                                              {isEditing ? (
+                                              {isBeyondEndDate ? (
+                                                <span
+                                                  className={`forecast-beyond-locked-value ${forecastDays > 0 ? 'has-forecast' : 'no-forecast'}`}
+                                                  title="Prestation terminée — saisie interdite"
+                                                >
+                                                  {forecastDays > 0 ? forecastDays.toFixed(1) : '—'}
+                                                </span>
+                                              ) : isEditing ? (
                                                 <input
                                                   type="text"
                                                   inputMode="decimal"
                                                   value={editingInputValue}
-                                                  className={`forecast-input ${isBeyondEndDate ? 'beyond-end-date-input' : ''}`}
+                                                  className="forecast-input"
                                                   autoFocus
-                                                  style={isBeyondEndDate ? { backgroundColor: '#F26B69', color: 'white' } : {}}
                                                   onChange={(e) =>
                                                     setForecastEditingInput(
                                                       sanitizeForecastDaysInput(e.target.value)
@@ -2342,7 +2415,7 @@ const Forecast: React.FC = () => {
                                                 />
                                               ) : showForecastDelta ? (
                                                 <div
-                                                  className={`forecast-display forecast-display-delta ${isBeyondEndDate ? 'beyond-end-date' : ''}`}
+                                                  className="forecast-display forecast-display-delta"
                                                   onMouseDown={(e) => {
                                                     e.preventDefault();
                                                     beginDeliveryForecastEdit(project.id, resource.id, month);
@@ -2353,12 +2426,12 @@ const Forecast: React.FC = () => {
                                                 </div>
                                               ) : (
                                                 <div
-                                                  className={`forecast-display ${forecastDays > 0 ? 'has-forecast' : 'no-forecast'} ${isBeyondEndDate ? 'beyond-end-date' : ''}`}
+                                                  className={`forecast-display ${forecastDays > 0 ? 'has-forecast' : 'no-forecast'}`}
                                                   onMouseDown={(e) => {
                                                     e.preventDefault();
                                                     beginDeliveryForecastEdit(project.id, resource.id, month);
                                                   }}
-                                                  title={isBeyondEndDate ? 'Mois au-delà de la date de fin - saisie possible' : 'Cliquez pour modifier'}
+                                                  title="Cliquez pour modifier"
                                                 >
                                                   {forecastDays > 0 ? forecastDays.toFixed(1) : '-'}
                                                 </div>
@@ -2433,6 +2506,18 @@ const Forecast: React.FC = () => {
         <ForecastScenarios
           onClose={() => setScenariosOpen(false)}
           onChanged={() => void reloadForecastScenarios()}
+        />
+      )}
+      {synthesisOpen && (
+        <ForecastSynthesisReport
+          onClose={() => setSynthesisOpen(false)}
+          resources={filteredResources}
+          forecastByDeliveryId={forecastByDeliveryId}
+          plannedByResource={plannedDeliveriesByResource}
+          forecastScenarios={forecastScenarios}
+          year={gridYear}
+          periodStart={startDate}
+          periodEnd={endDate}
         />
       )}
     </>

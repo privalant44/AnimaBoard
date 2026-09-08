@@ -809,11 +809,18 @@ const HomeMonthlyRecap: React.FC = () => {
     );
   }
 
-  const renderDashboardZone = (zoneId: HomeDashboardZoneId, index: number, total: number) => {
+  const renderDashboardZone = (
+    zoneId: HomeDashboardZoneId,
+    index: number,
+    total: number,
+    orderedZones: HomeDashboardZoneId[]
+  ) => {
     const testId = zoneTestId(zoneId);
-    const spanFull = total === 3 && index === 2;
-    const canMoveEarlier = index > 0;
-    const canMoveLater = index < total - 1;
+    // Financiers toujours pleine largeur ; besoins + trésorerie côte à côte en dessous.
+    const spanFull = zoneId === 'financial';
+    const canMoveEarlier =
+      zoneId !== 'financial' && index > 0 && orderedZones[index - 1] !== 'financial';
+    const canMoveLater = zoneId !== 'financial' && index < total - 1;
     const reorderProps = {
       canMoveEarlier,
       canMoveLater,
@@ -948,7 +955,7 @@ const HomeMonthlyRecap: React.FC = () => {
       </div>
       <div className="home-dashboard-grid" data-testid="home-dashboard-grid">
         {orderedVisibleZones.map((zoneId, index) =>
-          renderDashboardZone(zoneId, index, orderedVisibleZones.length)
+          renderDashboardZone(zoneId, index, orderedVisibleZones.length, orderedVisibleZones)
         )}
       </div>
     </main>

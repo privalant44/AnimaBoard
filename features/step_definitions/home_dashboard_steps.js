@@ -68,6 +68,23 @@ Then(
     const gridColumns = await grid.evaluate((el) => window.getComputedStyle(el).gridTemplateColumns);
     assert.match(gridColumns, / /, 'La grille devrait être sur 2 colonnes');
 
+    const financialZone = this.page.locator('[data-testid="home-zone-financial"]');
+    await financialZone.waitFor({ state: 'visible', timeout: 10000 });
+    const financialSpansFull = await financialZone.evaluate((el) =>
+      el.classList.contains('home-dashboard-zone--full')
+    );
+    assert.ok(financialSpansFull, 'Les indicateurs financiers devraient occuper toute la largeur');
+
+    const besoinsZone = this.page.locator('[data-testid="home-zone-besoins"]');
+    const treasuryZone = this.page.locator('[data-testid="home-zone-treasury"]');
+    const besoinsFull = await besoinsZone.evaluate((el) =>
+      el.classList.contains('home-dashboard-zone--full')
+    );
+    const treasuryFull = await treasuryZone.evaluate((el) =>
+      el.classList.contains('home-dashboard-zone--full')
+    );
+    assert.ok(!besoinsFull && !treasuryFull, 'Besoins et trésorerie devraient être côte à côte sur 2 colonnes');
+
     const zones = [
       { id: 'home-zone-financial', chartTestId: 'home-recap-view-chart', tableTestId: 'home-recap-view-table', tableViewTestId: 'home-recap-table-view', chartViewTestId: 'home-recap-chart-view' },
       { id: 'home-zone-besoins', chartTestId: 'home-zone-besoins-view-chart', tableTestId: 'home-zone-besoins-view-table', tableViewTestId: 'home-zone-besoins-table-view', chartViewTestId: 'home-recap-chart-view' },
@@ -145,13 +162,14 @@ When('pouvoir interchangé les emplacements des zones sur la page d\'accueil', a
     'L\'ordre initial des zones devrait être financier, besoins, trésorerie'
   );
 
-  await this.page.locator('[data-testid="home-zone-financial-move-later"]').click({ force: true });
+  // Financiers restent en tête ; on intervertit besoins et trésorerie.
+  await this.page.locator('[data-testid="home-zone-besoins-move-later"]').click({ force: true });
 
   const swappedOrder = await getHomeZoneOrder(this.page);
   assert.deepStrictEqual(
     swappedOrder,
-    ['home-zone-besoins', 'home-zone-financial', 'home-zone-treasury'],
-    'Les zones financière et besoins devraient être interchangées'
+    ['home-zone-financial', 'home-zone-treasury', 'home-zone-besoins'],
+    'Les zones besoins et trésorerie devraient être interchangées sous les indicateurs financiers'
   );
 
   this.expectedHomeZoneOrder = swappedOrder;

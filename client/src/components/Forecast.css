@@ -7,6 +7,17 @@
   padding: 0.55rem 1rem;
 }
 
+.forecast-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.forecast-synthesis-btn {
+  padding: 0.55rem 1rem;
+}
+
 .forecast-filters {
   display: flex;
   gap: 1.5rem;
@@ -1216,6 +1227,25 @@
   border-color: rgba(255, 255, 255, 0.5);
 }
 
+.forecast-table td.forecast-cell.beyond-end-date--locked {
+  cursor: not-allowed;
+}
+
+.forecast-beyond-locked-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.5rem;
+  padding: 0.25rem 0.4rem;
+  color: white;
+  font-size: 0.85rem;
+  user-select: none;
+}
+
+.forecast-beyond-locked-value.no-forecast {
+  opacity: 0.85;
+}
+
 .months-header {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -1353,21 +1383,6 @@
 .forecast-input:focus {
   outline: none;
   border-color: #2C5F5D;
-}
-
-.forecast-input.beyond-end-date-input {
-  background: #F26B69;
-  color: white;
-  border-color: rgba(255, 255, 255, 0.5);
-}
-
-.forecast-input.beyond-end-date-input::placeholder {
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.forecast-input.beyond-end-date-input:focus {
-  border-color: white;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
 }
 
 .no-months {

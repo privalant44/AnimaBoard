@@ -20,7 +20,12 @@ fi
 if ! command -v fuse-overlayfs >/dev/null 2>&1; then
   echo "==> [install] Installing fuse-overlayfs"
   sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends fuse-overlayfs
+  # --force-confold keeps any existing /etc/fuse.conf so the install stays
+  # non-interactive (the base image already ships that conffile).
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    -o Dpkg::Options::=--force-confold \
+    -o Dpkg::Options::=--force-confdef \
+    fuse-overlayfs
 fi
 
 # Configure the Docker daemon to use fuse-overlayfs and the classic graph

@@ -52,6 +52,13 @@ NODE_ENV=development
 SUPABASE_URL=${API_URL}
 SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
 
+# Local admin login so the app is usable out of the box (dev only).
+# Credentials: administrateur / DevDemo123!  (scrypt hash below, fixed public salt).
+AUTH_ENABLED=true
+LOCAL_ADMIN_USERNAME=administrateur
+LOCAL_ADMIN_PASSWORD_HASH=76toXipZN066vpjQOy0L0nxGgfpz3f9wbMPjsT/SDI+GjAHsxvde3H7OsttZXsB8zKZ51f3dPH124O6wkXuIpg==
+LOCAL_ADMIN_EMAIL=admin@animaneo.local
+
 # External integrations — placeholder creds; their syncs will fail until real
 # BoondManager / Pennylane credentials are supplied.
 BOOND_API_URL=https://ui.boondmanager.com/api

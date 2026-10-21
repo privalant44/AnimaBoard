@@ -24,9 +24,9 @@ const {
   PROJECTS_START_ID,
   getBoondAuthConfig,
   isCreationInYear,
-  findMaxProjectId,
   fetchProject,
 } = require('../lib/projectBoond');
+const { listBoondCollectionIds } = require('../lib/boondApi');
 
 function parseArgs(argv) {
   const options = {
@@ -112,35 +112,15 @@ async function getProjectIdsFromDbForYear(year) {
   return (data || []).map((row) => Number(row.id)).filter((id) => Number.isFinite(id));
 }
 
-async function getMaxProjectIdFromDb() {
-  const supabase = getSupabase();
-  if (!supabase) return 0;
-
-  const { data, error } = await supabase
-    .from('projects')
-    .select('id')
-    .order('id', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data?.id != null ? Number(data.id) : 0;
-}
-
-function buildIdSet(options, endId, maxDbId, idsFromDb) {
-  const ids = new Set(idsFromDb);
-
-  if (options.fullScan) {
-    for (let id = options.startId; id <= endId; id += 1) ids.add(id);
-    return ids;
-  }
-
-  if (options.scanNew) {
-    const from = Math.max(options.startId, maxDbId + 1);
-    for (let id = from; id <= endId; id += 1) ids.add(id);
-  }
-
-  return ids;
+function buildIdSet(options, discoveredIds, idsFromDb) {
+  const knownIds = new Set(idsFromDb);
+  return new Set(
+    discoveredIds.filter((id) => {
+      if (id < options.startId) return false;
+      if (options.endId != null && id > options.endId) return false;
+      return options.scanNew !== false || knownIds.has(id);
+    })
+  );
 }
 
 function toProjectSaveRow(project) {
@@ -184,27 +164,24 @@ async function syncProjectsYear(options = {}) {
   console.log(`\n🚀 Sync projets Boond — créés en ${year}\n`);
   console.log('='.repeat(72));
 
-  const endId =
-    options.endId ??
-    (await findMaxProjectId(config, baseURL, {
-      low: options.startId,
-      high: options.endId ?? undefined,
-      delayMs: options.delayMs,
-    }));
-
-  const [idsFromDb, idsWithNullDates, maxDbId] = await Promise.all([
+  const [idsFromDb, idsWithNullDates] = await Promise.all([
     getProjectIdsFromDbForYear(year),
     getProjectIdsWithNullCreationDate(),
-    getMaxProjectIdFromDb(),
   ]);
 
-  const idsToFetch = buildIdSet(options, endId, maxDbId, [
+  const discoveredIds = await listBoondCollectionIds(config, baseURL, '/projects', {
+    period: 'created',
+    startDate: `${year}-01-01`,
+    endDate: `${year}-12-31`,
+  });
+  const endId = options.endId ?? Math.max(options.startId - 1, ...discoveredIds);
+  const idsToFetch = buildIdSet(options, discoveredIds, [
     ...idsFromDb,
     ...idsWithNullDates,
   ]);
   const sortedIds = [...idsToFetch].sort((a, b) => a - b);
 
-  console.log(`📡 Plage Boond détectée : ${options.startId} → ${endId}`);
+  console.log(`📡 Projets valides découverts via /projects : ${discoveredIds.length}`);
   console.log(`📦 En base pour ${year} : ${idsFromDb.length} projet(s)`);
   if (idsWithNullDates.length > 0) {
     console.log(`⚠️  Sans creation_date en base : ${idsWithNullDates.length} (backfill Boond)`);
@@ -212,7 +189,7 @@ async function syncProjectsYear(options = {}) {
   console.log(`🔎 IDs à interroger : ${sortedIds.length}`);
   if (options.fullScan) console.log('   (mode full-scan)');
   else if (!options.scanNew) console.log('   (mode no-scan-new)');
-  else console.log(`   (refresh base + scan ${Math.max(options.startId, maxDbId + 1)} → ${endId})`);
+  else console.log('   (IDs présents dans la liste Boond, sans balayage de plage)');
   console.log('');
 
   const projects = [];
@@ -265,6 +242,8 @@ async function syncProjectsYear(options = {}) {
     errorCount: errors,
     idsFromDbCount: idsFromDb.length,
     idsNullCreationDateCount: idsWithNullDates.length,
+    idsDiscoveredCount: discoveredIds.length,
+    discoveryEndpoint: '/projects',
     fullScan: options.fullScan,
     scanNew: options.scanNew,
   };

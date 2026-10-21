@@ -3,7 +3,7 @@ import './Report.css';
 import PageShell from './PageShell';
 import { apiFetch } from '../api';
 import { DATA_REFRESH_EVENT } from '../dataRefresh';
-import { useUserAccess } from '../auth/useUserAccess';
+import { useAuth } from '../auth/AuthProvider';
 import { PERMISSIONS } from '../auth/roles';
 import { isAuthEnabled } from '../auth/msalConfig';
 import {
@@ -97,19 +97,21 @@ const loadReportFiltersFromStorage = () => {
 };
 
 const Report: React.FC<ReportProps> = ({ initialReport }) => {
-  const userAccess = useUserAccess(isAuthEnabled());
+  const auth = useAuth();
+  const authOn = isAuthEnabled();
   const canViewForecastReport =
-    !isAuthEnabled() || userAccess.canView(PERMISSIONS.VIEW_REPORT_FORECAST);
+    !authOn || Boolean(auth?.canView(PERMISSIONS.VIEW_REPORT_FORECAST));
   const canViewPennylane =
-    !isAuthEnabled() ||
-    userAccess.canView(PERMISSIONS.VIEW_REPORT_INCOME) ||
-    userAccess.can(PERMISSIONS.DATA_FINANCE);
+    !authOn || Boolean(auth?.canView(PERMISSIONS.VIEW_REPORT_INCOME));
+  const canSync = !authOn || Boolean(
+    auth?.can(PERMISSIONS.OPS_SYNC) || auth?.can(PERMISSIONS.DATA_FINANCE)
+  );
 
   // Charger les filtres depuis localStorage au démarrage
   const savedFilters = loadReportFiltersFromStorage();
   
   const [resources, setResources] = useState<ResourceWithProjects[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(canViewForecastReport);
   const [error, setError] = useState<string | null>(null);
   const [forecastData, setForecastData] = useState<ForecastData>({});
   const [timesheetsAggregate, setTimesheetsAggregate] = useState<{
@@ -158,6 +160,7 @@ const Report: React.FC<ReportProps> = ({ initialReport }) => {
 
   // Charger toutes les données utiles à la vue Report en un seul appel.
   const loadResourcesMetadata = useCallback(async () => {
+    if (!canViewForecastReport) return;
     try {
       const response = await apiFetch('/api/data/resources-metadata');
       if (!response.ok) return;
@@ -172,9 +175,14 @@ const Report: React.FC<ReportProps> = ({ initialReport }) => {
     } catch (error) {
       console.warn('⚠️  Impossible de charger les métadonnées des ressources:', error);
     }
-  }, []);
+  }, [canViewForecastReport]);
 
   const loadReportBootstrap = useCallback(async () => {
+    if (!canViewForecastReport) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
@@ -274,7 +282,7 @@ const Report: React.FC<ReportProps> = ({ initialReport }) => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canViewForecastReport]);
 
   const loadReportBootstrapRef = useRef(loadReportBootstrap);
   const loadResourcesMetadataRef = useRef(loadResourcesMetadata);
@@ -282,27 +290,47 @@ const Report: React.FC<ReportProps> = ({ initialReport }) => {
   loadResourcesMetadataRef.current = loadResourcesMetadata;
 
   useEffect(() => {
-    if (!initialReport) return;
-    setActiveReport(initialReport);
-  }, [initialReport]);
+    if (initialReport === 'forecast-year' && canViewForecastReport) {
+      setActiveReport(initialReport);
+    } else if (initialReport === 'pennylane-pl' && canViewPennylane) {
+      setActiveReport(initialReport);
+    } else if (initialReport) {
+      setActiveReport('menu');
+    }
+  }, [initialReport, canViewForecastReport, canViewPennylane]);
+
+  useEffect(() => {
+    if (
+      (activeReport === 'forecast-year' && !canViewForecastReport) ||
+      (activeReport === 'pennylane-pl' && !canViewPennylane)
+    ) {
+      setActiveReport('menu');
+    }
+  }, [activeReport, canViewForecastReport, canViewPennylane]);
 
   useEffect(() => {
     const onRefresh = () => {
+      if (!canViewForecastReport) return;
       void loadReportBootstrapRef.current();
       void loadResourcesMetadataRef.current();
     };
     window.addEventListener(DATA_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(DATA_REFRESH_EVENT, onRefresh);
-  }, []);
+  }, [canViewForecastReport]);
 
   useEffect(() => {
-    void loadReportBootstrap();
-    void loadResourcesMetadata();
-  }, [loadReportBootstrap, loadResourcesMetadata]);
+    if (canViewForecastReport) {
+      void loadReportBootstrap();
+      void loadResourcesMetadata();
+    } else {
+      setLoading(false);
+      setError(null);
+    }
+  }, [canViewForecastReport, loadReportBootstrap, loadResourcesMetadata]);
 
   const loadIncomeStatement = useCallback(
     async (forceSync = false) => {
-      if (activeReport !== 'pennylane-pl') return;
+      if (activeReport !== 'pennylane-pl' || !canViewPennylane) return;
       setPlLoading(true);
       setPlError(null);
       try {
@@ -331,7 +359,7 @@ const Report: React.FC<ReportProps> = ({ initialReport }) => {
         setPlLoading(false);
       }
     },
-    [activeReport, plYear]
+    [activeReport, canViewPennylane, plYear]
   );
 
   useEffect(() => {
@@ -582,7 +610,7 @@ const Report: React.FC<ReportProps> = ({ initialReport }) => {
 
   const months = getCurrentYearMonths();
 
-  const reportHeaderActions = (
+  const reportHeaderActions = canSync ? (
     <>
       {snapBesoinsError ? (
         <span className="snap-besoins-status snap-besoins-status--error">{snapBesoinsError}</span>
@@ -598,7 +626,7 @@ const Report: React.FC<ReportProps> = ({ initialReport }) => {
         {snapBesoinsLoading ? 'Sync Besoins…' : 'Sync Besoins'}
       </button>
     </>
-  );
+  ) : null;
 
   if (loading) {
     return (
@@ -711,16 +739,18 @@ const Report: React.FC<ReportProps> = ({ initialReport }) => {
                     ))}
                   </select>
                 </label>
-                <button
-                  type="button"
-                  className="pl-refresh-icon-button"
-                  onClick={() => void handleRefreshIncomeStatement()}
-                  disabled={plRefreshing || plLoading}
-                  title="Mettre à jour les données Pennylane"
-                  aria-label="Mettre à jour les données Pennylane"
-                >
-                  {plRefreshing ? '⏳' : '↻'}
-                </button>
+                {canSync && (
+                  <button
+                    type="button"
+                    className="pl-refresh-icon-button"
+                    onClick={() => void handleRefreshIncomeStatement()}
+                    disabled={plRefreshing || plLoading}
+                    title="Mettre à jour les données Pennylane"
+                    aria-label="Mettre à jour les données Pennylane"
+                  >
+                    {plRefreshing ? '⏳' : '↻'}
+                  </button>
+                )}
               </div>
             </div>
 

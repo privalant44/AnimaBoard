@@ -134,9 +134,10 @@ When('l\'utilisateur se connecte', async function () {
   if (this.page && this.baseUrl) {
     await seedAuthSession(this.page, this.email);
     await this.page.goto(this.baseUrl, { waitUntil: 'networkidle' });
-    await this.page.waitForSelector('[data-testid="nav-tab-home"], [data-testid="nav-tab-forecast"]', {
-      timeout: 15000,
-    });
+    await this.page.waitForSelector(
+      '[data-testid="nav-tab-home"], [data-testid="nav-tab-resources"], [data-testid="nav-tab-forecast"], [data-testid="nav-tab-report"], [data-testid="nav-tab-settings"]',
+      { timeout: 15000 }
+    );
   }
 });
 

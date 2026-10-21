@@ -1,0 +1,12 @@
+{
+  "name": "AnimaBoard dev",
+  "install": "bash .cursor/install.sh",
+  "start": "bash .cursor/start.sh",
+  "terminals": [
+    {
+      "name": "app-dev",
+      "command": "npm run dev"
+    }
+  ],
+  "ports": [3000, 3001, 55221, 55223]
+}

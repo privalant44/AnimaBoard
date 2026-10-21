@@ -7,6 +7,7 @@ const {
   getBoondAuthConfig,
   fetchProject,
 } = require('./lib/projectBoond');
+const { listBoondCollectionIds } = require('./lib/boondApi');
 
 let email = process.env.BOOND_EMAIL;
 let password = process.env.BOOND_PASSWORD;
@@ -30,9 +31,14 @@ async function extractProjects() {
   let notFoundCount = 0;
   let errorCount = 0;
 
-  console.log(`📡 Début de la récupération des projets (IDs ${startId} à ${endId})...\n`);
+  const validIds = (
+    await listBoondCollectionIds(config, baseURL, '/projects')
+  ).filter((id) => id >= startId && id <= endId);
+  console.log(
+    `📡 ${validIds.length} projet(s) valide(s) dans la plage ${startId} à ${endId}...\n`
+  );
 
-  for (let id = startId; id <= endId; id++) {
+  for (const id of validIds) {
     try {
       const result = await fetchProject(config, baseURL, id);
 
@@ -95,6 +101,8 @@ async function extractProjects() {
       method: 'GET',
       baseURL: `${baseURL}/projects/{id}`,
       idRange: `${startId}-${endId}`,
+      idsDiscoveredCount: validIds.length,
+      discoveryEndpoint: '/projects',
       successCount,
       notFoundCount,
       errorCount,

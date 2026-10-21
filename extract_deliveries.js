@@ -7,6 +7,7 @@ const {
   getBoondAuthConfig,
   fetchDelivery,
 } = require('./lib/deliveryBoond');
+const { listBoondCollectionIds } = require('./lib/boondApi');
 
 function getBoondCredentials() {
   const email = process.env.BOOND_EMAIL;
@@ -34,9 +35,14 @@ async function extractDeliveries() {
   let notFoundCount = 0;
   let errorCount = 0;
 
-  console.log(`📡 Début de la récupération des prestations (IDs ${startId} à ${endId})...\n`);
+  const validIds = (
+    await listBoondCollectionIds(config, baseURL, '/deliveries-groupments')
+  ).filter((id) => id >= startId && id <= endId);
+  console.log(
+    `📡 ${validIds.length} prestation(s) valide(s) dans la plage ${startId} à ${endId}...\n`
+  );
 
-  for (let id = startId; id <= endId; id++) {
+  for (const id of validIds) {
     try {
       const result = await fetchDelivery(config, baseURL, id);
 
@@ -75,6 +81,8 @@ async function extractDeliveries() {
       method: 'GET',
       baseURL: `${baseURL}/deliveries/{id}`,
       idRange: `${startId}-${endId}`,
+      idsDiscoveredCount: validIds.length,
+      discoveryEndpoint: '/deliveries-groupments',
       successCount,
       notFoundCount,
       errorCount,

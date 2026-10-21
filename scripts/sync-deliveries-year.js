@@ -2,10 +2,9 @@
  * Sync incrémentale des prestations Boond actives sur une année civile.
  *
  * Stratégie (par défaut) :
- * 1. Re-fetch les prestations déjà en base avec creation_date sur l'année cible
- * 2. Re-fetch les prestations en base sans creation_date (backfill dates Boond)
- * 3. Scanner les nouveaux IDs Boond (max(id) en base + 1 → dernier ID existant)
- * 4. Upsert uniquement les prestations dont la période (start/end) chevauche l'année
+ * 1. Lister les prestations actives sur l'année via `GET /deliveries-groupments`
+ * 2. Ne demander le détail que des IDs présents dans cette liste
+ * 3. Upsert uniquement les prestations dont la période (start/end) chevauche l'année
  *
  * Points d'entrée (même comportement par défaut) :
  *   - CLI : npm run sync-deliveries-year
@@ -20,10 +19,10 @@
  *
  * Options:
  *   --year=YYYY       Année cible (défaut : année courante)
- *   --full-scan       Parcourt toute la plage d'IDs (lent, utile si creation_date manquante)
+ *   --full-scan       Compatibilité : traite tous les IDs valides retournés
  *   --no-scan-new     Ne rafraîchit que les IDs déjà connus en base pour l'année
  *   --start-id=N      Borne basse (défaut : DELIVERIES_START_ID ou 1)
- *   --end-id=N        Borne haute (défaut : détection auto par dichotomie)
+ *   --end-id=N        Borne haute optionnelle appliquée aux IDs retournés
  *   --delay=MS        Pause entre appels Boond (défaut : 200)
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
@@ -38,9 +37,9 @@ const {
   DELIVERIES_START_ID,
   getBoondAuthConfig,
   doesDeliveryOverlapYear,
-  findMaxDeliveryId,
   fetchDelivery,
 } = require('../lib/deliveryBoond');
+const { listBoondCollectionIds } = require('../lib/boondApi');
 
 function parseArgs(argv) {
   const overrides = { help: false };
@@ -53,9 +52,6 @@ function parseArgs(argv) {
     else if (arg.startsWith('--start-id=')) overrides.startId = parseInt(arg.slice('--start-id='.length), 10);
     else if (arg.startsWith('--end-id=')) overrides.endId = parseInt(arg.slice('--end-id='.length), 10);
     else if (arg.startsWith('--delay=')) overrides.delayMs = parseInt(arg.slice('--delay='.length), 10);
-    else if (arg.startsWith('--recent-backfill=')) {
-      overrides.recentBackfill = parseInt(arg.slice('--recent-backfill='.length), 10);
-    }
   }
 
   return overrides;
@@ -69,12 +65,11 @@ Sync des prestations Boond créées sur une année civile.
 
 Options:
   --year=YYYY       Année cible (défaut : année courante)
-  --full-scan       Parcourt toute la plage d'IDs (lent)
+  --full-scan       Compatibilité : traite tous les IDs valides retournés
   --no-scan-new     IDs déjà en base pour l'année uniquement
   --start-id=N      Borne basse (défaut : 1)
-  --end-id=N        Borne haute (défaut : auto)
+  --end-id=N        Borne haute optionnelle
   --delay=MS        Pause entre appels Boond (défaut : 200)
-  --recent-backfill=N  Re-scan les N derniers IDs (défaut : 200)
   -h, --help        Cette aide
 `);
 }
@@ -139,7 +134,6 @@ const DEFAULT_SYNC_DELIVERIES_OPTIONS = {
   startId: DELIVERIES_START_ID || 1,
   endId: null,
   delayMs: 200,
-  recentBackfill: 200,
 };
 
 function resolveStartId(options) {
@@ -208,28 +202,17 @@ function normalizeSyncOptions(options = {}) {
   };
 }
 
-function buildIdSet(options, endId, maxDbId, idsFromDb) {
+function buildIdSet(options, discoveredIds, idsFromDb) {
   const startId = resolveStartId(options);
-  const ids = options.explicitRange ? new Set() : new Set(idsFromDb);
-
-  if (options.fullScan) {
-    for (let id = startId; id <= endId; id += 1) ids.add(id);
-    return ids;
-  }
-
-  if (options.scanNew !== false) {
-    const from = Math.max(startId, maxDbId + 1);
-    for (let id = from; id <= endId; id += 1) ids.add(id);
-  }
-
-  // Backfill de sécurité : rescanner les derniers IDs, même si maxDbId >= endId.
-  const recent = Number(options.recentBackfill ?? 200);
-  if (Number.isFinite(recent) && recent > 0) {
-    const from = Math.max(startId, endId - recent + 1);
-    for (let id = from; id <= endId; id += 1) ids.add(id);
-  }
-
-  return ids;
+  const knownIds = new Set(idsFromDb);
+  return new Set(
+    discoveredIds.filter((id) => {
+      if (id < startId) return false;
+      if (options.endId != null && id > options.endId) return false;
+      if (options.explicitRange || options.fullScan) return true;
+      return options.scanNew !== false || knownIds.has(id);
+    })
+  );
 }
 
 function prioritizeIds(ids, maxDbId) {
@@ -290,14 +273,6 @@ async function syncDeliveriesYear(rawOptions = {}) {
   console.log(`\n🚀 Sync prestations Boond — ${rangeLabel}\n`);
   console.log('='.repeat(72));
 
-  const endId =
-    options.endId ??
-    (await findMaxDeliveryId(config, baseURL, {
-      low: options.startId,
-      high: options.endId ?? undefined,
-      delayMs: options.delayMs,
-    }));
-
   const [idsFromDb, idsWithNullDates, maxDbId] = options.explicitRange
     ? [[], [], 0]
     : await Promise.all([
@@ -306,13 +281,29 @@ async function syncDeliveriesYear(rawOptions = {}) {
         getMaxDeliveryIdFromDb(),
       ]);
 
-  const idsToFetch = buildIdSet(options, endId, maxDbId, [
+  const discoveryParams = options.explicitRange
+    ? {}
+    : {
+        period: 'running',
+        startDate: `${year}-01-01`,
+        endDate: `${year}-12-31`,
+      };
+  const discoveredIds = await listBoondCollectionIds(
+    config,
+    baseURL,
+    '/deliveries-groupments',
+    discoveryParams
+  );
+  const endId = options.endId ?? Math.max(options.startId - 1, ...discoveredIds);
+  const idsToFetch = buildIdSet(options, discoveredIds, [
     ...idsFromDb,
     ...idsWithNullDates,
   ]);
   const sortedIds = prioritizeIds(idsToFetch, maxDbId);
 
-  console.log(`📡 Plage Boond : ${options.startId} → ${endId}`);
+  console.log(
+    `📡 Prestations valides découvertes via /deliveries-groupments : ${discoveredIds.length}`
+  );
   if (options.explicitRange) {
     console.log(`🔎 IDs à interroger : ${sortedIds.length} (plage explicite)`);
   } else {
@@ -324,7 +315,7 @@ async function syncDeliveriesYear(rawOptions = {}) {
     console.log(`🔎 IDs à interroger : ${sortedIds.length}`);
     if (options.fullScan) console.log('   (mode full-scan)');
     else if (options.scanNew === false) console.log('   (mode no-scan-new)');
-    else console.log(`   (refresh base + scan ${Math.max(options.startId, maxDbId + 1)} → ${endId})`);
+    else console.log('   (IDs présents dans la liste Boond, sans balayage de plage)');
   }
   console.log('');
 
@@ -399,6 +390,8 @@ async function syncDeliveriesYear(rawOptions = {}) {
     errorCount: errors,
     idsFromDbCount: idsFromDb.length,
     idsNullCreationDateCount: idsWithNullDates.length,
+    idsDiscoveredCount: discoveredIds.length,
+    discoveryEndpoint: '/deliveries-groupments',
     fullScan: options.fullScan,
     scanNew: options.scanNew,
     skipYearFilter: options.skipYearFilter === true,

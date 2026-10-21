@@ -19,3 +19,10 @@ Fonctionnalité: Gestion des vues par rôle
     Quand l'utilisateur "consultant@animaneo.fr" se connecte
     Alors l'utilisateur ne voit que son forecast personnel
     Et l'utilisateur ne voit pas le bouton scénarios forecast
+
+  Scénario: le droit technique finance ne rend pas le compte de résultat visible
+    Étant donné l'utilisateur est habilité avec le rôle "commercial"
+    Et le rôle "commercial" a les permissions "view:report:forecast, data:finance"
+    Quand l'utilisateur se connecte
+    Alors l'utilisateur ne voit que les modules et vues "view:report:forecast"
+    Et l'utilisateur ne voit pas la vue "view:report:income"

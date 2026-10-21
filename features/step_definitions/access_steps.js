@@ -134,9 +134,10 @@ When('l\'utilisateur se connecte', async function () {
   if (this.page && this.baseUrl) {
     await seedAuthSession(this.page, this.email);
     await this.page.goto(this.baseUrl, { waitUntil: 'networkidle' });
-    await this.page.waitForSelector('[data-testid="nav-tab-home"], [data-testid="nav-tab-forecast"]', {
-      timeout: 15000,
-    });
+    await this.page.waitForSelector(
+      '[data-testid="nav-tab-home"], [data-testid="nav-tab-resources"], [data-testid="nav-tab-forecast"], [data-testid="nav-tab-report"], [data-testid="nav-tab-settings"]',
+      { timeout: 15000 }
+    );
   }
 });
 
@@ -197,6 +198,12 @@ Then('l\'utilisateur ne voit pas la vue {string}', async function (permission) {
     if (!testId) return;
     if (permission.startsWith('view:home:')) {
       await this.page.locator('[data-testid="nav-tab-home"]').click({ force: true });
+    }
+    if (permission.startsWith('view:forecast:')) {
+      await this.page.locator('[data-testid="nav-tab-forecast"]').click({ force: true });
+    }
+    if (permission.startsWith('view:report:')) {
+      await this.page.locator('[data-testid="nav-tab-report"]').click({ force: true });
     }
     const count = await this.page.locator(`[data-testid="${testId}"]`).count();
     assert.strictEqual(count, 0, `La vue ${permission} ne devrait pas être visible`);

@@ -3,7 +3,7 @@
  *
  * Étapes :
  * 1) MIN(id) dans `public.deliveries` (DB)
- * 2) MAX(id) existant côté Boond (GET /deliveries/{id})
+ * 2) Liste des IDs existants côté Boond (`GET /deliveries-groupments`)
  * 3) Vide entièrement `public.deliveries_stage` au début
  * 4) Insert dans `public.deliveries_stage` (conservée à la fin pour inspection)
  * 5) Upsert dans `public.deliveries` (mise à jour / insert, sans suppression)
@@ -19,7 +19,8 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') }
 require('../lib/secretEnv');
 
 const { getSupabase } = require('../lib/supabaseClient');
-const { DEFAULT_BASE_URL, getBoondAuthConfig, findMaxDeliveryId, fetchDelivery } = require('../lib/deliveryBoond');
+const { DEFAULT_BASE_URL, getBoondAuthConfig, fetchDelivery } = require('../lib/deliveryBoond');
+const { listBoondCollectionIds } = require('../lib/boondApi');
 
 function parseArgs(argv) {
   const opts = {
@@ -138,10 +139,18 @@ async function run() {
         ? (await getMinDeliveryId(supabase)) ?? 1
         : 1;
 
+  const discoveredIds = await listBoondCollectionIds(
+    config,
+    baseURL,
+    '/deliveries-groupments'
+  );
+  const validIds = discoveredIds.filter(
+    (id) => id >= minId && (!Number.isFinite(opts.maxId) || id <= opts.maxId)
+  );
   const maxId =
     Number.isFinite(opts.maxId) && opts.maxId > 0
       ? opts.maxId
-      : await findMaxDeliveryId(config, baseURL, { low: minId, delayMs: opts.delayMs });
+      : Math.max(minId - 1, ...validIds);
 
   if (!Number.isFinite(minId) || !Number.isFinite(maxId)) {
     throw new Error(`minId/maxId invalides (minId=${String(minId)}, maxId=${String(maxId)})`);
@@ -164,7 +173,7 @@ async function run() {
   let notFound = 0;
   let errors = 0;
 
-  for (let id = minId; id <= maxId; id += 1) {
+  for (const id of validIds) {
     fetched += 1;
     try {
       const result = await fetchDelivery(config, baseURL, id);

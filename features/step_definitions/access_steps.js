@@ -198,6 +198,12 @@ Then('l\'utilisateur ne voit pas la vue {string}', async function (permission) {
     if (permission.startsWith('view:home:')) {
       await this.page.locator('[data-testid="nav-tab-home"]').click({ force: true });
     }
+    if (permission.startsWith('view:forecast:')) {
+      await this.page.locator('[data-testid="nav-tab-forecast"]').click({ force: true });
+    }
+    if (permission.startsWith('view:report:')) {
+      await this.page.locator('[data-testid="nav-tab-report"]').click({ force: true });
+    }
     const count = await this.page.locator(`[data-testid="${testId}"]`).count();
     assert.strictEqual(count, 0, `La vue ${permission} ne devrait pas être visible`);
   }

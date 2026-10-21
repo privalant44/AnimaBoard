@@ -2,10 +2,9 @@
  * Sync incrémentale des projets Boond créés sur une année civile.
  *
  * Stratégie (par défaut) :
- * 1. Re-fetch les projets déjà en base avec creation_date sur l'année cible
- * 2. Re-fetch les projets en base sans creation_date (backfill dates Boond)
- * 3. Scanner les nouveaux IDs Boond (max(id) en base + 1 → dernier ID existant)
- * 4. Upsert uniquement les projets dont creationDate tombe dans l'année
+ * 1. Lister les projets créés sur l'année via `GET /projects`
+ * 2. Ne demander le détail que des IDs présents dans cette liste
+ * 3. Upsert uniquement les projets dont creationDate tombe dans l'année
  *
  * Usage:
  *   node scripts/sync-projects-year.js
@@ -64,7 +63,7 @@ Sync des projets Boond créés sur une année civile.
 
 Options:
   --year=YYYY       Année cible (défaut : année courante)
-  --full-scan       Parcourt toute la plage d'IDs (lent)
+  --full-scan       Compatibilité : traite tous les IDs valides retournés
   --no-scan-new     IDs déjà en base pour l'année uniquement
   --start-id=N      Borne basse (défaut : 1)
   --end-id=N        Borne haute (défaut : auto)

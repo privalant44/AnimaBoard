@@ -2,10 +2,9 @@
  * Sync incrémentale des prestations Boond actives sur une année civile.
  *
  * Stratégie (par défaut) :
- * 1. Re-fetch les prestations déjà en base avec creation_date sur l'année cible
- * 2. Re-fetch les prestations en base sans creation_date (backfill dates Boond)
- * 3. Scanner les nouveaux IDs Boond (max(id) en base + 1 → dernier ID existant)
- * 4. Upsert uniquement les prestations dont la période (start/end) chevauche l'année
+ * 1. Lister les prestations actives sur l'année via `GET /deliveries-groupments`
+ * 2. Ne demander le détail que des IDs présents dans cette liste
+ * 3. Upsert uniquement les prestations dont la période (start/end) chevauche l'année
  *
  * Points d'entrée (même comportement par défaut) :
  *   - CLI : npm run sync-deliveries-year
@@ -20,10 +19,10 @@
  *
  * Options:
  *   --year=YYYY       Année cible (défaut : année courante)
- *   --full-scan       Parcourt toute la plage d'IDs (lent, utile si creation_date manquante)
+ *   --full-scan       Compatibilité : traite tous les IDs valides retournés
  *   --no-scan-new     Ne rafraîchit que les IDs déjà connus en base pour l'année
  *   --start-id=N      Borne basse (défaut : DELIVERIES_START_ID ou 1)
- *   --end-id=N        Borne haute (défaut : détection auto par dichotomie)
+ *   --end-id=N        Borne haute optionnelle appliquée aux IDs retournés
  *   --delay=MS        Pause entre appels Boond (défaut : 200)
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
@@ -53,9 +52,6 @@ function parseArgs(argv) {
     else if (arg.startsWith('--start-id=')) overrides.startId = parseInt(arg.slice('--start-id='.length), 10);
     else if (arg.startsWith('--end-id=')) overrides.endId = parseInt(arg.slice('--end-id='.length), 10);
     else if (arg.startsWith('--delay=')) overrides.delayMs = parseInt(arg.slice('--delay='.length), 10);
-    else if (arg.startsWith('--recent-backfill=')) {
-      overrides.recentBackfill = parseInt(arg.slice('--recent-backfill='.length), 10);
-    }
   }
 
   return overrides;
@@ -69,12 +65,11 @@ Sync des prestations Boond créées sur une année civile.
 
 Options:
   --year=YYYY       Année cible (défaut : année courante)
-  --full-scan       Parcourt toute la plage d'IDs (lent)
+  --full-scan       Compatibilité : traite tous les IDs valides retournés
   --no-scan-new     IDs déjà en base pour l'année uniquement
   --start-id=N      Borne basse (défaut : 1)
-  --end-id=N        Borne haute (défaut : auto)
+  --end-id=N        Borne haute optionnelle
   --delay=MS        Pause entre appels Boond (défaut : 200)
-  --recent-backfill=N  Re-scan les N derniers IDs (défaut : 200)
   -h, --help        Cette aide
 `);
 }
@@ -139,7 +134,6 @@ const DEFAULT_SYNC_DELIVERIES_OPTIONS = {
   startId: DELIVERIES_START_ID || 1,
   endId: null,
   delayMs: 200,
-  recentBackfill: 200,
 };
 
 function resolveStartId(options) {

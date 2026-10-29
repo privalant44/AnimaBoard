@@ -12,6 +12,7 @@ const {
   listForecastScenarios,
   formatPlannedScenarioFilterLabel,
 } = require('../../lib/forecastScenariosService');
+const { getForecastRevenueDays } = require('../../lib/forecastRevenue');
 const { format, parseISO, startOfMonth, endOfMonth, eachMonthOfInterval } = require('date-fns');
 
 const DEFAULT_INCOME_STATEMENT_COMMENT =
@@ -908,6 +909,7 @@ class DashboardService {
 
     const now = new Date();
     const currentYear = now.getFullYear();
+    const currentMonth = `${currentYear}-${pad2(now.getMonth() + 1)}`;
     const closedMonthIndexForCurrentYear = now.getMonth(); // 0-based; ex: juillet => 6 (juin clôturé)
 
     const isClosedMonth = (month) => {
@@ -970,7 +972,7 @@ class DashboardService {
       );
     });
 
-    // Mois ouverts : temps saisis + prévisionnels (aligné synthèse Forecast / Report)
+    // Mois ouverts : le réalisé remplace le prévisionnel de la prestation sur le mois courant.
     const forecastByMonthResource = new Map();
     const forecastCaInternalByMonth = new Map();
     const forecastCaExternalByMonth = new Map();
@@ -991,7 +993,12 @@ class DashboardService {
       const [month, deliveryId] = deliveryKey.split('|');
       const actualDays = actualByMonthDelivery.get(deliveryKey) || 0;
       const forecastDays = forecastByMonthDelivery.get(deliveryKey) || 0;
-      const effectiveDays = actualDays + forecastDays;
+      const effectiveDays = getForecastRevenueDays({
+        month,
+        currentMonth,
+        actualDays,
+        forecastDays,
+      });
       if (effectiveDays <= 0) return;
 
       const resourceId = deliveryToResourceId.get(deliveryId) || '';
@@ -1177,9 +1184,9 @@ class DashboardService {
         taceEligibleResourcesRule:
           'Toutes les ressources visibles de type 0/3/10 (y compris sans activité sur le mois)',
         taceFormula:
-          'Mois clôturés: somme(total_days_prod) depuis timesheets_detail. Mois non clôturés: somme(temps saisis + prévisionnels Boond) par prestation + jours prévisionnels manuels (planned_forecast, cumul P1…Pn selon filtre). TACE(%) = base / ((jours_ouvres * nb_ressources_eligibles_visibles) - conges_du_mois) * 100',
+          'Mois clôturés: somme(total_days_prod) depuis timesheets_detail. Mois courant: temps saisi par prestation s’il existe, sinon temps prévisionnel Boond. Autres mois non clôturés: somme(temps saisis + prévisionnels Boond) par prestation. Ajout des jours prévisionnels manuels (planned_forecast, cumul P1…Pn selon filtre). TACE(%) = base / ((jours_ouvres * nb_ressources_eligibles_visibles) - conges_du_mois) * 100',
         caForecastFormula:
-          'Mois non clôturés: Σ (jours saisis + jours prévisionnels Boond) × TJM par prestation (timesheets_detail + forecast_times) + Σ (jours prévisionnels manuels, cumul P1…Pn selon filtre) × TJM (planned_forecast)',
+          'Mois courant: Σ (jours saisis s’ils existent, sinon jours prévisionnels Boond) × TJM par prestation. Autres mois non clôturés: Σ (jours saisis + jours prévisionnels Boond) × TJM par prestation. Ajout de Σ (jours prévisionnels manuels, cumul P1…Pn selon filtre) × TJM (planned_forecast)',
         resultatForecastFormula:
           'Mois non clôturés: résultat Pennylane + (CA prévisionnel total − CA Pennylane) ; charges Pennylane inchangées',
         plannedScenarios: plannedCa.availableScenarios,
@@ -1192,9 +1199,9 @@ class DashboardService {
         ),
         plannedScenarioFilterCumulative: plannedScenarioFilter !== 'none',
         margeBruteAnimaNeoFormula:
-          'Mois clôturés: CA Anima Néo (Pennylane) − Σ total_days_prod × averageDailyCost (timesheets_detail). Mois non clôturés: CA prévisionnel − Σ (jours saisis + prévisionnels Boond + scénarios manuels) × coût journalier prestation/ressource',
+          'Mois clôturés: CA Anima Néo (Pennylane) − Σ total_days_prod × averageDailyCost (timesheets_detail). Mois courant: CA prévisionnel − Σ (jours saisis s’ils existent, sinon prévisionnels Boond) × coût journalier prestation, puis ajout des coûts des scénarios manuels. Autres mois non clôturés: CA prévisionnel − Σ (jours saisis + prévisionnels Boond + scénarios manuels) × coût journalier prestation/ressource',
         margeBruteSousTraitanceFormula:
-          'Mois clôturés: CA sous-traitance (Pennylane) − Σ total_days_prod × averageDailyCost (timesheets_detail, ressources externes). Mois non clôturés: CA prévisionnel − Σ (jours saisis + prévisionnels Boond + scénarios manuels) × coût journalier prestation/ressource',
+          'Mois clôturés: CA sous-traitance (Pennylane) − Σ total_days_prod × averageDailyCost (timesheets_detail, ressources externes). Mois courant: CA prévisionnel − Σ (jours saisis s’ils existent, sinon prévisionnels Boond) × coût journalier prestation, puis ajout des coûts des scénarios manuels. Autres mois non clôturés: CA prévisionnel − Σ (jours saisis + prévisionnels Boond + scénarios manuels) × coût journalier prestation/ressource',
       },
     };
   }
